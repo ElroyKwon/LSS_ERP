@@ -1,0 +1,128 @@
+from sqlalchemy import inspect, text
+
+
+COMPANY_COLUMNS = {
+    "short_name": "VARCHAR(40)",
+    "resident_type": "VARCHAR(20)",
+    "resident_no": "VARCHAR(20)",
+    "business_type": "VARCHAR(40)",
+    "business_item": "VARCHAR(40)",
+    "postal_code": "VARCHAR(7)",
+    "address_detail1": "VARCHAR(60)",
+    "address_detail2": "VARCHAR(100)",
+    "fax": "VARCHAR(20)",
+    "homepage": "VARCHAR(100)",
+    "liquor_code": "VARCHAR(20)",
+    "liquor_name": "VARCHAR(100)",
+    "country_code": "VARCHAR(20)",
+    "project_code": "VARCHAR(30)",
+    "project_name": "VARCHAR(100)",
+    "company_category_code": "VARCHAR(30)",
+    "company_category_name": "VARCHAR(100)",
+    "company_grade_code": "VARCHAR(30)",
+    "company_grade_name": "VARCHAR(100)",
+    "collection_customer_code": "VARCHAR(30)",
+    "collection_customer_name": "VARCHAR(100)",
+    "region_code": "VARCHAR(30)",
+    "region_name": "VARCHAR(100)",
+    "external_data_code": "VARCHAR(50)",
+    "electronic_tax_invoice_yn": "VARCHAR(1)",
+    "single_report_customer_code": "VARCHAR(30)",
+    "single_report_customer_name": "VARCHAR(100)",
+    "tax_business_no": "VARCHAR(20)",
+    "multi_supplier_yn": "VARCHAR(1)",
+    "purpose_type": "VARCHAR(30)",
+    "transaction_start_date": "DATE",
+    "use_yn": "VARCHAR(1)",
+    "contract_start_date": "DATE",
+    "contract_end_date": "DATE",
+    "transaction_status": "VARCHAR(20)",
+    "discount_rate": "NUMERIC(8, 4)",
+    "contract_amount": "NUMERIC(18, 2)",
+    "use_expense_amount": "NUMERIC(18, 2)",
+    "payment_terms": "VARCHAR(100)",
+    "limit_recovery_days": "INTEGER",
+    "payment_bank_code": "VARCHAR(30)",
+    "payment_bank_name": "VARCHAR(100)",
+    "payment_branch_name": "VARCHAR(100)",
+    "payment_account_no": "VARCHAR(50)",
+    "payment_account_holder": "VARCHAR(50)",
+    "slip_type_code": "VARCHAR(30)",
+    "slip_type_name": "VARCHAR(100)",
+    "tax_category_code": "VARCHAR(30)",
+    "tax_category_name": "VARCHAR(100)",
+    "payment_due_day": "INTEGER",
+    "manager_department_code": "VARCHAR(30)",
+    "manager_department_name": "VARCHAR(100)",
+    "manager_position": "VARCHAR(50)",
+    "manager_task": "VARCHAR(100)",
+    "manager_employee_code": "VARCHAR(30)",
+    "manager_employee_name": "VARCHAR(100)",
+    "manager_phone": "VARCHAR(20)",
+    "manager_extension": "VARCHAR(20)",
+    "manager_mobile": "VARCHAR(20)",
+    "manager_email": "VARCHAR(150)",
+    "manager_notes": "TEXT",
+    "receiver_postal_code": "VARCHAR(7)",
+    "receiver_address1": "VARCHAR(100)",
+    "receiver_address2": "VARCHAR(100)",
+    "receiver_phone": "VARCHAR(20)",
+    "receiver_fax": "VARCHAR(20)",
+    "receiver_notes": "TEXT",
+    "receivables_note": "TEXT",
+}
+
+
+MATERIAL_COLUMNS = {
+    "management_unit": "VARCHAR(20)",
+    "conversion_factor": "NUMERIC(18, 6)",
+    "procurement_type": "VARCHAR(20)",
+    "item_group_code": "VARCHAR(30)",
+    "item_group_name": "VARCHAR(100)",
+    "lot_use_yn": "VARCHAR(1)",
+    "inspection_type": "VARCHAR(20)",
+    "lot_quantity": "NUMERIC(18, 2)",
+    "drawing_no": "VARCHAR(50)",
+    "hs_code": "VARCHAR(30)",
+    "width_value": "NUMERIC(18, 6)",
+    "width_unit": "VARCHAR(20)",
+    "height_value": "NUMERIC(18, 6)",
+    "height_unit": "VARCHAR(20)",
+    "depth_value": "NUMERIC(18, 6)",
+    "depth_unit": "VARCHAR(20)",
+    "weight_value": "NUMERIC(18, 6)",
+    "weight_unit": "VARCHAR(20)",
+    "area_value": "NUMERIC(18, 6)",
+    "area_unit": "VARCHAR(20)",
+    "set_item_yn": "VARCHAR(1)",
+    "use_yn": "VARCHAR(1)",
+    "batch_quantity": "NUMERIC(18, 2)",
+    "barcode": "VARCHAR(100)",
+    "material_quality": "VARCHAR(100)",
+    "length_value": "NUMERIC(18, 6)",
+    "length_unit": "VARCHAR(20)",
+    "density_value": "NUMERIC(18, 6)",
+    "tax_type": "VARCHAR(20)",
+    "web_order_yn": "VARCHAR(1)",
+    "order_notes": "TEXT",
+}
+
+
+def _ensure_columns(engine, table_name, columns):
+    inspector = inspect(engine)
+    if table_name not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns(table_name)}
+    missing = [(name, ddl_type) for name, ddl_type in columns.items() if name not in existing]
+    if not missing:
+        return
+
+    with engine.begin() as conn:
+        for name, ddl_type in missing:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {name} {ddl_type}"))
+
+
+def ensure_master_columns(engine):
+    _ensure_columns(engine, "companies", COMPANY_COLUMNS)
+    _ensure_columns(engine, "materials", MATERIAL_COLUMNS)

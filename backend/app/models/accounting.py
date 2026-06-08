@@ -1,0 +1,133 @@
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from ..database import Base
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    id = Column(Integer, primary_key=True, index=True)
+    entry_no = Column(String(30), unique=True, nullable=False)
+    entry_date = Column(Date, nullable=False)
+    entry_type = Column(String(20), default="general")
+    description = Column(Text)
+    total_debit = Column(Numeric(18, 2), default=0)
+    total_credit = Column(Numeric(18, 2), default=0)
+    site_id = Column(Integer, ForeignKey("sites.id"))
+    status = Column(String(20), default="draft")
+    ref_type = Column(String(50))
+    ref_id = Column(Integer)
+    approved_by = Column(Integer, ForeignKey("users.id"))
+    approved_at = Column(DateTime)
+    cancelled_at = Column(DateTime)
+    notes = Column(Text)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    site = relationship("Site")
+    lines = relationship("JournalLine", back_populates="entry", cascade="all, delete-orphan")
+
+
+class JournalLine(Base):
+    __tablename__ = "journal_lines"
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="CASCADE"))
+    line_no = Column(Integer, nullable=False)
+    account_id = Column(Integer, ForeignKey("account_codes.id"))
+    debit_amount = Column(Numeric(18, 2), default=0)
+    credit_amount = Column(Numeric(18, 2), default=0)
+    site_id = Column(Integer, ForeignKey("sites.id"))
+    cost_code_id = Column(Integer, ForeignKey("cost_codes.id"))
+    vendor_id = Column(Integer, ForeignKey("companies.id"))
+    description = Column(String(300))
+    tax_invoice_no = Column(String(50))
+
+    entry = relationship("JournalEntry", back_populates="lines")
+    account = relationship("AccountCode")
+
+
+class AccountsReceivable(Base):
+    __tablename__ = "accounts_receivable"
+    id = Column(Integer, primary_key=True, index=True)
+    billing_id = Column(Integer, ForeignKey("progress_billings.id"))
+    site_id = Column(Integer, ForeignKey("sites.id"))
+    client_id = Column(Integer, ForeignKey("companies.id"))
+    issue_date = Column(Date, nullable=False)
+    due_date = Column(Date)
+    billing_amount = Column(Numeric(18, 2), default=0)
+    collected_amount = Column(Numeric(18, 2), default=0)
+    outstanding_amount = Column(Numeric(18, 2), default=0)
+    status = Column(String(20), default="outstanding")
+    notes = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    billing = relationship("ProgressBilling")
+    site = relationship("Site")
+    client = relationship("Company")
+
+
+class AccountsPayable(Base):
+    __tablename__ = "accounts_payable"
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey("sites.id"))
+    vendor_id = Column(Integer, ForeignKey("companies.id"))
+    ref_type = Column(String(50))
+    ref_id = Column(Integer)
+    issue_date = Column(Date, nullable=False)
+    due_date = Column(Date)
+    invoice_no = Column(String(50))
+    total_amount = Column(Numeric(18, 2), default=0)
+    paid_amount = Column(Numeric(18, 2), default=0)
+    outstanding_amount = Column(Numeric(18, 2), default=0)
+    status = Column(String(20), default="outstanding")
+    notes = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    site = relationship("Site")
+    vendor = relationship("Company")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id = Column(Integer, primary_key=True, index=True)
+    payment_no = Column(String(30), unique=True, nullable=False)
+    vendor_id = Column(Integer, ForeignKey("companies.id"))
+    site_id = Column(Integer, ForeignKey("sites.id"))
+    payment_date = Column(Date, nullable=False)
+    payment_amount = Column(Numeric(18, 2), nullable=False)
+    payment_method = Column(String(20), default="transfer")
+    bank_name = Column(String(50))
+    notes = Column(Text)
+    status = Column(String(20), default="draft")
+    approved_by = Column(Integer, ForeignKey("users.id"))
+    approved_at = Column(DateTime)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    vendor = relationship("Company")
+    site = relationship("Site")
+    items = relationship("PaymentItem", back_populates="payment", cascade="all, delete-orphan")
+
+
+class PaymentItem(Base):
+    __tablename__ = "payment_items"
+    id = Column(Integer, primary_key=True, index=True)
+    payment_id = Column(Integer, ForeignKey("payments.id", ondelete="CASCADE"))
+    payable_id = Column(Integer, ForeignKey("accounts_payable.id"))
+    applied_amount = Column(Numeric(18, 2), default=0)
+
+    payment = relationship("Payment", back_populates="items")
+    payable = relationship("AccountsPayable")
+
+
+class PeriodClosing(Base):
+    __tablename__ = "period_closings"
+    id = Column(Integer, primary_key=True, index=True)
+    close_year = Column(Integer, nullable=False)
+    close_month = Column(Integer, nullable=False)
+    status = Column(String(20), default="open")
+    closed_by = Column(Integer, ForeignKey("users.id"))
+    closed_at = Column(DateTime)
+    notes = Column(Text)

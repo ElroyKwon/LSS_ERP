@@ -12,6 +12,7 @@ from .management import DeptBudget
 from .timesheet import Timesheet, TimesheetEntry
 from .vehicle import Vehicle, VehicleLog
 from .budget import Budget, BudgetItem
+from .document_ingestion import DocumentSource, DocumentIngestionJob, DocumentExtractedRecord, DocumentImportError
 
 __all__ = [
     "User", "Department", "AuditLog", "UserRegistration",
@@ -28,4 +29,5 @@ __all__ = [
     "Timesheet", "TimesheetEntry",
     "Vehicle", "VehicleLog",
     "Budget", "BudgetItem",
+    "DocumentSource", "DocumentIngestionJob", "DocumentExtractedRecord", "DocumentImportError",
 ]

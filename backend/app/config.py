@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "LSS ERP"
     DEBUG: bool = False
     API_DOCS_ENABLED: bool = True
+    AUTO_CREATE_SCHEMA: bool = True
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     NTS_BUSINESS_STATUS_SERVICE_KEY: str = ""
     NTS_BUSINESS_STATUS_URL: str = "https://api.odcloud.kr/api/nts-businessman/v1/status"

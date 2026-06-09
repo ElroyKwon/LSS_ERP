@@ -11,8 +11,11 @@ from .utils.schema import ensure_master_columns
 
 from .routers import auth, master, sales, purchase, accounting, forecast, budget, execution, management, timesheet, vehicle
 
-Base.metadata.create_all(bind=engine)
-ensure_master_columns(engine)
+# Development convenience. Production deployments should run Alembic migrations
+# and set AUTO_CREATE_SCHEMA=false to keep schema changes explicit.
+if settings.AUTO_CREATE_SCHEMA:
+    Base.metadata.create_all(bind=engine)
+    ensure_master_columns(engine)
 
 app = FastAPI(
     title=settings.APP_NAME,

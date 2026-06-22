@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Numeric, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Boolean, Integer, String, Date, DateTime, Numeric, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -48,6 +48,49 @@ class ProjectPlan(Base):
     created_by       = Column(Integer, ForeignKey("users.id"))
     created_at       = Column(DateTime, default=func.now())
     updated_at       = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    project = relationship("Project", foreign_keys=[project_id])
+
+
+class ProjectSalesPlanRow(Base):
+    """프로젝트리스트(매출) 연도별 행 데이터"""
+    __tablename__ = "project_sales_plan_rows"
+    __table_args__ = (UniqueConstraint("plan_year", "row_key"),)
+    id         = Column(Integer, primary_key=True, index=True)
+    plan_year  = Column(Integer, nullable=False)
+    row_key    = Column(String(80), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    data_json  = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    project = relationship("Project", foreign_keys=[project_id])
+
+
+class ProjectBusinessCategory(Base):
+    """프로젝트 사업구분 선택 목록"""
+    __tablename__ = "project_business_categories"
+    id         = Column(Integer, primary_key=True, index=True)
+    name       = Column(String(80), unique=True, nullable=False)
+    sort_order = Column(Integer, default=0)
+    is_active  = Column(Boolean, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class ProjectPlanMeta(Base):
+    """매출 투입 계획 화면 메타: 계약일, 변경 컬럼, 거래처 행 구성"""
+    __tablename__ = "project_plan_metas"
+    __table_args__ = (UniqueConstraint("project_id", "plan_year"),)
+    id         = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    plan_year  = Column(Integer, nullable=False)
+    data_json  = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     project = relationship("Project", foreign_keys=[project_id])
 

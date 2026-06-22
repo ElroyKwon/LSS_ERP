@@ -69,7 +69,7 @@
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'role'">
-                <a-tag :color="roleColor[record.role]">{{ roleLabel[record.role] }}</a-tag>
+                <a-tag :color="getRoleColor(record.role)">{{ getRoleLabel(record.role) }}</a-tag>
               </template>
               <template v-if="column.key === 'is_active'">
                 <a-tag :color="record.is_active ? 'green' : 'default'">
@@ -123,11 +123,7 @@
                 <a-space size="small">
                   <!-- 대기 중: 승인 + 거절 -->
                   <template v-if="record.status === 'pending'">
-                    <a-popconfirm title="이 신청을 승인하시겠습니까?"
-                                  ok-text="승인" cancel-text="취소"
-                                  @confirm="handleApprove(record)">
-                      <a-button type="primary" size="small">승인</a-button>
-                    </a-popconfirm>
+                    <a-button type="primary" size="small" @click="openApproveModal(record)">승인</a-button>
                     <a-button size="small" danger @click="openRejectModal(record)">거절</a-button>
                   </template>
                   <!-- 거절: 거절 사유 표시 -->
@@ -190,11 +186,7 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="권한" name="role">
-              <a-select v-model:value="form.role">
-                <a-select-option value="admin">관리자</a-select-option>
-                <a-select-option value="manager">매니저</a-select-option>
-                <a-select-option value="user">일반사용자</a-select-option>
-              </a-select>
+              <a-select v-model:value="form.role" :options="roleOptions" />
             </a-form-item>
           </a-col>
           <a-col :span="12" v-if="editItem">
@@ -206,6 +198,20 @@
             </a-form-item>
           </a-col>
         </a-row>
+      </a-form>
+    </a-modal>
+
+    <!-- 가입 승인 권한 지정 모달 -->
+    <a-modal v-model:open="approveOpen" title="가입 승인"
+             width="440px" @ok="handleApprove" :confirm-loading="approving"
+             ok-text="권한 부여 후 승인" cancel-text="취소">
+      <div style="margin:16px 0 12px">
+        <strong>{{ approveTarget?.name }}</strong> ({{ approveTarget?.username }}) 님에게 부여할 권한을 선택하세요.
+      </div>
+      <a-form layout="vertical">
+        <a-form-item label="권한" required>
+          <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -230,6 +236,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { masterApi, authApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
+import { ROLE_OPTIONS, getRoleColor, getRoleLabel } from '@/utils/permissions'
 import {
   TeamOutlined, UserOutlined, SafetyCertificateOutlined,
   ClockCircleOutlined, PlusOutlined,
@@ -249,16 +256,14 @@ const editItem   = ref(null)
 const formRef    = ref()
 const form = reactive({
   username: '', name: '', password: '', new_password: '',
-  email: '', role: 'user', position: '', is_active: true,
+  email: '', role: 'sales_staff', position: '', is_active: true,
 })
 
-const roleColor = { admin: 'red', manager: 'orange', user: 'blue' }
-const roleLabel = { admin: '관리자', manager: '매니저', user: '일반사용자' }
-
+const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
 const userStats = computed(() => ({
   total: users.value.length,
-  admin: users.value.filter(u => u.role === 'admin').length,
-  user:  users.value.filter(u => u.role !== 'admin').length,
+  admin: users.value.filter(u => u.role === 'system_admin' || u.role === 'admin').length,
+  user:  users.value.filter(u => u.role !== 'system_admin' && u.role !== 'admin').length,
 }))
 
 const userColumns = [
@@ -281,7 +286,7 @@ function openModal(item) {
   editItem.value = item
   Object.assign(form, item
     ? { ...item, password: '', new_password: '' }
-    : { username: '', name: '', password: '', new_password: '', email: '', role: 'user', position: '', is_active: true }
+    : { username: '', name: '', password: '', new_password: '', email: '', role: 'sales_staff', position: '', is_active: true }
   )
   modalOpen.value = true
 }
@@ -323,6 +328,10 @@ const rejectOpen    = ref(false)
 const rejecting     = ref(false)
 const rejectTarget  = ref(null)
 const rejectReason  = ref('')
+const approveOpen   = ref(false)
+const approving     = ref(false)
+const approveTarget = ref(null)
+const approveRole   = ref('sales_staff')
 
 const regStatusColor = { pending: 'orange', rejected: 'red' }
 const regStatusLabel = { pending: '대기', rejected: '거절' }
@@ -361,16 +370,28 @@ async function loadRegistrations() {
   } finally { regLoading.value = false }
 }
 
-async function handleApprove(record) {
+function openApproveModal(record) {
+  approveTarget.value = record
+  approveRole.value = 'sales_staff'
+  approveOpen.value = true
+}
+
+async function handleApprove() {
+  if (!approveRole.value) {
+    message.warning('권한을 선택하세요.')
+    return
+  }
+  approving.value = true
   try {
-    await authApi.approveRegistration(record.id)
+    await authApi.approveRegistration(approveTarget.value.id, { role: approveRole.value })
     await loadUsers()
     await loadRegistrations()
-    message.success(`${record.name} 님이 승인되었습니다. 사용자 목록에서 확인하세요.`)
+    message.success(`${approveTarget.value.name} 님이 승인되었습니다. 사용자 목록에서 확인하세요.`)
+    approveOpen.value = false
     activeTab.value = 'users'   // 사용자 목록 탭으로 이동
   } catch (e) {
     message.error(e.response?.data?.detail || '승인 중 오류가 발생했습니다.')
-  }
+  } finally { approving.value = false }
 }
 
 function openRejectModal(record) {

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { authApi } from '@/api'
+import { canManageSystem } from '@/utils/permissions'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -8,7 +9,7 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isLoggedIn: (s) => !!s.token,
-    isAdmin: (s) => s.user?.role === 'admin',
+    isAdmin: (s) => canManageSystem(s.user?.role),
   },
   actions: {
     async login(username, password) {

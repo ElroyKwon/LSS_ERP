@@ -44,6 +44,12 @@ const columns = [
 | 비율 (%) | `center` | 90~110 |
 | 관리 버튼 | `center` + `fixed: 'right'` | 90~130 |
 
+### Amount display format
+
+- Amount values must use accounting-style comma grouping without a leading currency symbol: `000,000,000`.
+- Do not prefix amount values with `₩`, `KRW`, or other currency marks unless the user explicitly asks.
+- For inputs, use the same comma formatter/parser pattern so typed amounts display consistently.
+
 ### 3. 헤더 가운데 정렬 CSS
 
 CrudTable 을 사용하는 뷰는 자동 적용됨.  

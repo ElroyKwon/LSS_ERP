@@ -6,9 +6,10 @@ from ..database import get_db
 from ..models.master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
 from ..models.common import User, Department
 from ..utils.auth import get_current_user, hash_password
+from ..utils.permissions import is_system_admin, normalize_role, validate_role
 from ..services import external_api
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 router = APIRouter(prefix="/api", tags=["기준정보"])
@@ -36,16 +37,201 @@ def search_postal_addresses(
 
 @router.patch("/external/api-key")
 def update_external_api_key(data: ExternalApiKeyUpdate, current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     external_api.update_external_api_key(data.service, data.key)
     return {"message": "인증키가 갱신되었습니다.", "service": data.service}
 
 
 # ── 부서 ──────────────────────────────────────────
+class DepartmentCreate(BaseModel):
+    code: Optional[str] = None
+    name: str
+    parent_id: Optional[int] = None
+    org_year: Optional[int] = None
+    dept_type: str = "team"
+    sort_order: int = 0
+    is_active: bool = True
+    notes: Optional[str] = None
+
+
+class DepartmentUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
+    org_year: Optional[int] = None
+    dept_type: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+DEFAULT_DEPARTMENTS = [
+    ("사장실", "office", []),
+    ("CFO 부문", "division", [("경영지원팀", "team", [])]),
+    ("R&D실", "office", [("솔루션기술팀", "team", [])]),
+    ("에너지사업실", "office", [
+        ("에너지솔루션팀", "team", []),
+        ("에너지남부영업팀", "team", [("에너지영업Part", "part", []), ("O&M Part", "part", [])]),
+        ("스테콤팀", "team", []),
+    ]),
+    ("빌딩솔루션사업부", "business", [("DataCenter영업팀", "team", []), ("IBS영업팀", "team", [])]),
+    ("시스템사업부", "business", [
+        ("설계팀", "team", []),
+        ("CS팀", "team", []),
+        ("신전력팀", "team", []),
+        ("실행팀", "team", [("ES실행Part", "part", []), ("BS실행Part", "part", [])]),
+        ("안전팀", "team", []),
+    ]),
+    ("공통", "common", []),
+]
+
+
+def _current_year() -> int:
+    return datetime.now().year
+
+
+def _dept_dict(dept: Department):
+    return {
+        "id": dept.id,
+        "code": dept.code,
+        "name": dept.name,
+        "parent_id": dept.parent_id,
+        "org_year": dept.org_year,
+        "dept_type": dept.dept_type,
+        "sort_order": dept.sort_order or 0,
+        "is_active": dept.is_active,
+        "notes": dept.notes,
+        "created_at": dept.created_at,
+        "updated_at": dept.updated_at,
+    }
+
+
+def _build_department_tree(rows):
+    nodes = [{**_dept_dict(row), "children": []} for row in rows]
+    by_id = {node["id"]: node for node in nodes}
+    roots = []
+    for node in nodes:
+        parent = by_id.get(node["parent_id"])
+        if parent:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+    return roots
+
+
+def _next_department_code(db: Session, org_year: int) -> str:
+    prefix = f"D{org_year}-"
+    count = db.query(Department).filter(Department.code.like(f"{prefix}%")).count()
+    return f"{prefix}{count + 1:03d}"
+
+
+def _seed_default_departments(db: Session, org_year: Optional[int] = None):
+    year = org_year or _current_year()
+    if db.query(Department).filter(Department.org_year == year).count() > 0:
+        return
+
+    def add_node(name, dept_type, sort_order, parent_id=None):
+        dept = Department(
+            code=_next_department_code(db, year),
+            name=name,
+            parent_id=parent_id,
+            org_year=year,
+            dept_type=dept_type,
+            sort_order=sort_order,
+            is_active=True,
+        )
+        db.add(dept)
+        db.flush()
+        return dept
+
+    def add_children(parent, children):
+        for idx, (name, dept_type, child_nodes) in enumerate(children, start=1):
+            child = add_node(name, dept_type, idx, parent.id)
+            add_children(child, child_nodes)
+
+    for idx, (name, dept_type, children) in enumerate(DEFAULT_DEPARTMENTS, start=1):
+        root = add_node(name, dept_type, idx)
+        add_children(root, children)
+    db.commit()
+
+
+def _set_children_active(db: Session, dept_id: int, is_active: bool):
+    children = db.query(Department).filter(Department.parent_id == dept_id).all()
+    for child in children:
+        child.is_active = is_active
+        _set_children_active(db, child.id, is_active)
+
+
 @router.get("/departments")
-def list_departments(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    return db.query(Department).filter(Department.is_active == True).all()
+def list_departments(org_year: Optional[int] = None, include_inactive: bool = False, tree: bool = False,
+                     db: Session = Depends(get_db), _=Depends(get_current_user)):
+    _seed_default_departments(db, org_year)
+    q = db.query(Department)
+    if org_year:
+        q = q.filter(Department.org_year == org_year)
+    if not include_inactive:
+        q = q.filter(Department.is_active == True)
+    rows = q.order_by(Department.org_year.desc(), Department.sort_order, Department.name).all()
+    if tree:
+        return _build_department_tree(rows)
+    return [_dept_dict(row) for row in rows]
+
+
+@router.post("/departments")
+def create_department(data: DepartmentCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    payload = data.dict()
+    payload["org_year"] = payload.get("org_year") or _current_year()
+    if payload.get("parent_id"):
+        parent = db.query(Department).filter(Department.id == payload["parent_id"]).first()
+        if not parent:
+            raise HTTPException(status_code=404, detail="상위 부서를 찾을 수 없습니다.")
+    if not payload.get("code"):
+        payload["code"] = _next_department_code(db, payload["org_year"])
+    if db.query(Department).filter(Department.code == payload["code"]).first():
+        raise HTTPException(status_code=400, detail="이미 존재하는 부서 코드입니다.")
+    dept = Department(**payload)
+    db.add(dept)
+    db.commit()
+    db.refresh(dept)
+    return _dept_dict(dept)
+
+
+@router.put("/departments/{dept_id}")
+def update_department(dept_id: int, data: DepartmentUpdate, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="부서를 찾을 수 없습니다.")
+    payload = data.dict(exclude_unset=True)
+    if payload.get("parent_id") == dept_id:
+        raise HTTPException(status_code=400, detail="자기 자신을 상위 부서로 지정할 수 없습니다.")
+    if payload.get("code") and payload["code"] != dept.code:
+        if db.query(Department).filter(Department.code == payload["code"]).first():
+            raise HTTPException(status_code=400, detail="이미 존재하는 부서 코드입니다.")
+    if "is_active" in payload:
+        _set_children_active(db, dept_id, payload["is_active"])
+    for field, val in payload.items():
+        setattr(dept, field, val)
+    db.commit()
+    db.refresh(dept)
+    return _dept_dict(dept)
+
+
+@router.delete("/departments/{dept_id}")
+def delete_department(dept_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="부서를 찾을 수 없습니다.")
+    dept.is_active = False
+    _set_children_active(db, dept_id, False)
+    db.commit()
+    return {"ok": True}
 
 
 # ── 사용자 ──────────────────────────────────────────
@@ -57,7 +243,7 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     department_id: Optional[int] = None
     position: Optional[str] = None
-    role: str = "user"
+    role: str = "sales_staff"
 
 
 class UserUpdate(BaseModel):
@@ -75,21 +261,25 @@ class UserUpdate(BaseModel):
 def list_users(db: Session = Depends(get_db), _=Depends(get_current_user)):
     users = db.query(User).all()
     return [{"id": u.id, "username": u.username, "name": u.name, "email": u.email,
-             "role": u.role, "position": u.position, "is_active": u.is_active,
+             "role": normalize_role(u.role), "position": u.position, "is_active": u.is_active,
              "department_id": u.department_id} for u in users]
 
 
 @router.post("/users")
 def create_user(data: UserCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="이미 존재하는 아이디입니다.")
+    try:
+        role = validate_role(data.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     user = User(
         username=data.username,
         password_hash=hash_password(data.password),
         name=data.name, email=data.email, phone=data.phone,
-        department_id=data.department_id, position=data.position, role=data.role,
+        department_id=data.department_id, position=data.position, role=role,
     )
     db.add(user)
     db.commit()
@@ -99,7 +289,7 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), current=Depends
 
 @router.put("/users/{user_id}")
 def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    if current.role != "admin" and current.id != user_id:
+    if not is_system_admin(current.role) and current.id != user_id:
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -116,7 +306,7 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     if current.id == user_id:
         raise HTTPException(status_code=400, detail="자기 자신의 계정은 삭제할 수 없습니다.")
@@ -504,27 +694,66 @@ class EmployeeCreate(BaseModel):
     emp_code: str
     name: str
     department_id: Optional[int] = None
+    department_name: Optional[str] = None
     position: Optional[str] = None
+    job_title: Optional[str] = None
+    task: Optional[str] = None
     emp_type: str = "regular"
     hire_date: Optional[date] = None
     resign_date: Optional[date] = None
+    birth_date: Optional[date] = None
+    wedding_anniversary: Optional[date] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    home_address: Optional[str] = None
+    corporate_card_no: Optional[str] = None
     bank_name: Optional[str] = None
     bank_account: Optional[str] = None
     daily_wage: Optional[Decimal] = None
     monthly_salary: Optional[Decimal] = None
+    is_active: Optional[bool] = True
+
+
+class EmployeeUpdate(BaseModel):
+    emp_code: Optional[str] = None
+    name: Optional[str] = None
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    position: Optional[str] = None
+    job_title: Optional[str] = None
+    task: Optional[str] = None
+    emp_type: Optional[str] = None
+    hire_date: Optional[date] = None
+    resign_date: Optional[date] = None
+    birth_date: Optional[date] = None
+    wedding_anniversary: Optional[date] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    home_address: Optional[str] = None
+    corporate_card_no: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    daily_wage: Optional[Decimal] = None
+    monthly_salary: Optional[Decimal] = None
+    is_active: Optional[bool] = None
 
 
 @router.get("/employees")
 def list_employees(search: Optional[str] = None, emp_type: Optional[str] = None,
+                   include_inactive: bool = False,
                    db: Session = Depends(get_db), _=Depends(get_current_user)):
-    q = db.query(Employee).filter(Employee.is_active == True)
+    q = db.query(Employee)
+    if not include_inactive:
+        q = q.filter(Employee.is_active == True)
     if search:
-        q = q.filter(or_(Employee.name.ilike(f"%{search}%"), Employee.emp_code.ilike(f"%{search}%")))
+        q = q.filter(or_(
+            Employee.name.ilike(f"%{search}%"),
+            Employee.emp_code.ilike(f"%{search}%"),
+            Employee.department_name.ilike(f"%{search}%"),
+        ))
     if emp_type:
         q = q.filter(Employee.emp_type == emp_type)
-    return q.order_by(Employee.name).all()
+    return q.order_by(Employee.is_active.desc(), Employee.name).all()
 
 
 @router.post("/employees")
@@ -537,14 +766,44 @@ def create_employee(data: EmployeeCreate, db: Session = Depends(get_db), _=Depen
 
 
 @router.put("/employees/{eid}")
-def update_employee(eid: int, data: EmployeeCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_employee(eid: int, data: EmployeeUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
     e = db.query(Employee).filter(Employee.id == eid).first()
     if not e:
         raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다.")
-    for field, val in data.dict(exclude_none=True).items():
+    payload = data.dict(exclude_none=True)
+    if "role" in payload:
+        try:
+            payload["role"] = validate_role(payload["role"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    for field, val in payload.items():
         setattr(e, field, val)
     db.commit()
+    db.refresh(e)
     return e
+
+
+@router.patch("/employees/{eid}/active")
+def set_employee_active(eid: int, data: EmployeeUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    e = db.query(Employee).filter(Employee.id == eid).first()
+    if not e:
+        raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다.")
+    if data.is_active is None:
+        raise HTTPException(status_code=400, detail="활성 여부가 필요합니다.")
+    e.is_active = data.is_active
+    db.commit()
+    db.refresh(e)
+    return e
+
+
+@router.delete("/employees/{eid}")
+def delete_employee(eid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    e = db.query(Employee).filter(Employee.id == eid).first()
+    if not e:
+        raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다.")
+    db.delete(e)
+    db.commit()
+    return {"ok": True}
 
 
 # ── 임율/판관비율 ──────────────────────────────────────────

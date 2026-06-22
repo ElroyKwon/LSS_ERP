@@ -9,9 +9,17 @@ class Department(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(20), unique=True, nullable=False)
     name = Column(String(100), nullable=False)
+    parent_id = Column(Integer, ForeignKey("departments.id"))
+    org_year = Column(Integer)
+    dept_type = Column(String(20), default="team")
+    sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    notes = Column(Text)
     created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    parent = relationship("Department", remote_side="Department.id", back_populates="children")
+    children = relationship("Department", back_populates="parent")
     users = relationship("User", back_populates="department")
 
 

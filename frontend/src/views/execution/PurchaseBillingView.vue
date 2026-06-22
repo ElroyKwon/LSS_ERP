@@ -32,7 +32,7 @@
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 1000 }">
+               row-key="id" size="middle" :scroll="{ x: 1240 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['bill_amount','vat_amount','total_amount'].includes(column.key)">
             {{ record[column.key] > 0 ? Number(record[column.key]).toLocaleString() : '—' }}
@@ -74,7 +74,20 @@
           <a-col :span="24">
             <a-form-item label="프로젝트" name="project_id">
               <a-select v-model:value="form.project_id" allow-clear show-search
-                        placeholder="프로젝트 선택" :options="projectOptions" option-filter-prop="label" />
+                        placeholder="프로젝트 선택" :options="projectOptions" option-filter-prop="label"
+                        @change="onProjectChange" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="원계약처" name="original_client_name">
+              <a-input v-model:value="form.original_client_name" placeholder="프로젝트 선택 시 자동 입력" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="하도계약처" name="purchase_contract_id">
+              <a-select v-model:value="form.purchase_contract_id" allow-clear show-search
+                        placeholder="구매/계약에서 선택" :options="purchaseContractOptions"
+                        option-filter-prop="label" @change="onContractChange" />
             </a-form-item>
           </a-col>
           <a-col :span="24">
@@ -90,6 +103,11 @@
 
         <a-divider orientation="left" orientation-margin="0"><span class="sec-label">청구 금액</span></a-divider>
         <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="귀속 월" name="attribution_month">
+              <a-date-picker v-model:value="form.attribution_month" picker="month" style="width:100%" value-format="YYYY-MM" placeholder="예) 2026-06" />
+            </a-form-item>
+          </a-col>
           <a-col :span="12">
             <a-form-item label="청구일" name="bill_date">
               <a-date-picker v-model:value="form.bill_date" style="width:100%" value-format="YYYY-MM-DD" />
@@ -120,6 +138,25 @@
                               :min="0" :formatter="fmtNum" :parser="parseNum" />
             </a-form-item>
           </a-col>
+          <a-col :span="12">
+            <a-form-item label="관련 매출청구" name="related_sales_bill">
+              <a-input v-model:value="form.related_sales_bill" placeholder="해당 건 선택/입력" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="기성 정보" name="progress_info">
+              <a-input v-model:value="form.progress_info" placeholder="기성 정보 불러오기/입력" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="지급구분" name="payment_method">
+              <a-select v-model:value="form.payment_method">
+                <a-select-option value="현금">현금</a-select-option>
+                <a-select-option value="어음">어음</a-select-option>
+                <a-select-option value="현금 및 어음">현금 및 어음</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
           <a-col :span="24">
             <a-form-item label="비고" name="notes">
               <a-textarea v-model:value="form.notes" :rows="2" />
@@ -145,20 +182,28 @@ import { message } from 'ant-design-vue'
 import { FileTextOutlined, ClockCircleOutlined, CheckCircleOutlined, DollarOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
 
+const REQ_MARKER = '\n---매입청구요구사항---\n'
 const STATUSES    = ['지급요청', '승인', '지급완료']
 const statusColor = { 지급요청:'orange', 승인:'blue', 지급완료:'green' }
 
-const items = ref([]), projects = ref([]), companies = ref([])
+const items = ref([]), projects = ref([]), companies = ref([]), purchaseContracts = ref([])
 const loading = ref(false), saving = ref(false), drawerOpen = ref(false)
 const editItem = ref(null), formRef = ref()
 const filterProject = ref(null), filterStatus = ref(null)
 
 const emptyForm = { bill_no:'', project_id:null, vendor_name:'', vendor_id:null,
-  bill_amount:0, vat_amount:0, total_amount:0, bill_date:null, due_date:null, status:'지급요청', notes:'' }
+  bill_amount:0, vat_amount:0, total_amount:0, bill_date:null, due_date:null, status:'지급요청',
+  attribution_month:null, original_client_name:'', purchase_contract_id:null,
+  related_sales_bill:'', progress_info:'', payment_method:'현금', notes:'' }
 const form = reactive({ ...emptyForm })
 
 const projectOptions = computed(() =>
-  projects.value.map(p => ({ value: p.id, label: `[${p.project_no||'—'}] ${p.project_name}` }))
+  projects.value.map(p => ({ value: p.id, label: `[${p.project_no||'—'}] ${p.project_name}`, client_name: p.client_name }))
+)
+const purchaseContractOptions = computed(() =>
+  purchaseContracts.value
+    .filter(c => !form.project_id || c.project_id === form.project_id)
+    .map(c => ({ value: c.id, label: `[${c.contract_type}] ${c.vendor_name} - ${c.contract_name}`, vendor_name: c.vendor_name, vendor_id: c.vendor_id }))
 )
 const vendorSuggestions = computed(() =>
   companies.value.filter(c => !form.vendor_name || c.company_name.toLowerCase().includes((form.vendor_name||'').toLowerCase()))
@@ -180,7 +225,10 @@ const statsCards = computed(() => {
 const columns = [
   { title: '청구번호', dataIndex: 'bill_no',      width: 140, align: 'center' },
   { title: '프로젝트', dataIndex: 'project_name', width: 180, align: 'center', ellipsis: true },
+  { title: '귀속월', dataIndex: 'attribution_month', width: 95, align: 'center' },
+  { title: '원계약처', dataIndex: 'original_client_name', width: 150, align: 'center', ellipsis: true },
   { title: '하도급사', dataIndex: 'vendor_name',  width: 160, align: 'center', ellipsis: true },
+  { title: '지급구분', dataIndex: 'payment_method', width: 105, align: 'center' },
   { title: '청구금액', key: 'bill_amount',        width: 130, align: 'right' },
   { title: '부가세',  key: 'vat_amount',          width: 110, align: 'right' },
   { title: '합계',    key: 'total_amount',        width: 130, align: 'right' },
@@ -190,10 +238,68 @@ const columns = [
   { title: '관리',    key: 'action',              width: 100, align: 'center', fixed: 'right' },
 ]
 
+function splitNotes(notes) {
+  const raw = notes || ''
+  const idx = raw.indexOf(REQ_MARKER)
+  if (idx < 0) return { memo: raw, req: {} }
+  try { return { memo: raw.slice(0, idx), req: JSON.parse(raw.slice(idx + REQ_MARKER.length)) || {} } }
+  catch { return { memo: raw, req: {} } }
+}
+
+function buildNotes() {
+  const req = {
+    attribution_month: form.attribution_month,
+    original_client_name: form.original_client_name,
+    purchase_contract_id: form.purchase_contract_id,
+    related_sales_bill: form.related_sales_bill,
+    progress_info: form.progress_info,
+    payment_method: form.payment_method,
+  }
+  return `${form.notes || ''}${REQ_MARKER}${JSON.stringify(req)}`
+}
+
+function withRequirementMeta(item) {
+  const { memo, req } = splitNotes(item.notes)
+  return {
+    ...item,
+    notes: memo,
+    attribution_month: req.attribution_month || '',
+    original_client_name: req.original_client_name || '',
+    purchase_contract_id: req.purchase_contract_id || null,
+    related_sales_bill: req.related_sales_bill || '',
+    progress_info: req.progress_info || '',
+    payment_method: req.payment_method || '',
+  }
+}
+
+function toPayload() {
+  return {
+    bill_no: form.bill_no,
+    project_id: form.project_id,
+    vendor_name: form.vendor_name,
+    vendor_id: form.vendor_id,
+    bill_amount: form.bill_amount,
+    vat_amount: form.vat_amount,
+    total_amount: form.total_amount,
+    bill_date: form.bill_date,
+    due_date: form.due_date,
+    status: form.status,
+    notes: buildNotes(),
+  }
+}
+
 function onVendorSelect(value, option) { form.vendor_id = option.id ?? null }
 function onVendorChange(value) {
   const m = companies.value.find(c => c.company_name === value)
   form.vendor_id = m ? m.id : null
+}
+function onProjectChange(id) {
+  const p = projects.value.find(p => p.id === id)
+  form.original_client_name = p?.client_name || ''
+}
+function onContractChange(id, option) {
+  form.vendor_name = option?.vendor_name || form.vendor_name
+  form.vendor_id = option?.vendor_id ?? form.vendor_id
 }
 function calcVat()   { form.vat_amount = Math.round((form.bill_amount||0)*0.1); form.total_amount = (form.bill_amount||0) + form.vat_amount }
 function calcTotal() { form.total_amount = (form.bill_amount||0) + (form.vat_amount||0) }
@@ -201,28 +307,44 @@ function calcTotal() { form.total_amount = (form.bill_amount||0) + (form.vat_amo
 async function load() {
   loading.value = true
   try {
-    const [bills, proj, co] = await Promise.all([
+    const [bills, proj, co, pc] = await Promise.all([
       executionApi.getAPBills({ project_id: filterProject.value||undefined, status: filterStatus.value||undefined }),
       executionApi.getProjects(),
       masterApi.getCompanies(),
+      executionApi.getPurchaseContracts(),
     ])
-    items.value    = bills.data
+    items.value    = bills.data.map(withRequirementMeta)
     projects.value = proj.data
     companies.value = co.data
+    purchaseContracts.value = pc.data
   } finally { loading.value = false }
 }
 
 function openDrawer(item) {
   editItem.value = item
-  Object.assign(form, item ? { ...item } : emptyForm)
+  if (item) {
+    const { memo, req } = splitNotes(item.notes)
+    Object.assign(form, {
+      ...item,
+      notes: memo || '',
+      attribution_month: req.attribution_month || null,
+      original_client_name: req.original_client_name || '',
+      purchase_contract_id: req.purchase_contract_id || null,
+      related_sales_bill: req.related_sales_bill || '',
+      progress_info: req.progress_info || '',
+      payment_method: req.payment_method || '현금',
+    })
+  } else {
+    Object.assign(form, emptyForm)
+  }
   drawerOpen.value = true
 }
 
 async function handleSave() {
   try {
     saving.value = true
-    if (editItem.value) { await executionApi.updateAPBill(editItem.value.id, form); message.success('수정되었습니다.') }
-    else                { await executionApi.createAPBill(form); message.success('등록되었습니다.') }
+    if (editItem.value) { await executionApi.updateAPBill(editItem.value.id, toPayload()); message.success('수정되었습니다.') }
+    else                { await executionApi.createAPBill(toPayload()); message.success('등록되었습니다.') }
     drawerOpen.value = false; load()
   } catch (e) { message.error(e.response?.data?.detail || '오류') }
   finally { saving.value = false }

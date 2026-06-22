@@ -669,9 +669,9 @@ const staticLookups = {
     { code: 'P002', name: '영업 프로젝트' },
   ],
   companyCategory: [
-    { code: 'C01', name: '매출처' },
-    { code: 'C02', name: '매입처' },
-    { code: 'C03', name: '공통' },
+    { code: 'C01', name: '특수관계자' },
+    { code: 'C02', name: '대리점' },
+    { code: 'C03', name: '일반' },
   ],
   companyGrade: [
     { code: 'A', name: '우수' },

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["타임시트"])
 
-WORK_TYPES = ["설계", "시공", "감리", "PM", "영업", "관리", "기타"]
+WORK_TYPES = ["설계", "시공", "PM", "영업", "관리", "연차", "교육", "공통", "기타"]
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -31,7 +31,9 @@ def _entry_dict(e: TimesheetEntry) -> dict:
         "id": e.id, "sort_order": e.sort_order,
         "project_id":   e.project_id,
         "project_name": e.project_name or (e.project.project_name if e.project else None),
-        "work_type":    e.work_type,
+        "spg":          e.spg or "에너지",
+        "labor_type":   e.labor_type or "원가",
+        "work_type":    e.work_type or "기타",
         **{f"{d}_hours": float(getattr(e, f"{d}_hours") or 0) for d in DAYS},
         "row_total": total, "notes": e.notes,
     }
@@ -62,6 +64,8 @@ def _ts_dict(ts: Timesheet, include_entries=True) -> dict:
 class EntryIn(BaseModel):
     project_id:   Optional[int]  = None
     project_name: Optional[str]  = None
+    spg:          str             = "에너지"
+    labor_type:   str             = "원가"
     work_type:    str             = "기타"
     mon_hours:    Decimal         = Decimal(0)
     tue_hours:    Decimal         = Decimal(0)

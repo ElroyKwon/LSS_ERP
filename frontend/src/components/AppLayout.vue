@@ -29,59 +29,59 @@
         @openChange="onOpenChange"
       >
         <!-- 기초 -->
-        <a-sub-menu key="master">
+        <a-sub-menu key="master" v-if="canReadAny(['/master/companies', '/master/materials', '/master/overhead-rates'])">
           <template #icon><DatabaseOutlined /></template>
           <template #title>기초</template>
-          <a-menu-item key="/master/companies">거래처 관리</a-menu-item>
-          <a-menu-item key="/master/materials">자재 관리</a-menu-item>
-          <a-menu-item key="/master/overhead-rates">Factor 관리</a-menu-item>
+          <a-menu-item v-if="canRead('/master/companies')" key="/master/companies">거래처 관리</a-menu-item>
+          <a-menu-item v-if="canRead('/master/materials')" key="/master/materials">자재 관리</a-menu-item>
+          <a-menu-item v-if="canRead('/master/overhead-rates')" key="/master/overhead-rates">Factor 관리</a-menu-item>
         </a-sub-menu>
 
         <!-- 영업 -->
-        <a-sub-menu key="sales">
+        <a-sub-menu key="sales" v-if="canReadAny(['/sales/design', '/sales/estimates'])">
           <template #icon><ShopOutlined /></template>
           <template #title>영업</template>
-          <a-menu-item key="/sales/design">설계의뢰</a-menu-item>
-          <a-menu-item key="/sales/estimates">견적관리</a-menu-item>
+          <a-menu-item v-if="canRead('/sales/design')" key="/sales/design">설계의뢰</a-menu-item>
+          <a-menu-item v-if="canRead('/sales/estimates')" key="/sales/estimates">견적관리</a-menu-item>
         </a-sub-menu>
 
         <!-- 실행 -->
-        <a-sub-menu key="execution">
+        <a-sub-menu key="execution" v-if="canReadAny(['/execution/projects', '/execution/plans', '/execution/purchase', '/execution/release', '/execution/billing', '/execution/ap-billing'])">
           <template #icon><AppstoreOutlined /></template>
           <template #title>실행</template>
-          <a-menu-item key="/execution/projects">프로젝트 리스트</a-menu-item>
-          <a-menu-item key="/execution/plans">매출/투입 계획</a-menu-item>
-          <a-menu-item key="/execution/purchase">구매/계약</a-menu-item>
-          <a-menu-item key="/execution/release">출고 요청</a-menu-item>
-          <a-menu-item key="/execution/billing">매출 청구</a-menu-item>
-          <a-menu-item key="/execution/ap-billing">매입 청구</a-menu-item>
+          <a-menu-item v-if="canRead('/execution/projects')" key="/execution/projects">프로젝트 리스트</a-menu-item>
+          <a-menu-item v-if="canRead('/execution/plans')" key="/execution/plans">매출 투입 계획</a-menu-item>
+          <a-menu-item v-if="canRead('/execution/purchase')" key="/execution/purchase">구매/계약</a-menu-item>
+          <a-menu-item v-if="canRead('/execution/release')" key="/execution/release">출고 요청</a-menu-item>
+          <a-menu-item v-if="canRead('/execution/billing')" key="/execution/billing">매출 청구</a-menu-item>
+          <a-menu-item v-if="canRead('/execution/ap-billing')" key="/execution/ap-billing">매입 청구</a-menu-item>
         </a-sub-menu>
 
         <!-- 경영 -->
-        <a-sub-menu key="management">
+        <a-sub-menu key="management" v-if="canReadAny(['/management/budget', '/management/analysis', '/management/receivable', '/management/payable', '/management/profit-loss'])">
           <template #icon><FundOutlined /></template>
           <template #title>경영</template>
-          <a-menu-item key="/management/budget">예산관리</a-menu-item>
-          <a-menu-item key="/management/analysis">경영 분석</a-menu-item>
-          <a-menu-item key="/management/receivable">채권관리</a-menu-item>
-          <a-menu-item key="/management/payable">채무관리</a-menu-item>
-          <a-menu-item key="/management/profit-loss">손익계산서</a-menu-item>
+          <a-menu-item v-if="canRead('/management/budget')" key="/management/budget">예산관리</a-menu-item>
+          <a-menu-item v-if="canRead('/management/analysis')" key="/management/analysis">경영 분석</a-menu-item>
+          <a-menu-item v-if="canRead('/management/receivable')" key="/management/receivable">채권관리</a-menu-item>
+          <a-menu-item v-if="canRead('/management/payable')" key="/management/payable">채무관리</a-menu-item>
+          <a-menu-item v-if="canRead('/management/profit-loss')" key="/management/profit-loss">손익계산서</a-menu-item>
         </a-sub-menu>
 
         <!-- 타임시트 (단독) -->
-        <a-menu-item key="/timesheet">
+        <a-menu-item v-if="canRead('/timesheet')" key="/timesheet">
           <template #icon><ClockCircleOutlined /></template>
           타임시트
         </a-menu-item>
 
         <!-- 차량일지 (단독) -->
-        <a-menu-item key="/vehicle-log">
+        <a-menu-item v-if="canRead('/vehicle-log')" key="/vehicle-log">
           <template #icon><CarOutlined /></template>
           차량일지
         </a-menu-item>
 
-        <!-- 시스템 (관리자) -->
-        <a-sub-menu key="system" v-if="auth.isAdmin">
+        <!-- 설정 (관리자) -->
+        <a-sub-menu key="system" v-if="canReadAny(['/system/users', '/system/employees', '/system/departments'])">
           <template #icon>
             <!-- ① 접혔을 때: 아이콘에 뱃지 -->
             <a-badge v-if="collapsed && pendingCount > 0"
@@ -91,16 +91,22 @@
             <SettingOutlined v-else />
           </template>
           <template #title>
-            시스템
+            설정
             <!-- ② 펼쳐졌을 때 + 서브메뉴 닫혀있을 때: 타이틀에 뱃지 -->
             <a-badge v-if="!collapsed && pendingCount > 0 && !openKeys.includes('system')"
                      :count="pendingCount" style="margin-left:8px; vertical-align:middle" />
           </template>
           <!-- ③ 펼쳐졌을 때 + 서브메뉴 열렸을 때: 사용자 관리 항목에만 뱃지 -->
-          <a-menu-item key="/system/users">
+          <a-menu-item v-if="canRead('/system/users')" key="/system/users">
             <span>사용자 관리</span>
             <a-badge v-if="pendingCount > 0" :count="pendingCount"
                      style="margin-left:8px; vertical-align:middle" />
+          </a-menu-item>
+          <a-menu-item v-if="canRead('/system/employees')" key="/system/employees">
+            <span>사원관리</span>
+          </a-menu-item>
+          <a-menu-item v-if="canRead('/system/departments')" key="/system/departments">
+            <span>부서관리</span>
           </a-menu-item>
         </a-sub-menu>
       </a-menu>
@@ -161,6 +167,7 @@ import {
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api'
+import { canAccess } from '@/utils/permissions'
 
 const router = useRouter()
 const route = useRoute()
@@ -169,6 +176,9 @@ const collapsed = ref(false)
 const selectedKeys = ref([])
 const openKeys = ref([])
 const pendingCount = ref(0)
+
+const canRead = (path) => canAccess(auth.user?.role, path, 'R')
+const canReadAny = (paths) => paths.some(path => canRead(path))
 
 async function loadPendingCount() {
   if (!auth.isAdmin) return
@@ -193,7 +203,7 @@ const pageNames = {
   '/sales/design': '설계의뢰',
   '/sales/estimates': '견적관리',
   '/execution/projects': '프로젝트 리스트',
-  '/execution/plans': '매출/투입 계획',
+  '/execution/plans': '매출 투입 계획',
   '/execution/purchase': '구매/계약',
   '/execution/release': '출고 요청',
   '/execution/billing': '매출 청구',
@@ -206,6 +216,8 @@ const pageNames = {
   '/timesheet':   '타임시트',
   '/vehicle-log': '차량일지',
   '/system/users': '사용자 관리',
+  '/system/employees': '사원관리',
+  '/system/departments': '부서관리',
 }
 
 const sectionMap = {
@@ -215,7 +227,7 @@ const sectionMap = {
   '/management': '경영',
   '/timesheet':   '타임시트',
   '/vehicle-log': '차량일지',
-  '/system':      '시스템',
+  '/system':      '설정',
   '/dashboard': '홈',
 }
 

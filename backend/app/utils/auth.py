@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import settings
+from .permissions import is_system_admin, normalize_role
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -51,12 +52,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 
 def require_admin(current_user=Depends(get_current_user)):
-    if current_user.role not in ("admin",):
+    if not is_system_admin(current_user.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     return current_user
 
 
 def require_manager(current_user=Depends(get_current_user)):
-    if current_user.role not in ("admin", "manager"):
+    if normalize_role(current_user.role) not in ("system_admin", "sales_manager"):
         raise HTTPException(status_code=403, detail="매니저 이상 권한이 필요합니다.")
     return current_user

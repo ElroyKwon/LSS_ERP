@@ -34,6 +34,8 @@ class TimesheetEntry(Base):
     timesheet_id = Column(Integer, ForeignKey("timesheets.id", ondelete="CASCADE"))
     project_id   = Column(Integer, ForeignKey("projects.id"), nullable=True)
     project_name = Column(String(300))          # 직접 입력 (프로젝트 미연동 시)
+    spg          = Column(String(20), default="에너지")
+    labor_type   = Column(String(20), default="원가")
     work_type    = Column(String(50), default="기타")  # 설계/시공/감리/PM/관리/기타
     mon_hours    = Column(Numeric(4, 2), default=0)
     tue_hours    = Column(Numeric(4, 2), default=0)

@@ -108,6 +108,51 @@ MATERIAL_COLUMNS = {
 }
 
 
+EMPLOYEE_COLUMNS = {
+    "department_name": "VARCHAR(100)",
+    "job_title": "VARCHAR(50)",
+    "task": "VARCHAR(100)",
+    "wedding_anniversary": "DATE",
+    "home_address": "VARCHAR(200)",
+    "corporate_card_no": "VARCHAR(50)",
+}
+
+
+DEPARTMENT_COLUMNS = {
+    "parent_id": "INTEGER",
+    "org_year": "INTEGER",
+    "dept_type": "VARCHAR(20)",
+    "sort_order": "INTEGER DEFAULT 0",
+    "notes": "TEXT",
+    "updated_at": "TIMESTAMP",
+}
+
+
+TIMESHEET_ENTRY_COLUMNS = {
+    "spg": "VARCHAR(20)",
+    "labor_type": "VARCHAR(20)",
+}
+
+
+ACCOUNTS_RECEIVABLE_COLUMNS = {
+    "sales_bill_id": "INTEGER",
+    "project_id": "INTEGER",
+    "receivable_type": "VARCHAR(20) DEFAULT '외상매출금'",
+    "business_division": "VARCHAR(100)",
+    "job_no": "VARCHAR(30)",
+    "department": "VARCHAR(100)",
+    "client_name": "VARCHAR(200)",
+    "project_name": "VARCHAR(300)",
+    "sales_manager": "VARCHAR(100)",
+    "construction_manager": "VARCHAR(100)",
+    "collection_terms": "VARCHAR(200)",
+    "customer_class": "VARCHAR(30) DEFAULT '일반'",
+    "collection_date": "DATE",
+    "note_maturity_date": "DATE",
+    "note_issuer": "VARCHAR(200)",
+}
+
+
 def _ensure_columns(engine, table_name, columns):
     inspector = inspect(engine)
     if table_name not in inspector.get_table_names():
@@ -124,5 +169,12 @@ def _ensure_columns(engine, table_name, columns):
 
 
 def ensure_master_columns(engine):
+    _ensure_columns(engine, "departments", DEPARTMENT_COLUMNS)
     _ensure_columns(engine, "companies", COMPANY_COLUMNS)
     _ensure_columns(engine, "materials", MATERIAL_COLUMNS)
+    _ensure_columns(engine, "employees", EMPLOYEE_COLUMNS)
+    _ensure_columns(engine, "timesheet_entries", TIMESHEET_ENTRY_COLUMNS)
+
+
+def ensure_accounting_columns(engine):
+    _ensure_columns(engine, "accounts_receivable", ACCOUNTS_RECEIVABLE_COLUMNS)

@@ -1,7 +1,7 @@
 from .common import User, Department, AuditLog, UserRegistration
 from .master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
 from .sales import Estimate, EstimateItem, Contract, ContractChange, ProgressBilling, Collection, DesignRequest
-from .execution import Project, ProjectPlan, PurchaseContract, ReleaseRequest, SalesBill, APBill
+from .execution import Project, ProjectPlan, ProjectSalesPlanRow, ProjectBusinessCategory, ProjectPlanMeta, PurchaseContract, ReleaseRequest, SalesBill, APBill
 from .purchase import (PurchaseRequest, PurchaseRequestItem, PurchaseOrder, PurchaseOrderItem,
                        Receipt, ReceiptItem, Inventory, InventoryTransaction,
                        Subcontract, SubcontractBilling, LaborInput, Expense, CostInput)
@@ -18,7 +18,7 @@ __all__ = [
     "User", "Department", "AuditLog", "UserRegistration",
     "Company", "Site", "CostCode", "AccountCode", "Material", "UnitPrice", "Employee", "OverheadRate",
     "Estimate", "EstimateItem", "Contract", "ContractChange", "ProgressBilling", "Collection", "DesignRequest",
-    "Project", "ProjectPlan", "PurchaseContract", "ReleaseRequest", "SalesBill", "APBill",
+    "Project", "ProjectPlan", "ProjectSalesPlanRow", "ProjectBusinessCategory", "ProjectPlanMeta", "PurchaseContract", "ReleaseRequest", "SalesBill", "APBill",
     "PurchaseRequest", "PurchaseRequestItem", "PurchaseOrder", "PurchaseOrderItem",
     "Receipt", "ReceiptItem", "Inventory", "InventoryTransaction",
     "Subcontract", "SubcontractBilling", "LaborInput", "Expense", "CostInput",

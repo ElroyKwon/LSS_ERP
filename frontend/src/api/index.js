@@ -35,14 +35,17 @@ export const authApi = {
   checkUsername: (username) => api.get(`/auth/check-username/${username}`),
   getPendingCount: () => api.get('/auth/registrations/pending-count'),
   getRegistrations: (status) => api.get('/auth/registrations', { params: status ? { status } : {} }),
-  approveRegistration: (id) => api.patch(`/auth/registrations/${id}/approve`),
+  approveRegistration: (id, d) => api.patch(`/auth/registrations/${id}/approve`, d),
   rejectRegistration: (id, d) => api.patch(`/auth/registrations/${id}/reject`, d),
   deleteRegistration: (id) => api.delete(`/auth/registrations/${id}`),
 }
 
 // Master
 export const masterApi = {
-  getDepartments: () => api.get('/departments'),
+  getDepartments: (p) => api.get('/departments', { params: p }),
+  createDepartment: (d) => api.post('/departments', d),
+  updateDepartment: (id, d) => api.put(`/departments/${id}`, d),
+  deleteDepartment: (id) => api.delete(`/departments/${id}`),
   getUsers: () => api.get('/users'),
   createUser: (d) => api.post('/users', d),
   updateUser: (id, d) => api.put(`/users/${id}`, d),
@@ -79,6 +82,8 @@ export const masterApi = {
   getEmployees: (p) => api.get('/employees', { params: p }),
   createEmployee: (d) => api.post('/employees', d),
   updateEmployee: (id, d) => api.put(`/employees/${id}`, d),
+  setEmployeeActive: (id, isActive) => api.patch(`/employees/${id}/active`, { is_active: isActive }),
+  deleteEmployee: (id) => api.delete(`/employees/${id}`),
 
   getOverheadRates: () => api.get('/overhead-rates'),
   createOverheadRate: (d) => api.post('/overhead-rates', d),
@@ -176,6 +181,12 @@ export const executionApi = {
   // 매출/투입 계획
   getProjectPlans: (projectId, year) => api.get('/project-plans', { params: { project_id: projectId, plan_year: year } }),
   upsertProjectPlan: (d) => api.post('/project-plans', d),
+  getProjectPlanMeta: (projectId, year) => api.get('/project-plan-meta', { params: { project_id: projectId, plan_year: year } }),
+  saveProjectPlanMeta: (d) => api.post('/project-plan-meta', d),
+  getProjectBusinessCategories: () => api.get('/project-business-categories'),
+  saveProjectBusinessCategories: (categories) => api.post('/project-business-categories', { categories }),
+  getProjectSalesPlans: (year) => api.get('/project-sales-plans', { params: { plan_year: year } }),
+  saveProjectSalesPlans: (year, rows) => api.post('/project-sales-plans/bulk', { plan_year: year, rows }),
 
   // 구매/계약
   getPurchaseContracts: (p) => api.get('/purchase-contracts', { params: p }),
@@ -193,6 +204,7 @@ export const executionApi = {
   getSalesBills: (p) => api.get('/sales-bills', { params: p }),
   createSalesBill: (d) => api.post('/sales-bills', d),
   updateSalesBill: (id, d) => api.put(`/sales-bills/${id}`, d),
+  approveSalesBill: (id) => api.patch(`/sales-bills/${id}/approve`),
   deleteSalesBill: (id) => api.delete(`/sales-bills/${id}`),
 
   // 매입 청구
@@ -235,6 +247,8 @@ export const managementApi = {
   getDeptList: (year) => api.get('/dept-budgets/departments', { params: { budget_year: year } }),
   getAnalysis: (year) => api.get('/management/analysis', { params: { year } }),
   getReceivables: () => api.get('/management/receivables'),
+  createReceivable: (d) => api.post('/management/receivables', d),
+  updateReceivable: (id, d) => api.put(`/management/receivables/${id}`, d),
   getPayables: () => api.get('/management/payables'),
   getPLReport: (year, month) => api.get('/reports/profit-loss', { params: { year, month } }),
 }

@@ -3,16 +3,16 @@ const path = require('path')
 const fs = require('fs')
 
 const root = __dirname
-const outDir = path.join(root, 'dist')
+const outDir = 'dist'
 
 async function run() {
   const { build } = await import('vite')
-  await build({ root, build: { outDir } })
+  await build({ root, build: { outDir, emptyOutDir: true } })
 }
 
 run()
   .then(() => {
-    const ok = fs.existsSync(path.join(outDir, 'index.html'))
+    const ok = fs.existsSync(path.join(root, outDir, 'index.html'))
     console.log(ok ? '\nBuild complete' : '\nBuild output missing')
     process.exitCode = ok ? 0 : 1
     // Force-flush stdout before the process might crash on Rollup cleanup

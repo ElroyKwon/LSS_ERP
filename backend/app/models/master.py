@@ -128,8 +128,8 @@ class CostCode(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
 
-    parent = relationship("CostCode", remote_side="CostCode.id")
-    children = relationship("CostCode", foreign_keys=[parent_id])
+    parent = relationship("CostCode", remote_side="CostCode.id", back_populates="children")
+    children = relationship("CostCode", back_populates="parent")
 
 
 class AccountCode(Base):
@@ -220,13 +220,19 @@ class Employee(Base):
     emp_code = Column(String(20), unique=True, nullable=False)
     name = Column(String(50), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"))
+    department_name = Column(String(100))
     position = Column(String(50))
+    job_title = Column(String(50))
+    task = Column(String(100))
     emp_type = Column(String(20), default="regular")
     hire_date = Column(Date)
     resign_date = Column(Date)
     birth_date = Column(Date)
+    wedding_anniversary = Column(Date)
     phone = Column(String(20))
     email = Column(String(150))
+    home_address = Column(String(200))
+    corporate_card_no = Column(String(50))
     bank_name = Column(String(50))
     bank_account = Column(String(50))
     daily_wage = Column(Numeric(12, 2), default=0)

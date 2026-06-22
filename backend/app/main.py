@@ -2,12 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import os
 
 from .config import settings
 from .database import engine, Base
 from .models import *  # noqa: register all models
-from .utils.schema import ensure_master_columns
+from .utils.schema import ensure_accounting_columns, ensure_master_columns
 
 from .routers import auth, master, sales, purchase, accounting, forecast, budget, execution, management, timesheet, vehicle
 
@@ -16,6 +17,7 @@ from .routers import auth, master, sales, purchase, accounting, forecast, budget
 if settings.AUTO_CREATE_SCHEMA:
     Base.metadata.create_all(bind=engine)
     ensure_master_columns(engine)
+    ensure_accounting_columns(engine)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -51,9 +53,35 @@ FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__f
 
 class NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            fallback = self._find_current_hashed_asset(path)
+            if not fallback:
+                raise
+            response = FileResponse(fallback)
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    def _find_current_hashed_asset(self, path):
+        name = os.path.basename(path)
+        stem, ext = os.path.splitext(name)
+        if "-" not in stem or not ext:
+            return None
+        chunk_name = stem.rsplit("-", 1)[0]
+        try:
+            candidates = [
+                os.path.join(self.directory, f)
+                for f in os.listdir(self.directory)
+                if f.startswith(f"{chunk_name}-") and f.endswith(ext)
+            ]
+        except OSError:
+            return None
+        if not candidates:
+            return None
+        return max(candidates, key=os.path.getmtime)
 
 
 if os.path.exists(FRONTEND_DIST):

@@ -1,199 +1,255 @@
 <template>
   <div class="page-wrap">
-
-    <!-- Aging 요약 카드 -->
     <a-row :gutter="16">
-      <a-col :flex="1" v-for="s in agingCards" :key="s.key">
-        <a-card :bordered="false" class="stat-card" :class="s.cls">
+      <a-col :flex="1" v-for="card in statCards" :key="card.key">
+        <a-card :bordered="false" class="stat-card" :class="card.cls">
           <div class="stat-inner">
             <div>
-              <div class="stat-label">{{ s.label }}</div>
-              <div class="stat-value" :style="`color:${s.color}`">{{ s.value }}<span class="stat-unit">백만</span></div>
-              <div class="stat-sub">{{ s.sub }}</div>
+              <div class="stat-label">{{ card.label }}</div>
+              <div class="stat-value" :style="`color:${card.color}`">
+                {{ card.value }}<span class="stat-unit">{{ card.unit || '원' }}</span>
+              </div>
             </div>
           </div>
         </a-card>
       </a-col>
     </a-row>
 
-    <!-- 채권 목록 -->
     <a-card :bordered="false" class="table-card">
-      <template #title><span class="card-title">채권 현황 (미수금 내역)</span></template>
+      <template #title><span class="card-title">채권관리</span></template>
       <template #extra>
         <a-space>
-          <a-select v-model:value="filterAging" allow-clear placeholder="연령 필터" style="width:130px" @change="applyFilter">
-            <a-select-option value="current">정상 (기한내)</a-select-option>
-            <a-select-option value="d30">30일 이하 연체</a-select-option>
-            <a-select-option value="d60">31-60일 연체</a-select-option>
-            <a-select-option value="d90">61-90일 연체</a-select-option>
-            <a-select-option value="over90">90일 초과</a-select-option>
-          </a-select>
-          <a-button :loading="loading" @click="load" size="small">
+          <a-button :loading="loading" @click="load">
             <template #icon><ReloadOutlined /></template>새로고침
+          </a-button>
+          <a-button type="primary" :loading="adding" @click="addRow">
+            <template #icon><PlusOutlined /></template>행 추가
           </a-button>
         </a-space>
       </template>
 
-      <a-table :columns="columns" :data-source="displayItems" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 900 }">
+      <a-table
+        :columns="columns"
+        :data-source="items"
+        :loading="loading"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        row-key="id"
+        size="middle"
+        :scroll="{ x: 2740 }"
+      >
         <template #bodyCell="{ column, record }">
-          <template v-if="['billing_amount','collected_amount','outstanding_amount'].includes(column.key)">
-            {{ Number(record[column.key]).toLocaleString() }}
+          <template v-if="column.key === 'receivable_type'">
+            <a-select v-model:value="record.receivable_type" class="cell-control" @change="saveInline(record)">
+              <a-select-option v-for="type in RECEIVABLE_TYPES" :key="type" :value="type">{{ type }}</a-select-option>
+            </a-select>
           </template>
-          <template v-if="column.key === 'overdue_days'">
-            <span v-if="record.overdue_days === 0" style="color:#52c41a">정상</span>
-            <span v-else-if="record.overdue_days <= 30" style="color:#fa8c16">{{ record.overdue_days }}일</span>
-            <span v-else-if="record.overdue_days <= 90" style="color:#f5222d;font-weight:600">{{ record.overdue_days }}일</span>
-            <span v-else style="color:#f5222d;font-weight:700">{{ record.overdue_days }}일 ⚠</span>
+          <template v-else-if="isManualRow(record) && TEXT_FIELDS.includes(column.dataIndex)">
+            <a-input v-model:value="record[column.dataIndex]" class="cell-control" @blur="saveInline(record)" @pressEnter="saveInline(record)" />
           </template>
-          <template v-if="column.key === 'status'">
-            <a-tag :color="record.status === 'partial' ? 'orange' : 'red'">
-              {{ record.status === 'partial' ? '부분수금' : '미수금' }}
-            </a-tag>
+          <template v-else-if="column.key === 'due_date'">
+            <a-date-picker v-model:value="record.due_date" class="cell-control" value-format="YYYY-MM-DD" @change="saveInline(record)" />
+          </template>
+          <template v-else-if="isManualRow(record) && column.key === 'sales_date'">
+            <a-date-picker v-model:value="record.sales_date" class="cell-control" value-format="YYYY-MM-DD" @change="saveInline(record)" />
+          </template>
+          <template v-else-if="isManualRow(record) && column.key === 'amount'">
+            <a-input-number v-model:value="record.amount" class="cell-control" :min="0" :formatter="formatInputAmount" :parser="parseAmount" @blur="saveInline(record)" @pressEnter="saveInline(record)" />
+          </template>
+          <template v-else-if="column.key === 'amount' || column.key === 'bad_debt_allowance'">
+            {{ formatAmount(record[column.key]) }}
+          </template>
+          <template v-else-if="column.key === 'age_months'">
+            {{ record.due_date ? record.age_months : '-' }}
+          </template>
+          <template v-else-if="column.key === 'bad_debt_rate'">
+            {{ Number(record.bad_debt_rate || 0) * 100 }}%
+          </template>
+          <template v-else-if="column.key === 'customer_class'">
+            <a-select v-model:value="record.customer_class" class="cell-control" @change="saveInline(record)">
+              <a-select-option v-for="type in CUSTOMER_CLASSES" :key="type" :value="type">{{ type }}</a-select-option>
+            </a-select>
+          </template>
+          <template v-else-if="column.key === 'collection_date'">
+            <a-date-picker v-model:value="record.collection_date" class="cell-control" value-format="YYYY-MM-DD" @change="saveInline(record)" />
+          </template>
+          <template v-else-if="column.key === 'note_maturity_date'">
+            <a-date-picker v-model:value="record.note_maturity_date" class="cell-control" value-format="YYYY-MM-DD" @change="saveInline(record)" />
+          </template>
+          <template v-else-if="column.key === 'note_issuer'">
+            <a-input v-model:value="record.note_issuer" class="cell-control" @blur="saveInline(record)" @pressEnter="saveInline(record)" />
           </template>
         </template>
       </a-table>
-    </a-card>
-
-    <!-- Aging 시각화 -->
-    <a-card :bordered="false" class="dash-card" title="연령별 미수금 현황">
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <v-chart v-if="hasData" :option="agingChartOption" style="height:260px" autoresize />
-          <a-empty v-else description="미수금 데이터가 없습니다." style="padding:60px 0" />
-        </a-col>
-        <a-col :span="12">
-          <div class="aging-table">
-            <div class="aging-row header">
-              <span>구분</span><span>금액 (백만)</span><span>비율</span>
-            </div>
-            <div class="aging-row" v-for="a in agingRows" :key="a.key" :class="`aging-${a.key}`">
-              <span>{{ a.label }}</span>
-              <span>{{ fmtM(a.amount) }}</span>
-              <span>{{ a.pct }}%</span>
-            </div>
-          </div>
-        </a-col>
-      </a-row>
     </a-card>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { PieChart } from 'echarts/charts'
-import { TooltipComponent, LegendComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { managementApi } from '@/api'
 
-use([PieChart, TooltipComponent, LegendComponent, CanvasRenderer])
+const RECEIVABLE_TYPES = ['외상매출금', '받을어음']
+const CUSTOMER_CLASSES = ['특수관계자', '대리점', '일반']
+const TEXT_FIELDS = [
+  'business_division',
+  'job_no',
+  'department',
+  'client_name',
+  'project_name',
+  'sales_manager',
+  'construction_manager',
+  'collection_terms',
+]
 
-const loading = ref(false), filterAging = ref(null)
-const data = ref({ items: [], aging: {}, total_outstanding: 0 })
+const loading = ref(false)
+const adding = ref(false)
+const items = ref([])
 
-const items = computed(() => data.value?.items || [])
-const aging = computed(() => data.value?.aging || {})
-const fmtM = v => Math.round(v / 1_000_000).toLocaleString()
-
-const displayItems = computed(() => {
-  if (!filterAging.value) return items.value
-  return items.value.filter(r => {
-    const d = r.overdue_days
-    if (filterAging.value === 'current') return d === 0
-    if (filterAging.value === 'd30')     return d > 0 && d <= 30
-    if (filterAging.value === 'd60')     return d > 30 && d <= 60
-    if (filterAging.value === 'd90')     return d > 60 && d <= 90
-    if (filterAging.value === 'over90')  return d > 90
-    return true
-  })
-})
-
-function applyFilter() {} // reactive computed handles it
-
-const agingLabels = {
-  current: { label: '정상 (기한내)', color: '#52c41a', cls: '' },
-  d30:     { label: '~30일 연체',   color: '#fa8c16', cls: 'stat-orange' },
-  d60:     { label: '31~60일',      color: '#ff7a45', cls: 'stat-orange' },
-  d90:     { label: '61~90일',      color: '#f5222d', cls: 'stat-red' },
-  over90:  { label: '90일 초과',    color: '#820014', cls: 'stat-red' },
+const emptyForm = {
+  receivable_type: '외상매출금',
+  business_division: '',
+  job_no: '',
+  department: '',
+  client_name: '',
+  project_name: '',
+  sales_manager: '',
+  construction_manager: '',
+  collection_terms: '',
+  due_date: null,
+  sales_date: null,
+  amount: null,
+  customer_class: '일반',
+  collection_date: null,
+  note_maturity_date: null,
+  note_issuer: '',
 }
+const columns = [
+  { title: '구분', key: 'receivable_type', dataIndex: 'receivable_type', width: 130, align: 'center' },
+  { title: '사업부', dataIndex: 'business_division', width: 150, align: 'center', ellipsis: true },
+  { title: 'JOB NO', dataIndex: 'job_no', width: 120, align: 'center' },
+  { title: '부서', dataIndex: 'department', width: 140, align: 'center', ellipsis: true },
+  { title: '거래처명', dataIndex: 'client_name', width: 180, align: 'center', ellipsis: true },
+  { title: '프로젝트명', dataIndex: 'project_name', width: 220, align: 'center', ellipsis: true },
+  { title: '영업담당자', dataIndex: 'sales_manager', width: 110, align: 'center' },
+  { title: '공사담당자', dataIndex: 'construction_manager', width: 110, align: 'center' },
+  { title: '수금조건', dataIndex: 'collection_terms', width: 180, align: 'center', ellipsis: true },
+  { title: '수금예정일', key: 'due_date', dataIndex: 'due_date', width: 145, align: 'center' },
+  { title: '매출일', key: 'sales_date', dataIndex: 'sales_date', width: 110, align: 'center' },
+  { title: '금액', key: 'amount', dataIndex: 'amount', width: 140, align: 'right' },
+  { title: '월령(수금예정일)', key: 'age_months', dataIndex: 'age_months', width: 145, align: 'center' },
+  { title: '대손율', key: 'bad_debt_rate', dataIndex: 'bad_debt_rate', width: 90, align: 'center' },
+  { title: '대손충당금', key: 'bad_debt_allowance', dataIndex: 'bad_debt_allowance', width: 140, align: 'right' },
+  { title: '거래처 분류', key: 'customer_class', dataIndex: 'customer_class', width: 135, align: 'center' },
+  { title: '수금일', key: 'collection_date', dataIndex: 'collection_date', width: 145, align: 'center' },
+  { title: '어음 만기일', key: 'note_maturity_date', dataIndex: 'note_maturity_date', width: 145, align: 'center' },
+  { title: '어음 발행인', key: 'note_issuer', dataIndex: 'note_issuer', width: 160, align: 'center' },
+]
 
-const agingCards = computed(() => {
-  const total = Object.values(aging.value).reduce((s, v) => s + v, 0)
+const statCards = computed(() => {
+  const total = items.value.reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  const outstanding = items.value.reduce((sum, row) => sum + Number(row.outstanding_amount || 0), 0)
+  const allowance = items.value.reduce((sum, row) => sum + Number(row.bad_debt_allowance || 0), 0)
+  const collected = items.value.filter(row => row.collection_date).length
   return [
-    { key: 'total',  label: '총 미수금',    value: fmtM(total || 0),                  color: '#1a2535', cls: '', sub: '전체' },
-    { key: 'current',label: '정상 (기한내)', value: fmtM(aging.value.current || 0),    color: '#52c41a', cls: 'stat-green', sub: '아직 기한 내' },
-    { key: 'd30',    label: '~30일 연체',   value: fmtM(aging.value.d30 || 0),        color: '#fa8c16', cls: 'stat-orange', sub: '30일 이하' },
-    { key: 'over90', label: '90일 초과',    value: fmtM((aging.value.d90 || 0) + (aging.value.over90 || 0)), color: '#f5222d', cls: 'stat-red', sub: '대손 위험' },
+    { key: 'total', label: '채권 합계', value: formatAmount(total), color: '#1677ff', cls: 'stat-blue' },
+    { key: 'outstanding', label: '미수금', value: formatAmount(outstanding), color: '#fa8c16', cls: 'stat-orange' },
+    { key: 'allowance', label: '대손충당금', value: formatAmount(allowance), color: '#f5222d', cls: 'stat-red' },
+    { key: 'collected', label: '수금완료', value: collected.toLocaleString(), color: '#52c41a', cls: 'stat-green', unit: '건' },
   ]
 })
 
-const agingRows = computed(() => {
-  const total = Object.values(aging.value).reduce((s, v) => s + v, 0) || 1
-  return Object.entries(agingLabels).map(([k, meta]) => ({
-    key: k, label: meta.label, amount: aging.value[k] || 0,
-    pct: Math.round((aging.value[k] || 0) / total * 100),
-  }))
-})
+function formatAmount(value) {
+  return Number(value || 0).toLocaleString()
+}
 
-const hasData = computed(() => Object.values(aging.value).some(v => v > 0))
+function formatInputAmount(value) {
+  if (value === null || value === undefined || value === '') return ''
+  return `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
 
-const agingChartOption = computed(() => ({
-  tooltip: { trigger: 'item', formatter: p => `${p.name}: ${fmtM(p.value)}백만 (${p.percent}%)` },
-  legend: { bottom: 0, textStyle: { fontSize: 11 } },
-  series: [{
-    type: 'pie', radius: ['40%', '65%'], center: ['50%', '45%'],
-    label: { show: false },
-    data: [
-      { value: aging.value.current || 0, name: '정상',      itemStyle: { color: '#52c41a' } },
-      { value: aging.value.d30     || 0, name: '~30일',     itemStyle: { color: '#fa8c16' } },
-      { value: aging.value.d60     || 0, name: '31~60일',   itemStyle: { color: '#ff7a45' } },
-      { value: aging.value.d90     || 0, name: '61~90일',   itemStyle: { color: '#f5222d' } },
-      { value: aging.value.over90  || 0, name: '90일초과',  itemStyle: { color: '#820014' } },
-    ],
-  }],
-}))
+function parseAmount(value) {
+  return String(value || '').replace(/,/g, '')
+}
 
-const columns = [
-  { title: '청구ID',   dataIndex: 'billing_id',        width: 90,  align: 'center' },
-  { title: '청구일',   dataIndex: 'issue_date',         width: 110, align: 'center' },
-  { title: '만기일',   dataIndex: 'due_date',           width: 110, align: 'center' },
-  { title: '청구금액', key: 'billing_amount',           width: 130, align: 'right' },
-  { title: '수금금액', key: 'collected_amount',         width: 130, align: 'right' },
-  { title: '미수금',   key: 'outstanding_amount',       width: 130, align: 'right' },
-  { title: '경과일수', key: 'overdue_days',             width: 90,  align: 'center' },
-  { title: '상태',     key: 'status',                   width: 90,  align: 'center' },
-]
+function toPayload(row) {
+  return {
+    receivable_type: row.receivable_type || '외상매출금',
+    business_division: row.business_division || '',
+    job_no: row.job_no || '',
+    department: row.department || '',
+    client_name: row.client_name || '',
+    project_name: row.project_name || '',
+    sales_manager: row.sales_manager || '',
+    construction_manager: row.construction_manager || '',
+    collection_terms: row.collection_terms || '',
+    due_date: row.due_date || null,
+    sales_date: row.sales_date || null,
+    amount: Number(row.amount || 0),
+    customer_class: row.customer_class || '일반',
+    collection_date: row.collection_date || null,
+    note_maturity_date: row.note_maturity_date || null,
+    note_issuer: row.note_issuer || '',
+    notes: row.notes || '',
+  }
+}
+
+function isManualRow(row) {
+  return !row.sales_bill_id && !row.billing_id
+}
 
 async function load() {
   loading.value = true
-  try { data.value = (await managementApi.getReceivables()).data }
-  finally { loading.value = false }
+  try {
+    const res = await managementApi.getReceivables()
+    items.value = res.data?.items || []
+  } finally {
+    loading.value = false
+  }
+}
+
+async function saveInline(row) {
+  if (!row.id) return
+  try {
+    const res = await managementApi.updateReceivable(row.id, toPayload(row))
+    Object.assign(row, res.data)
+  } catch (e) {
+    message.error(e.response?.data?.detail || '채권 정보 저장 오류')
+    load()
+  }
+}
+
+async function addRow() {
+  adding.value = true
+  try {
+    const res = await managementApi.createReceivable(toPayload(emptyForm))
+    items.value = [res.data, ...items.value]
+    message.success('테이블에 채권 행이 추가되었습니다.')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '채권 행 추가 오류')
+  } finally {
+    adding.value = false
+  }
 }
 
 onMounted(load)
 </script>
 
 <style scoped>
-.page-wrap { display: flex; flex-direction: column; gap: 16px; }
-.stat-card   { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }
-.stat-green  { border-left-color: #52c41a; } .stat-orange { border-left-color: #fa8c16; }
-.stat-red    { border-left-color: #f5222d; }
-.stat-inner  { display: flex; align-items: center; }
-.stat-label  { font-size: 12px; color: #8c8c8c; margin-bottom: 2px; }
-.stat-value  { font-size: 22px; font-weight: 700; color: #1a2535; line-height: 1.2; }
-.stat-unit   { font-size: 11px; font-weight: 400; margin-left: 2px; color: #8c8c8c; }
-.stat-sub    { font-size: 11px; color: #bfbfbf; margin-top: 2px; }
-.table-card, .dash-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-.card-title  { font-size: 15px; font-weight: 600; color: #1a2535; }
-.aging-table { border: 1px solid #f0f0f0; border-radius: 6px; overflow: hidden; }
-.aging-row   { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
-.aging-row.header { background: #fafafa; font-weight: 600; color: #595959; }
-.aging-row.over90 { color: #f5222d; }
-:deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
-:deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
+.page-wrap { display:flex; flex-direction:column; gap:16px; }
+.stat-card { border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.07); border-left:4px solid #e0e0e0; }
+.stat-blue { border-left-color:#1677ff; }
+.stat-green { border-left-color:#52c41a; }
+.stat-orange { border-left-color:#fa8c16; }
+.stat-red { border-left-color:#f5222d; }
+.stat-inner { display:flex; align-items:center; min-height:58px; }
+.stat-label { font-size:12px; color:#8c8c8c; margin-bottom:4px; }
+.stat-value { font-size:22px; font-weight:700; color:#1a2535; line-height:1.2; }
+.stat-unit { font-size:12px; font-weight:400; margin-left:3px; color:#8c8c8c; }
+.table-card { border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.07); }
+.card-title { font-size:15px; font-weight:600; color:#1a2535; }
+.cell-control { width:100%; }
+:deep(.ant-table-thead > tr > th) { text-align:center !important; background:#fafafa; }
+:deep(.ant-card-head) { border-bottom:1px solid #f0f0f0; min-height:52px; }
 </style>

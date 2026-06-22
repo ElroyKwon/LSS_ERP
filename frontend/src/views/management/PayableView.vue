@@ -35,10 +35,10 @@
 
       <a-table :columns="columns" :data-source="displayItems" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 900 }"
+               row-key="id" size="middle" :scroll="{ x: 1500 }"
                :row-class-name="r => r.overdue ? 'row-overdue' : ''">
         <template #bodyCell="{ column, record }">
-          <template v-if="['total_amount','paid_amount','outstanding_amount'].includes(column.key)">
+          <template v-if="['total_amount','paid_amount','outstanding_amount','contract_amount_vat','cash_paid_amount','note_issued_amount','payment_amount'].includes(column.key)">
             {{ Number(record[column.key]).toLocaleString() }}
           </template>
           <template v-if="column.key === 'days_left'">
@@ -89,13 +89,30 @@ const items   = computed(() => data.value?.items   || [])
 const summary = computed(() => data.value?.summary || {})
 const fmtM = v => Math.round(v / 1_000_000).toLocaleString()
 
+const enrichedItems = computed(() => items.value.map(r => {
+  const payment_method = r.payment_method || '현금'
+  const paid = Number(r.paid_amount) || 0
+  return {
+    ...r,
+    payable_type: r.payable_type || '매입 청구 승인시 생성',
+    purchase_type: r.purchase_type || '자재',
+    subcontract_flag: r.subcontract_flag || '하도급',
+    payment_method,
+    contract_amount_vat: Math.round((Number(r.total_amount) || 0) * 1.1),
+    cash_paid_amount: payment_method.includes('현금') ? paid : 0,
+    note_issued_amount: payment_method.includes('어음') ? paid : 0,
+    payment_amount: paid,
+    remaining_amount: Number(r.outstanding_amount) || 0,
+  }
+}))
+
 const displayItems = computed(() => {
   const r = filterRange.value
-  if (r === 'all')     return items.value
-  if (r === 'overdue') return items.value.filter(i => i.overdue)
-  if (r === 'd30')     return items.value.filter(i => !i.overdue && i.days_left != null && i.days_left <= 30)
-  if (r === 'd60')     return items.value.filter(i => !i.overdue && i.days_left != null && i.days_left <= 60)
-  return items.value
+  if (r === 'all')     return enrichedItems.value
+  if (r === 'overdue') return enrichedItems.value.filter(i => i.overdue)
+  if (r === 'd30')     return enrichedItems.value.filter(i => !i.overdue && i.days_left != null && i.days_left <= 30)
+  if (r === 'd60')     return enrichedItems.value.filter(i => !i.overdue && i.days_left != null && i.days_left <= 60)
+  return enrichedItems.value
 })
 function applyFilter() {}
 
@@ -141,9 +158,16 @@ const scheduleOption = computed(() => ({
 }))
 
 const columns = [
+  { title: '구분',     dataIndex: 'payable_type',       width: 150, align: 'center' },
+  { title: '매입구분', dataIndex: 'purchase_type',      width: 90,  align: 'center' },
+  { title: '하도급',   dataIndex: 'subcontract_flag',   width: 90,  align: 'center' },
   { title: '청구일',   dataIndex: 'issue_date',        width: 110, align: 'center' },
   { title: '지급기한', dataIndex: 'due_date',           width: 110, align: 'center' },
   { title: '청구금액', key: 'total_amount',             width: 130, align: 'right' },
+  { title: '계약금액(VAT포함)', key: 'contract_amount_vat', width: 150, align: 'right' },
+  { title: '지급구분', dataIndex: 'payment_method',     width: 105, align: 'center' },
+  { title: '현금지급액', key: 'cash_paid_amount',       width: 130, align: 'right' },
+  { title: '어음발행금액', key: 'note_issued_amount',   width: 130, align: 'right' },
   { title: '지급금액', key: 'paid_amount',              width: 130, align: 'right' },
   { title: '미지급',   key: 'outstanding_amount',       width: 130, align: 'right' },
   { title: 'D-Day',    key: 'days_left',                width: 100, align: 'center' },

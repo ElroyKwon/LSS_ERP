@@ -74,13 +74,7 @@
           <template v-if="column.key === 'action'">
             <template v-if="record.status === 'pending'">
               <a-space size="small">
-                <a-popconfirm
-                  title="이 신청을 승인하시겠습니까?"
-                  ok-text="승인" cancel-text="취소"
-                  @confirm="handleApprove(record)"
-                >
-                  <a-button type="primary" size="small">승인</a-button>
-                </a-popconfirm>
+                <a-button type="primary" size="small" @click="openApproveModal(record)">승인</a-button>
                 <a-button size="small" danger @click="openRejectModal(record)">거절</a-button>
               </a-space>
             </template>
@@ -108,6 +102,20 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 가입 승인 권한 지정 모달 -->
+    <a-modal v-model:open="approveOpen" title="가입 승인" width="440px"
+             @ok="handleApprove" :confirm-loading="approving"
+             ok-text="권한 부여 후 승인" cancel-text="취소">
+      <div style="margin: 16px 0 12px">
+        <strong>{{ approveTarget?.name }}</strong> ({{ approveTarget?.username }}) 님에게 부여할 권한을 선택하세요.
+      </div>
+      <a-form layout="vertical">
+        <a-form-item label="권한" required>
+          <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -115,6 +123,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { authApi } from '@/api'
+import { ROLE_OPTIONS } from '@/utils/permissions'
 import {
   TeamOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
 } from '@ant-design/icons-vue'
@@ -126,6 +135,11 @@ const rejectOpen = ref(false)
 const rejecting = ref(false)
 const rejectTarget = ref(null)
 const rejectReason = ref('')
+const approveOpen = ref(false)
+const approving = ref(false)
+const approveTarget = ref(null)
+const approveRole = ref('sales_staff')
+const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
 
 const statusColor = { pending: 'orange', approved: 'green', rejected: 'red' }
 const statusLabel = { pending: '대기', approved: '승인', rejected: '거절' }
@@ -158,14 +172,26 @@ async function load() {
   } finally { loading.value = false }
 }
 
-async function handleApprove(record) {
+function openApproveModal(record) {
+  approveTarget.value = record
+  approveRole.value = 'sales_staff'
+  approveOpen.value = true
+}
+
+async function handleApprove() {
+  if (!approveRole.value) {
+    message.warning('권한을 선택하세요.')
+    return
+  }
+  approving.value = true
   try {
-    await authApi.approveRegistration(record.id)
-    message.success(`${record.name} 님의 가입이 승인되었습니다.`)
+    await authApi.approveRegistration(approveTarget.value.id, { role: approveRole.value })
+    message.success(`${approveTarget.value.name} 님의 가입이 승인되었습니다.`)
+    approveOpen.value = false
     load()
   } catch (e) {
     message.error(e.response?.data?.detail || '승인 중 오류가 발생했습니다.')
-  }
+  } finally { approving.value = false }
 }
 
 function openRejectModal(record) {

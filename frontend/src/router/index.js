@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
+import { canAccess } from '@/utils/permissions'
 
 const routes = [
   { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
@@ -40,12 +41,13 @@ const routes = [
 
       // 시스템
       { path: 'system/users', component: () => import('@/views/system/UsersView.vue') },
+      { path: 'system/employees', component: () => import('@/views/system/EmployeeSettingsView.vue') },
+      { path: 'system/departments', component: () => import('@/views/system/DepartmentSettingsView.vue') },
 
       // 기존 경로 유지
       { path: 'master/sites', component: () => import('@/views/master/SitesView.vue') },
       { path: 'master/cost-codes', component: () => import('@/views/master/CostCodesView.vue') },
       { path: 'master/unit-prices', component: () => import('@/views/master/UnitPricesView.vue') },
-      { path: 'master/employees', component: () => import('@/views/master/EmployeesView.vue') },
       { path: 'sales/contracts', component: () => import('@/views/sales/ContractsView.vue') },
       { path: 'sales/billings', component: () => import('@/views/sales/BillingsView.vue') },
       { path: 'sales/collections', component: () => import('@/views/sales/CollectionsView.vue') },
@@ -83,6 +85,7 @@ router.beforeEach(async (to) => {
   if (!auth.user) {
     try { await auth.fetchMe() } catch { return '/login' }
   }
+  if (!canAccess(auth.user?.role, to.path, 'R')) return '/dashboard'
   return true
 })
 

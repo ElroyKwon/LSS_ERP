@@ -5,6 +5,7 @@ from datetime import datetime
 from ..database import get_db
 from ..models.common import User, UserRegistration
 from ..utils.auth import verify_password, create_access_token, get_current_user, hash_password
+from ..utils.permissions import ROLE_OPTIONS, is_system_admin, normalize_role, validate_role
 from ..utils import to_kst
 from pydantic import BaseModel
 from typing import Optional
@@ -40,7 +41,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             "id": user.id,
             "username": user.username,
             "name": user.name,
-            "role": user.role,
+            "role": normalize_role(user.role),
             "email": user.email,
         },
     }
@@ -52,9 +53,10 @@ def get_me(current_user: User = Depends(get_current_user)):
         "id": current_user.id,
         "username": current_user.username,
         "name": current_user.name,
-        "role": current_user.role,
+        "role": normalize_role(current_user.role),
         "email": current_user.email,
         "position": current_user.position,
+        "role_options": ROLE_OPTIONS,
     }
 
 
@@ -82,6 +84,10 @@ class RegistrationCreate(BaseModel):
 
 class RejectRequest(BaseModel):
     rejection_reason: Optional[str] = None
+
+
+class ApproveRegistrationRequest(BaseModel):
+    role: str
 
 
 def _reg_dict(r):
@@ -140,7 +146,7 @@ def check_username(username: str, db: Session = Depends(get_db)):
 
 @router.get("/registrations/pending-count")
 def pending_count(db: Session = Depends(get_db), current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         return {"count": 0}
     count = db.query(UserRegistration).filter(UserRegistration.status == "pending").count()
     return {"count": count}
@@ -149,7 +155,7 @@ def pending_count(db: Session = Depends(get_db), current=Depends(get_current_use
 @router.get("/registrations")
 def list_registrations(status: Optional[str] = None, db: Session = Depends(get_db),
                        current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     q = db.query(UserRegistration)
     if status:
@@ -158,8 +164,8 @@ def list_registrations(status: Optional[str] = None, db: Session = Depends(get_d
 
 
 @router.patch("/registrations/{rid}/approve")
-def approve_registration(rid: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    if current.role != "admin":
+def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     reg = db.query(UserRegistration).filter(UserRegistration.id == rid).first()
     if not reg:
@@ -168,6 +174,10 @@ def approve_registration(rid: int, db: Session = Depends(get_db), current=Depend
         raise HTTPException(status_code=400, detail="이미 처리된 신청입니다.")
     if db.query(User).filter(User.username == reg.username).first():
         raise HTTPException(status_code=400, detail="이미 동일한 아이디의 사용자가 존재합니다.")
+    try:
+        role = validate_role(data.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     user = User(
         username=reg.username,
         password_hash=reg.password_hash,
@@ -175,7 +185,7 @@ def approve_registration(rid: int, db: Session = Depends(get_db), current=Depend
         email=reg.email,
         phone=reg.phone,
         position=reg.position,
-        role="user",
+        role=role,
         is_active=True,
     )
     db.add(user)
@@ -188,7 +198,7 @@ def approve_registration(rid: int, db: Session = Depends(get_db), current=Depend
 
 @router.delete("/registrations/{rid}")
 def delete_registration(rid: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     reg = db.query(UserRegistration).filter(UserRegistration.id == rid).first()
     if not reg:
@@ -201,7 +211,7 @@ def delete_registration(rid: int, db: Session = Depends(get_db), current=Depends
 @router.patch("/registrations/{rid}/reject")
 def reject_registration(rid: int, data: RejectRequest, db: Session = Depends(get_db),
                         current=Depends(get_current_user)):
-    if current.role != "admin":
+    if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     reg = db.query(UserRegistration).filter(UserRegistration.id == rid).first()
     if not reg:

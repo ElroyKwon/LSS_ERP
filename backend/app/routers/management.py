@@ -34,6 +34,26 @@ class DeptBudgetUpsert(BaseModel):
     notes:  Optional[str] = None
 
 
+class ReceivableUpsert(BaseModel):
+    receivable_type: Optional[str] = "외상매출금"
+    business_division: Optional[str] = None
+    job_no: Optional[str] = None
+    department: Optional[str] = None
+    client_name: Optional[str] = None
+    project_name: Optional[str] = None
+    sales_manager: Optional[str] = None
+    construction_manager: Optional[str] = None
+    collection_terms: Optional[str] = None
+    due_date: Optional[date] = None
+    sales_date: Optional[date] = None
+    amount: Decimal = Decimal(0)
+    customer_class: Optional[str] = "일반"
+    collection_date: Optional[date] = None
+    note_maturity_date: Optional[date] = None
+    note_issuer: Optional[str] = None
+    notes: Optional[str] = None
+
+
 def _bdict(r):
     total = float((r.q1 or 0) + (r.q2 or 0) + (r.q3 or 0) + (r.q4 or 0))
     return {
@@ -150,11 +170,80 @@ def management_analysis(year: Optional[int] = None,
 # ══════════════════════════════════════════════════════
 # 채권 관리 — AR Aging Analysis
 # ══════════════════════════════════════════════════════
+def _customer_class(value):
+    return value if value in ["특수관계자", "대리점", "일반"] else "일반"
+
+
+def _ar_dict(r, today=None):
+    today = today or date.today()
+    amount = float(r.billing_amount or 0)
+    due_days = (today - r.due_date).days if r.due_date else 0
+    customer_class = _customer_class(r.customer_class)
+    bad_debt_rate = 0 if customer_class in ["특수관계자", "대리점"] else 0.01
+    return {
+        "id": r.id,
+        "sales_bill_id": r.sales_bill_id,
+        "billing_id": r.billing_id,
+        "project_id": r.project_id,
+        "receivable_type": r.receivable_type or "외상매출금",
+        "business_division": r.business_division,
+        "job_no": r.job_no,
+        "department": r.department,
+        "client_name": r.client_name or (r.client.company_name if r.client else None),
+        "project_name": r.project_name,
+        "sales_manager": r.sales_manager,
+        "construction_manager": r.construction_manager,
+        "collection_terms": r.collection_terms,
+        "due_date": to_kst_date(r.due_date),
+        "sales_date": to_kst_date(r.issue_date),
+        "issue_date": to_kst_date(r.issue_date),
+        "amount": amount,
+        "billing_amount": amount,
+        "collected_amount": float(r.collected_amount or 0),
+        "outstanding_amount": float(r.outstanding_amount or 0),
+        "age_months": int(due_days // 30) if r.due_date else 0,
+        "overdue_days": due_days,
+        "bad_debt_rate": bad_debt_rate,
+        "bad_debt_allowance": round(amount * bad_debt_rate),
+        "customer_class": customer_class,
+        "collection_date": to_kst_date(r.collection_date),
+        "note_maturity_date": to_kst_date(r.note_maturity_date),
+        "note_issuer": r.note_issuer,
+        "status": r.status,
+        "notes": r.notes,
+    }
+
+
+def _apply_receivable(row, data: ReceivableUpsert):
+    amount = data.amount or Decimal(0)
+    row.receivable_type = data.receivable_type or "외상매출금"
+    row.business_division = data.business_division
+    row.job_no = data.job_no
+    row.department = data.department
+    row.client_name = data.client_name
+    row.project_name = data.project_name
+    row.sales_manager = data.sales_manager
+    row.construction_manager = data.construction_manager
+    row.collection_terms = data.collection_terms
+    row.due_date = data.due_date
+    row.issue_date = data.sales_date or row.issue_date or date.today()
+    row.billing_amount = amount
+    row.customer_class = _customer_class(data.customer_class)
+    row.collection_date = data.collection_date
+    row.note_maturity_date = data.note_maturity_date
+    row.note_issuer = data.note_issuer
+    row.notes = data.notes
+    row.collected_amount = amount if data.collection_date else Decimal(0)
+    row.outstanding_amount = Decimal(0) if data.collection_date else amount
+    row.status = "collected" if data.collection_date else "outstanding"
+
+
 @router.get("/management/receivables")
 def management_receivables(db: Session = Depends(get_db), _=Depends(get_current_user)):
     today = date.today()
-    rows = db.query(AccountsReceivable).filter(
-        AccountsReceivable.status.in_(["outstanding", "partial"])
+    rows = db.query(AccountsReceivable).order_by(
+        AccountsReceivable.issue_date.desc(),
+        AccountsReceivable.id.desc(),
     ).all()
 
     aging_buckets = {"current": 0, "d30": 0, "d60": 0, "d90": 0, "over90": 0}
@@ -167,18 +256,33 @@ def management_receivables(db: Session = Depends(get_db), _=Depends(get_current_
         elif days <= 90:   bucket = "d90"
         else:              bucket = "over90"
         aging_buckets[bucket] += float(r.outstanding_amount or 0)
-        items.append({
-            "id": r.id, "billing_id": r.billing_id,
-            "issue_date": to_kst_date(r.issue_date), "due_date": to_kst_date(r.due_date),
-            "billing_amount":    float(r.billing_amount or 0),
-            "collected_amount":  float(r.collected_amount or 0),
-            "outstanding_amount": float(r.outstanding_amount or 0),
-            "status": r.status, "overdue_days": max(0, days),
-        })
-    items.sort(key=lambda x: x["overdue_days"], reverse=True)
+        items.append(_ar_dict(r, today))
 
     total_outstanding = sum(i["outstanding_amount"] for i in items)
     return {"items": items, "aging": aging_buckets, "total_outstanding": total_outstanding}
+
+
+@router.post("/management/receivables")
+def create_receivable(data: ReceivableUpsert, db: Session = Depends(get_db),
+                      _=Depends(get_current_user)):
+    row = AccountsReceivable(issue_date=data.sales_date or date.today())
+    _apply_receivable(row, data)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _ar_dict(row)
+
+
+@router.put("/management/receivables/{rid}")
+def update_receivable(rid: int, data: ReceivableUpsert, db: Session = Depends(get_db),
+                      _=Depends(get_current_user)):
+    row = db.query(AccountsReceivable).filter(AccountsReceivable.id == rid).first()
+    if not row:
+        raise HTTPException(404, "채권 정보를 찾을 수 없습니다.")
+    _apply_receivable(row, data)
+    db.commit()
+    db.refresh(row)
+    return _ar_dict(row)
 
 
 # ══════════════════════════════════════════════════════

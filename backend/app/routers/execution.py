@@ -4,8 +4,13 @@ from sqlalchemy import or_
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date
+import json
 from ..database import get_db
-from ..models.execution import Project, ProjectPlan, PurchaseContract, ReleaseRequest, SalesBill, APBill
+from ..models.execution import (
+    Project, ProjectPlan, ProjectSalesPlanRow, ProjectBusinessCategory, ProjectPlanMeta,
+    PurchaseContract, ReleaseRequest, SalesBill, APBill,
+)
+from ..models.accounting import AccountsReceivable
 from ..models.master import Company, Material
 from ..utils.auth import get_current_user
 from ..utils import to_kst_date, to_kst
@@ -16,6 +21,24 @@ router = APIRouter(prefix="/api", tags=["실행"])
 CONTRACT_FORMS = ["원도급", "하도급", "공동도급", "위탁", "기타"]
 CONTRACT_TYPES = ["국내", "국외"]
 STATUSES       = ["미진행", "진행중", "완료"]
+PROJECT_REQ_MARKER = "\n---프로젝트리스트요구사항---\n"
+DEFAULT_BUSINESS_CATEGORIES = ["빌딩", "DC", "BAS", "E&M", "O&M", "DR", "FEMS리스", "SE", "솔루션", "CS", "스테콤", "SCADA"]
+
+
+def _json_meta(notes: Optional[str], marker: str) -> dict:
+    raw = notes or ""
+    idx = raw.find(marker)
+    if idx < 0:
+        return {}
+    try:
+        parsed = json.loads(raw[idx + len(marker):])
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _valid_customer_class(value: Optional[str]) -> str:
+    return value if value in ["특수관계자", "대리점", "일반"] else "일반"
 
 
 class ProjectCreate(BaseModel):
@@ -160,6 +183,31 @@ class ProjectPlanUpsert(BaseModel):
     notes:            Optional[str] = None
 
 
+class ProjectPlanMetaSave(BaseModel):
+    project_id: int
+    plan_year: int
+    version: Optional[int] = None
+    contractDate: Optional[str] = None
+    changeColumnGroups: dict = {}
+    materialVendorRows: List[dict] = []
+
+
+class ProjectBusinessCategoriesSave(BaseModel):
+    categories: List[str] = []
+
+
+def _seed_business_categories(db: Session, current=None):
+    if db.query(ProjectBusinessCategory).count() > 0:
+        return
+    for index, name in enumerate(DEFAULT_BUSINESS_CATEGORIES):
+        db.add(ProjectBusinessCategory(
+            name=name,
+            sort_order=index,
+            created_by=getattr(current, "id", None),
+        ))
+    db.commit()
+
+
 @router.get("/project-plans")
 def list_plans(project_id: int, plan_year: int,
                db: Session = Depends(get_db), _=Depends(get_current_user)):
@@ -196,6 +244,194 @@ def upsert_plan(data: ProjectPlanUpsert, db: Session = Depends(get_db),
     db.commit()
     db.refresh(row)
     return {"message": "저장되었습니다.", "id": row.id}
+
+
+@router.get("/project-plan-meta")
+def get_project_plan_meta(
+    project_id: int,
+    plan_year: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    row = db.query(ProjectPlanMeta).filter(
+        ProjectPlanMeta.project_id == project_id,
+        ProjectPlanMeta.plan_year == plan_year,
+    ).first()
+    if not row:
+        return {"exists": False}
+    try:
+        data = json.loads(row.data_json or "{}")
+        if not isinstance(data, dict):
+            data = {}
+    except (TypeError, ValueError):
+        data = {}
+    data["exists"] = True
+    data["id"] = row.id
+    data["project_id"] = row.project_id
+    data["plan_year"] = row.plan_year
+    return data
+
+
+@router.post("/project-plan-meta")
+def save_project_plan_meta(
+    data: ProjectPlanMetaSave,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    if not db.query(Project).filter(Project.id == data.project_id).first():
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    payload = data.dict()
+    row = db.query(ProjectPlanMeta).filter(
+        ProjectPlanMeta.project_id == data.project_id,
+        ProjectPlanMeta.plan_year == data.plan_year,
+    ).first()
+    if not row:
+        row = ProjectPlanMeta(
+            project_id=data.project_id,
+            plan_year=data.plan_year,
+            created_by=current.id,
+            data_json="{}",
+        )
+        db.add(row)
+    row.data_json = json.dumps(payload, ensure_ascii=False)
+    db.commit()
+    db.refresh(row)
+    return {**payload, "exists": True, "id": row.id}
+
+
+@router.get("/project-business-categories")
+def list_project_business_categories(
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    _seed_business_categories(db, current)
+    rows = db.query(ProjectBusinessCategory).filter(
+        ProjectBusinessCategory.is_active == True
+    ).order_by(ProjectBusinessCategory.sort_order.asc(), ProjectBusinessCategory.id.asc()).all()
+    return [row.name for row in rows]
+
+
+@router.post("/project-business-categories")
+def save_project_business_categories(
+    data: ProjectBusinessCategoriesSave,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    values = []
+    seen = set()
+    for item in data.categories:
+        value = str(item or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            values.append(value)
+
+    existing = {row.name: row for row in db.query(ProjectBusinessCategory).all()}
+    for index, value in enumerate(values):
+        row = existing.get(value)
+        if not row:
+            row = ProjectBusinessCategory(name=value, created_by=current.id)
+            db.add(row)
+        row.sort_order = index
+        row.is_active = True
+
+    for name, row in existing.items():
+        if name not in seen:
+            row.is_active = False
+
+    db.commit()
+    return values
+
+
+class ProjectSalesPlanBulk(BaseModel):
+    plan_year: int
+    rows: List[dict] = []
+
+
+def _sales_plan_row_key(row: dict) -> str:
+    if row.get("project_id"):
+        return f"project:{row.get('project_id')}"
+    if row.get("id"):
+        return str(row.get("id"))
+    if row.get("job_no"):
+        return f"job:{row.get('job_no')}"
+    return f"manual:{len(json.dumps(row, ensure_ascii=False, sort_keys=True))}"
+
+
+def _sales_plan_dict(row: ProjectSalesPlanRow) -> dict:
+    try:
+        data = json.loads(row.data_json or "{}")
+        if not isinstance(data, dict):
+            data = {}
+    except (TypeError, ValueError):
+        data = {}
+    data["db_id"] = row.id
+    data["id"] = data.get("id") or row.row_key
+    data["project_id"] = data.get("project_id") or row.project_id
+    return data
+
+
+@router.get("/project-sales-plans")
+def list_project_sales_plans(
+    plan_year: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = db.query(ProjectSalesPlanRow).filter(
+        ProjectSalesPlanRow.plan_year == plan_year
+    ).order_by(ProjectSalesPlanRow.id.asc()).all()
+    return [_sales_plan_dict(row) for row in rows]
+
+
+@router.post("/project-sales-plans/bulk")
+def save_project_sales_plans(
+    data: ProjectSalesPlanBulk,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    incoming = []
+    seen = set()
+    for item in data.rows:
+        row_data = dict(item)
+        row_key = _sales_plan_row_key(row_data)
+        unique_key = row_key
+        suffix = 1
+        while unique_key in seen:
+            suffix += 1
+            unique_key = f"{row_key}:{suffix}"
+        seen.add(unique_key)
+        row_data["id"] = row_data.get("id") or unique_key
+        incoming.append((unique_key, row_data))
+
+    existing = {
+        row.row_key: row
+        for row in db.query(ProjectSalesPlanRow).filter(
+            ProjectSalesPlanRow.plan_year == data.plan_year
+        ).all()
+    }
+
+    keep_keys = set()
+    for row_key, row_data in incoming:
+        keep_keys.add(row_key)
+        row = existing.get(row_key)
+        if not row:
+            row = ProjectSalesPlanRow(
+                plan_year=data.plan_year,
+                row_key=row_key,
+                created_by=current.id,
+            )
+            db.add(row)
+        row.project_id = row_data.get("project_id")
+        row.data_json = json.dumps(row_data, ensure_ascii=False)
+
+    for row_key, row in existing.items():
+        if row_key not in keep_keys:
+            db.delete(row)
+
+    db.commit()
+    rows = db.query(ProjectSalesPlanRow).filter(
+        ProjectSalesPlanRow.plan_year == data.plan_year
+    ).order_by(ProjectSalesPlanRow.id.asc()).all()
+    return [_sales_plan_dict(row) for row in rows]
 
 
 # ══════════════════════════════════════════════════════
@@ -389,6 +625,57 @@ def delete_sales_bill(rid: int, db: Session = Depends(get_db), _=Depends(get_cur
     if not r: raise HTTPException(404, "매출청구를 찾을 수 없습니다.")
     db.delete(r); db.commit()
     return {"message": "삭제되었습니다."}
+
+
+@router.patch("/sales-bills/{rid}/approve")
+def approve_sales_bill(rid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    bill = db.query(SalesBill).filter(SalesBill.id == rid).first()
+    if not bill:
+        raise HTTPException(404, "매출청구를 찾을 수 없습니다.")
+
+    project = db.query(Project).filter(Project.id == bill.project_id).first() if bill.project_id else None
+    req = _json_meta(project.notes if project else None, PROJECT_REQ_MARKER)
+    client = None
+    if project and project.client_id:
+        client = db.query(Company).filter(Company.id == project.client_id).first()
+    if not client and bill.client_name:
+        client = db.query(Company).filter(Company.company_name == bill.client_name).first()
+
+    amount = bill.bill_amount or Decimal(0)
+    customer_class = _valid_customer_class(client.company_category_name if client else None)
+    receivable = db.query(AccountsReceivable).filter(
+        AccountsReceivable.sales_bill_id == bill.id
+    ).first()
+    if not receivable:
+        receivable = AccountsReceivable(
+            sales_bill_id=bill.id,
+            billing_id=None,
+            issue_date=bill.bill_date or date.today(),
+            collected_amount=Decimal(0),
+            status="outstanding",
+        )
+        db.add(receivable)
+
+    receivable.project_id = project.id if project else bill.project_id
+    receivable.client_id = client.id if client else (project.client_id if project else None)
+    receivable.due_date = bill.due_date
+    receivable.billing_amount = amount
+    receivable.outstanding_amount = amount
+    receivable.receivable_type = "외상매출금"
+    receivable.business_division = req.get("business_division")
+    receivable.job_no = project.project_no if project else None
+    receivable.department = req.get("team_name") or (project.pm_dept if project else None)
+    receivable.client_name = bill.client_name or (project.client_name if project else None)
+    receivable.project_name = project.project_name if project else _proj_name(bill.project_id, db)
+    receivable.sales_manager = req.get("sales_manager")
+    receivable.construction_manager = req.get("execution_manager") or (project.pm_name if project else None)
+    receivable.collection_terms = req.get("collection_terms")
+    receivable.customer_class = customer_class
+
+    bill.status = "승인"
+    db.commit()
+    db.refresh(bill)
+    return _sb_dict(bill, db)
 
 
 # ══════════════════════════════════════════════════════

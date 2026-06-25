@@ -96,6 +96,34 @@
                 <a-button danger>비활성화</a-button>
               </a-popconfirm>
             </div>
+
+            <div class="employee-section">
+              <div class="employee-section-head">
+                <div>
+                  <div class="employee-title">해당 부서 사원 리스트</div>
+                  <div class="employee-sub">
+                    {{ selectedDept.name }} 및 하위 조직 기준 {{ selectedEmployees.length }}명
+                  </div>
+                </div>
+              </div>
+              <a-table
+                :columns="employeeColumns"
+                :data-source="selectedEmployees"
+                :loading="loading"
+                :pagination="{ pageSize: 10, showSizeChanger: false }"
+                row-key="id"
+                size="small"
+                :scroll="{ x: 860 }"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'is_active'">
+                    <a-tag :color="record.is_active ? 'green' : 'red'">
+                      {{ record.is_active ? '활성' : '비활성' }}
+                    </a-tag>
+                  </template>
+                </template>
+              </a-table>
+            </div>
           </div>
           <a-empty v-else description="좌측 조직도에서 부서를 선택하세요" />
         </a-col>
@@ -189,6 +217,7 @@ import { masterApi } from '@/api'
 
 const nowYear = new Date().getFullYear()
 const items = ref([])
+const employees = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const drawerOpen = ref(false)
@@ -223,6 +252,51 @@ const typeLabel = {
 const activeCount = computed(() => items.value.filter(item => item.is_active).length)
 const rootCount = computed(() => items.value.filter(item => !item.parent_id).length)
 const selectedDept = computed(() => items.value.find(item => String(item.id) === String(selectedKeys.value[0])))
+
+const employeeColumns = [
+  { title: '사번', dataIndex: 'emp_code', width: 110, align: 'center' },
+  { title: '이름', dataIndex: 'name', width: 100, align: 'center', ellipsis: true },
+  { title: '부서', dataIndex: 'department_name', width: 160, align: 'center', ellipsis: true },
+  { title: '담당업무', dataIndex: 'task', width: 160, align: 'center', ellipsis: true },
+  { title: '직급', dataIndex: 'position', width: 100, align: 'center' },
+  { title: '직책', dataIndex: 'job_title', width: 100, align: 'center' },
+  { title: '전화번호', dataIndex: 'phone', width: 130, align: 'center' },
+  { title: '상태', key: 'is_active', dataIndex: 'is_active', width: 90, align: 'center' },
+]
+
+const selectedDepartmentIds = computed(() => {
+  if (!selectedDept.value) return new Set()
+  const ids = new Set([selectedDept.value.id])
+  let changed = true
+  while (changed) {
+    changed = false
+    items.value.forEach(item => {
+      if (!ids.has(item.id) && ids.has(item.parent_id)) {
+        ids.add(item.id)
+        changed = true
+      }
+    })
+  }
+  return ids
+})
+
+const selectedDepartmentNames = computed(() => {
+  const ids = selectedDepartmentIds.value
+  return new Set(items.value.filter(item => ids.has(item.id)).map(item => item.name))
+})
+
+const selectedEmployees = computed(() => {
+  const ids = selectedDepartmentIds.value
+  if (!ids.size) return []
+  const names = selectedDepartmentNames.value
+  return employees.value
+    .filter(emp => ids.has(emp.department_id) || names.has(emp.department_name))
+    .sort((a, b) =>
+      Number(b.is_active) - Number(a.is_active) ||
+      String(a.department_name || '').localeCompare(String(b.department_name || '')) ||
+      String(a.name || '').localeCompare(String(b.name || ''))
+    )
+})
 
 const filteredItems = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -273,11 +347,15 @@ function onSelect(keys) {
 async function load() {
   loading.value = true
   try {
-    const res = await masterApi.getDepartments({
-      org_year: yearFilter.value,
-      include_inactive: includeInactive.value,
-    })
-    items.value = res.data
+    const [deptRes, empRes] = await Promise.all([
+      masterApi.getDepartments({
+        org_year: yearFilter.value,
+        include_inactive: includeInactive.value,
+      }),
+      masterApi.getEmployees({ include_inactive: true }),
+    ])
+    items.value = deptRes.data
+    employees.value = empRes.data || []
     if (selectedKeys.value[0] && !items.value.some(item => String(item.id) === String(selectedKeys.value[0]))) {
       selectedKeys.value = []
     }
@@ -360,6 +438,11 @@ onMounted(load)
 .detail-title { font-size: 20px; font-weight: 700; color: #1a2535; }
 .detail-sub { margin-top: 4px; color: #8c8c8c; font-size: 13px; }
 .detail-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.employee-section { margin-top: 28px; padding-top: 18px; border-top: 1px solid #f0f0f0; }
+.employee-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.employee-title { font-size: 15px; font-weight: 700; color: #1a2535; }
+.employee-sub { margin-top: 3px; color: #8c8c8c; font-size: 12px; }
 .drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+:deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
 </style>

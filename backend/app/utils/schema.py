@@ -153,6 +153,31 @@ ACCOUNTS_RECEIVABLE_COLUMNS = {
 }
 
 
+ACCOUNTS_PAYABLE_COLUMNS = {
+    "job_no": "VARCHAR(30)",
+    "contract_name": "VARCHAR(300)",
+    "vendor_name": "VARCHAR(200)",
+    "contract_amount_ex_vat": "NUMERIC(18, 2) DEFAULT 0",
+    "contract_amount": "NUMERIC(18, 2) DEFAULT 0",
+    "purchase_type": "VARCHAR(30)",
+    "subcontract_type": "VARCHAR(30)",
+    "payment_terms": "VARCHAR(200)",
+    "collection_terms": "VARCHAR(200)",
+    "related_revenue": "NUMERIC(18, 2) DEFAULT 0",
+    "related_revenue_collection_date": "DATE",
+    "related_revenue_collection_method": "VARCHAR(50)",
+    "actual_payment_date": "DATE",
+    "payment_type": "VARCHAR(30)",
+    "cash_paid_amount": "NUMERIC(18, 2) DEFAULT 0",
+    "note_issued_amount": "NUMERIC(18, 2) DEFAULT 0",
+    "note_maturity_date": "DATE",
+}
+
+PROJECT_PLAN_COLUMNS = {
+    "invoice_plan": "NUMERIC(18, 2) DEFAULT 0",
+}
+
+
 def _ensure_columns(engine, table_name, columns):
     inspector = inspect(engine)
     if table_name not in inspector.get_table_names():
@@ -178,3 +203,8 @@ def ensure_master_columns(engine):
 
 def ensure_accounting_columns(engine):
     _ensure_columns(engine, "accounts_receivable", ACCOUNTS_RECEIVABLE_COLUMNS)
+    _ensure_columns(engine, "accounts_payable", ACCOUNTS_PAYABLE_COLUMNS)
+
+
+def ensure_execution_columns(engine):
+    _ensure_columns(engine, "project_plans", PROJECT_PLAN_COLUMNS)

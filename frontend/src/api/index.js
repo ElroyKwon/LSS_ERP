@@ -60,24 +60,10 @@ export const masterApi = {
   searchPostalAddresses: (query) => api.get('/external/postal-addresses', { params: { query } }),
   updateExternalApiKey: (d) => api.patch('/external/api-key', d),
 
-  getSites: (p) => api.get('/sites', { params: p }),
-  getSite: (id) => api.get(`/sites/${id}`),
-  createSite: (d) => api.post('/sites', d),
-  updateSite: (id, d) => api.put(`/sites/${id}`, d),
-
-  getCostCodes: () => api.get('/cost-codes'),
-  createCostCode: (d) => api.post('/cost-codes', d),
-  updateCostCode: (id, d) => api.put(`/cost-codes/${id}`, d),
-
-  getAccountCodes: () => api.get('/account-codes'),
-
   getMaterials: (p) => api.get('/materials', { params: p }),
   createMaterial: (d) => api.post('/materials', d),
   updateMaterial: (id, d) => api.put(`/materials/${id}`, d),
   deleteMaterial: (id) => api.delete(`/materials/${id}`),
-
-  getUnitPrices: (p) => api.get('/unit-prices', { params: p }),
-  createUnitPrice: (d) => api.post('/unit-prices', d),
 
   getEmployees: (p) => api.get('/employees', { params: p }),
   createEmployee: (d) => api.post('/employees', d),
@@ -95,81 +81,21 @@ export const salesApi = {
   getEstimate: (id) => api.get(`/estimates/${id}`),
   createEstimate: (d) => api.post('/estimates', d),
   updateEstimate: (id, d) => api.put(`/estimates/${id}`, d),
+  getEstimateAttachments: (id) => api.get(`/estimates/${id}/attachments`),
+  uploadEstimateAttachment: (id, formData) => api.post(`/estimates/${id}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteEstimateAttachment: (id) => api.delete(`/estimate-attachments/${id}`),
 
   getDesignRequests: (p) => api.get('/design-requests', { params: p }),
   createDesignRequest: (d) => api.post('/design-requests', d),
   updateDesignRequest: (id, d) => api.put(`/design-requests/${id}`, d),
   deleteDesignRequest: (id) => api.delete(`/design-requests/${id}`),
+  getSalesManagementRows: (weekStart) => api.get('/sales-management', { params: { week_start: weekStart } }),
+  getLatestSalesManagementRowsBefore: (weekStart) => api.get('/sales-management/latest-before', { params: { week_start: weekStart } }),
+  saveSalesManagementRows: (weekStart, rows) => api.post('/sales-management/bulk', { week_start: weekStart, rows }),
 
-  getContracts: (p) => api.get('/contracts', { params: p }),
-  getContract: (id) => api.get(`/contracts/${id}`),
-  createContract: (d) => api.post('/contracts', d),
-  updateContract: (id, d) => api.put(`/contracts/${id}`, d),
-
-  getContractChanges: (contractId) => api.get('/contract-changes', { params: { contract_id: contractId } }),
-  createContractChange: (d) => api.post('/contract-changes', d),
-
-  getBillings: (p) => api.get('/progress-billings', { params: p }),
-  getBilling: (id) => api.get(`/progress-billings/${id}`),
-  createBilling: (d) => api.post('/progress-billings', d),
-  approveBilling: (id) => api.patch(`/progress-billings/${id}/approve`),
-
-  getCollections: (p) => api.get('/collections', { params: p }),
-  createCollection: (d) => api.post('/collections', d),
 }
-
-// Purchase
-export const purchaseApi = {
-  getPurchaseRequests: (p) => api.get('/purchase-requests', { params: p }),
-  createPurchaseRequest: (d) => api.post('/purchase-requests', d),
-
-  getPurchaseOrders: (p) => api.get('/purchase-orders', { params: p }),
-  getPurchaseOrder: (id) => api.get(`/purchase-orders/${id}`),
-  createPurchaseOrder: (d) => api.post('/purchase-orders', d),
-
-  getReceipts: (p) => api.get('/receipts', { params: p }),
-  createReceipt: (d) => api.post('/receipts', d),
-  approveReceipt: (id) => api.patch(`/receipts/${id}/approve`),
-
-  getInventory: (p) => api.get('/inventory', { params: p }),
-
-  getSubcontracts: (p) => api.get('/subcontracts', { params: p }),
-  createSubcontract: (d) => api.post('/subcontracts', d),
-  updateSubcontract: (id, d) => api.put(`/subcontracts/${id}`, d),
-
-  getSubcontractBillings: (p) => api.get('/subcontract-billings', { params: p }),
-  createSubcontractBilling: (d) => api.post('/subcontract-billings', d),
-  approveSubcontractBilling: (id) => api.patch(`/subcontract-billings/${id}/approve`),
-
-  getLaborInputs: (p) => api.get('/labor-inputs', { params: p }),
-  createLaborInput: (d) => api.post('/labor-inputs', d),
-
-  getExpenses: (p) => api.get('/expenses', { params: p }),
-  createExpense: (d) => api.post('/expenses', d),
-}
-
-// Accounting
-export const accountingApi = {
-  getJournalEntries: (p) => api.get('/journal-entries', { params: p }),
-  getJournalEntry: (id) => api.get(`/journal-entries/${id}`),
-  createJournalEntry: (d) => api.post('/journal-entries', d),
-  approveJournalEntry: (id) => api.patch(`/journal-entries/${id}/approve`),
-  cancelJournalEntry: (id) => api.patch(`/journal-entries/${id}/cancel`),
-
-  getAR: (p) => api.get('/accounts-receivable', { params: p }),
-  getARSummary: () => api.get('/accounts-receivable/summary'),
-
-  getAP: (p) => api.get('/accounts-payable', { params: p }),
-
-  getPayments: (p) => api.get('/payments', { params: p }),
-  createPayment: (d) => api.post('/payments', d),
-
-  getPeriodClosings: () => api.get('/period-closings'),
-  closePeriod: (d) => api.post('/period-closings', d),
-
-  getLedger: (p) => api.get('/ledger', { params: p }),
-}
-
 // Execution
 export const executionApi = {
   // 프로젝트
@@ -183,10 +109,15 @@ export const executionApi = {
   upsertProjectPlan: (d) => api.post('/project-plans', d),
   getProjectPlanMeta: (projectId, year) => api.get('/project-plan-meta', { params: { project_id: projectId, plan_year: year } }),
   saveProjectPlanMeta: (d) => api.post('/project-plan-meta', d),
+  getProjectPlanWeekly: (projectId, year, weekStart) => api.get('/project-plan-weekly', { params: { project_id: projectId, plan_year: year, week_start: weekStart } }),
+  getLatestProjectPlanWeeklyBefore: (projectId, year, weekStart) => api.get('/project-plan-weekly/latest-before', { params: { project_id: projectId, plan_year: year, week_start: weekStart } }),
+  saveProjectPlanWeekly: (d) => api.post('/project-plan-weekly', d),
   getProjectBusinessCategories: () => api.get('/project-business-categories'),
   saveProjectBusinessCategories: (categories) => api.post('/project-business-categories', { categories }),
   getProjectSalesPlans: (year) => api.get('/project-sales-plans', { params: { plan_year: year } }),
   saveProjectSalesPlans: (year, rows) => api.post('/project-sales-plans/bulk', { plan_year: year, rows }),
+  getProjectPurchasePlans: (year) => api.get('/project-purchase-plans', { params: { plan_year: year } }),
+  saveProjectPurchasePlans: (year, rows) => api.post('/project-purchase-plans/bulk', { plan_year: year, rows }),
 
   // 구매/계약
   getPurchaseContracts: (p) => api.get('/purchase-contracts', { params: p }),
@@ -246,31 +177,20 @@ export const managementApi = {
   deleteDeptBudget: (id) => api.delete(`/dept-budgets/${id}`),
   getDeptList: (year) => api.get('/dept-budgets/departments', { params: { budget_year: year } }),
   getAnalysis: (year) => api.get('/management/analysis', { params: { year } }),
+  getSalesPlanAnalysis: (year, month) => api.get('/management/analysis/sales-plan', { params: { year, month } }),
+  getRevenuePlanAnalysis: (year, month) => api.get('/management/analysis/revenue-plan', { params: { year, month } }),
+  saveSalesBusinessPlan: (year, rows) => api.post('/management/analysis/sales-plan', { plan_year: year, rows }),
   getReceivables: () => api.get('/management/receivables'),
   createReceivable: (d) => api.post('/management/receivables', d),
   updateReceivable: (id, d) => api.put(`/management/receivables/${id}`, d),
   getPayables: () => api.get('/management/payables'),
+  createPayable: (d) => api.post('/management/payables', d),
+  updatePayable: (id, d) => api.put(`/management/payables/${id}`, d),
   getPLReport: (year, month) => api.get('/reports/profit-loss', { params: { year, month } }),
 }
 
-// Forecast & Budget
+
+// Dashboard
 export const forecastApi = {
   getDashboard: () => api.get('/dashboard'),
-  getRevenueForecasts: (p) => api.get('/revenue-forecasts', { params: p }),
-  upsertRevenueForecast: (d) => api.post('/revenue-forecasts', d),
-  getSalesPipelines: (p) => api.get('/sales-pipelines', { params: p }),
-  createSalesPipeline: (d) => api.post('/sales-pipelines', d),
-  updateSalesPipeline: (id, d) => api.put(`/sales-pipelines/${id}`, d),
-  updatePipelineStatus: (id, s) => api.patch(`/sales-pipelines/${id}/status`, null, { params: { status: s } }),
-  getFundPlans: (p) => api.get('/fund-plans', { params: p }),
-  upsertFundPlan: (d) => api.post('/fund-plans', d),
-  getProfitLossReport: (p) => api.get('/reports/profit-loss', { params: p }),
-}
-
-export const budgetApi = {
-  getBudgets: (p) => api.get('/budgets', { params: p }),
-  getBudget: (id) => api.get(`/budgets/${id}`),
-  createBudget: (d) => api.post('/budgets', d),
-  updateBudget: (id, d) => api.put(`/budgets/${id}`, d),
-  getCostAnalysis: (siteId) => api.get('/cost-analysis', { params: { site_id: siteId } }),
 }

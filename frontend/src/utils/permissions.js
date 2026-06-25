@@ -54,14 +54,14 @@ export const MENU_PERMISSIONS = {
     system_admin: cruda, sales_staff: cr, sales_manager: ['C', 'R', 'A'],
     design_staff: crua, design_manager: crua,
   },
+  '/sales/management': {
+    system_admin: cruda, sales_staff: cru, sales_manager: crua,
+    execution_staff: r, purchase_staff: r, purchase_manager: r, accounting_staff: r, accounting_manager: r,
+    design_staff: r, design_manager: r,
+  },
   '/sales/estimates': {
     system_admin: cruda, sales_staff: cr, sales_manager: ['C', 'R', 'A'], execution_staff: r,
     purchase_staff: cru, purchase_manager: cruda, design_staff: cru, design_manager: cru,
-  },
-  '/sales/pipeline': {
-    system_admin: cruda, sales_staff: cr, sales_manager: ['C', 'R', 'A'], execution_staff: cr,
-    purchase_staff: r, purchase_manager: r, accounting_staff: r, accounting_manager: cruda,
-    design_staff: cr, design_manager: cr,
   },
   '/execution/projects': {
     system_admin: cruda, sales_staff: cr, sales_manager: ['C', 'R', 'A'], execution_staff: cr,
@@ -148,7 +148,7 @@ export function getMenuActions(role, path) {
 
 export function canAccess(role, path, action = 'R') {
   if (!path || path === '/dashboard') return true
-  if (!MENU_PERMISSIONS[path]) return true
+  if (!MENU_PERMISSIONS[path]) return false
   return getMenuActions(role, path).includes(action)
 }
 

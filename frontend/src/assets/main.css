@@ -14,3 +14,69 @@ html, body, #app {
 ::-webkit-scrollbar-track { background: #f0f2f5; }
 ::-webkit-scrollbar-thumb { background: #c8d6e5; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #a0b4c8; }
+
+/* Modal screens are presented as right-side panels to keep popup behavior consistent with drawers. */
+.ant-modal-root .ant-modal-wrap {
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.ant-modal-root .ant-modal {
+  top: 0;
+  margin: 0;
+  padding-bottom: 0;
+  max-width: min(760px, 100vw);
+}
+
+.ant-modal-root .ant-modal-content {
+  height: 100vh;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.12);
+}
+
+.ant-modal-root .ant-modal-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.ant-modal-root .ant-modal-confirm {
+  max-width: min(520px, 100vw);
+}
+
+.ant-modal-root .company-editor-modal .ant-modal {
+  width: min(1180px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
+}
+
+.ant-modal-root .company-editor-modal .ant-modal-body {
+  overflow: auto;
+}
+
+.ant-modal-root .design-request-modal .ant-modal {
+  width: min(1180px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
+}
+
+.ant-modal-root .design-request-modal .ant-modal-body {
+  overflow: auto;
+}
+
+.ant-modal-root .release-request-modal .ant-modal {
+  width: min(920px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
+}
+
+.ant-modal-root .release-request-modal .ant-modal-body {
+  overflow: auto;
+}
+
+@media (max-width: 768px) {
+  .ant-modal-root .ant-modal {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+}

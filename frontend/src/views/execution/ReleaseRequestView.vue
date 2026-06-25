@@ -57,7 +57,8 @@
     </a-card>
 
     <a-modal v-model:open="modalOpen" :title="editItem ? '출고 요청 수정' : '출고 요청 등록'"
-             width="760px" @ok="handleSave" :confirm-loading="saving" ok-text="저장" cancel-text="취소">
+             width="920px" wrap-class-name="release-request-modal"
+             @ok="handleSave" :confirm-loading="saving" ok-text="저장" cancel-text="취소">
       <a-form :model="form" layout="vertical" ref="formRef" style="margin-top:8px">
         <a-row :gutter="16">
           <a-col :span="12">

@@ -38,11 +38,12 @@
         </a-sub-menu>
 
         <!-- 영업 -->
-        <a-sub-menu key="sales" v-if="canReadAny(['/sales/design', '/sales/estimates'])">
+        <a-sub-menu key="sales" v-if="canReadAny(['/sales/management', '/sales/design', '/sales/estimates'])">
           <template #icon><ShopOutlined /></template>
           <template #title>영업</template>
           <a-menu-item v-if="canRead('/sales/design')" key="/sales/design">설계의뢰</a-menu-item>
           <a-menu-item v-if="canRead('/sales/estimates')" key="/sales/estimates">견적관리</a-menu-item>
+          <a-menu-item v-if="canRead('/sales/management')" key="/sales/management">영업관리</a-menu-item>
         </a-sub-menu>
 
         <!-- 실행 -->
@@ -200,6 +201,7 @@ const pageNames = {
   '/master/companies': '거래처 관리',
   '/master/materials': '자재 관리',
   '/master/overhead-rates': 'Factor 관리',
+  '/sales/management': '영업관리',
   '/sales/design': '설계의뢰',
   '/sales/estimates': '견적관리',
   '/execution/projects': '프로젝트 리스트',

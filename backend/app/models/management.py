@@ -22,3 +22,17 @@ class DeptBudget(Base):
     created_by  = Column(Integer, ForeignKey("users.id"))
     created_at  = Column(DateTime, default=func.now())
     updated_at  = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class ManagementSalesBusinessPlanRow(Base):
+    """경영분석 영업 사업계획 행별 월 계획"""
+    __tablename__ = "management_sales_business_plan_rows"
+    __table_args__ = (UniqueConstraint("plan_year", "row_key"),)
+
+    id         = Column(Integer, primary_key=True, index=True)
+    plan_year  = Column(Integer, nullable=False)
+    row_key    = Column(String(120), nullable=False)
+    data_json  = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

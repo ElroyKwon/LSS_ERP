@@ -275,27 +275,83 @@
         <a-card :bordered="false" class="table-card">
           <template #title><span class="card-title">프로젝트리스트(매입)</span></template>
           <template #extra>
-            <span class="filter-count">총 <b>{{ filtered.length }}</b>건</span>
+            <a-space>
+              <span class="filter-count">총 <b>{{ purchasePlanRows.length }}</b>건</span>
+              <a-tag v-if="purchasePlanDirty" color="orange">저장 필요</a-tag>
+              <a-button @click="syncPurchasePlanRowsWithProjects">
+                수주 프로젝트 반영
+              </a-button>
+              <a-button type="primary" :disabled="!purchasePlanDirty" :loading="saving" @click="savePurchasePlanRows">
+                저장
+              </a-button>
+              <a-button type="primary" @click="addPurchasePlanRow">
+                <template #icon><PlusOutlined /></template>행 추가
+              </a-button>
+            </a-space>
           </template>
-
           <a-table
-            :columns="purchaseColumns"
-            :data-source="filtered"
+            :columns="purchasePlanColumns"
+            :data-source="purchasePlanRows"
             :loading="loading"
             :pagination="{ pageSize: 20, showSizeChanger: true }"
             row-key="id"
-            size="middle"
-            :scroll="{ x: 1700 }"
+            size="small"
+            :scroll="{ x: purchasePlanScrollX }"
+            bordered
+            class="sales-plan-table"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'contract_amount'">
-                <span class="num-cell">{{ record.contract_amount > 0 ? Number(record.contract_amount).toLocaleString() : '—' }}</span>
+              <template v-if="column.key === 'job_no'">
+                <a-auto-complete
+                  v-model:value="record.job_no"
+                  allow-clear
+                  placeholder="JOB NO"
+                  :options="jobNoAutoCompleteOptions"
+                  option-filter-prop="value"
+                  style="width:130px"
+                  @select="(_, option) => applyProjectToPurchaseRow(record, option.projectId)"
+                  @change="markPurchasePlanDirty"
+                />
               </template>
-              <template v-if="costAmountColumnKeys.includes(column.key)">
-                <span class="num-cell">{{ formatAmount(projectAmountValue(record, column.key)) }}</span>
+              <template v-else-if="purchasePlanCalculatedKeys.has(column.key)">
+                <span class="num-cell readonly-cell">
+                  {{ column.key === 'material_ratio' ? formatPercent(purchasePlanCalculatedValue(record, column.key)) : formatAmount(purchasePlanCalculatedValue(record, column.key)) }}
+                </span>
               </template>
-              <template v-if="column.key === 'status'">
-                <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
+              <template v-else-if="purchasePlanAmountKeys.has(column.key)">
+                <a-input-number
+                  v-model:value="record[column.key]"
+                  :min="0"
+                  :formatter="amountFormatter"
+                  :parser="amountParser"
+                  class="table-number-input"
+                  @change="markPurchasePlanDirty"
+                />
+              </template>
+              <template v-else-if="purchasePlanDateKeys.has(column.key)">
+                <a-date-picker
+                  v-model:value="record[column.key]"
+                  value-format="YYYY-MM-DD"
+                  class="table-date-input"
+                  @change="markPurchasePlanDirty"
+                />
+              </template>
+              <template v-else-if="column.key === 'domestic_overseas'">
+                <a-select v-model:value="record.domestic_overseas" :options="domesticOverseasOptions" style="width:92px" @change="markPurchasePlanDirty" />
+              </template>
+              <template v-else-if="column.key === 'special_relation'">
+                <a-select v-model:value="record.special_relation" :options="specialRelationOptions" style="width:92px" @change="markPurchasePlanDirty" />
+              </template>
+              <template v-else-if="column.key === 'progress_status'">
+                <a-select v-model:value="record.progress_status" :options="salesProgressOptions" style="width:92px" @change="markPurchasePlanDirty" />
+              </template>
+              <template v-else-if="purchasePlanTextKeys.has(column.key)">
+                <a-input v-model:value="record[column.key]" @change="markPurchasePlanDirty" />
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-popconfirm title="이 행을 삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소" @confirm="removePurchasePlanRow(record.id)">
+                  <a class="del-link">삭제</a>
+                </a-popconfirm>
               </template>
             </template>
           </a-table>
@@ -732,6 +788,8 @@ const salesPlanAmountKeys = new Set([
   'order_balance_adjustment', 'overhead_amount', 'revised_bl_order_balance',
   'current_order_balance_progress', 'revenue_accumulated',
   ...MONTH_LABELS.map(month => `revenue_progress_${month}`),
+  'previous_revenue_accumulated',
+  'previous_tax_invoice_revenue_accumulated',
   'tax_invoice_order_balance', 'tax_invoice_revenue_accumulated',
   ...MONTH_LABELS.map(month => `tax_invoice_revenue_${month}`),
   'receivable_bl', 'vat_included_revenue_accumulated', 'current_year_collection_accumulated',
@@ -747,6 +805,66 @@ const salesPlanCalculatedKeys = new Set([
   'current_year_collection_accumulated',
   ...MONTH_LABELS.map(month => `collection_${month}`),
   'accounts_receivable',
+])
+const purchaseMonthPrefixes = [
+  'input_amount',
+  'material_input',
+  'foreign_material_input',
+  'domestic_material_input',
+  'subcontract_input',
+  'individual_cost',
+  'direct_expense',
+  'labor_cost',
+]
+const purchasePlanTextKeys = new Set(['project_name', 'contract_company', 'months'])
+const purchasePlanDateKeys = new Set(['contract_date', 'completion_date'])
+const purchasePlanCalculatedKeys = new Set([
+  'contract_total_amount',
+  'ordered_cost_total',
+  'expected_cost_total',
+  'material_subcontract_total',
+  'material_ratio',
+  'remaining_material_cost',
+  'accumulated_input_amount',
+  'current_year_input_total',
+  'material_input_total',
+  'foreign_material_input_total',
+  'domestic_material_input_total',
+  'subcontract_input_total',
+  'individual_cost_total',
+  'direct_expense_total',
+  'labor_cost_total',
+  ...MONTH_LABELS.map(month => `input_amount_${month}`),
+  ...MONTH_LABELS.map(month => `material_input_${month}`),
+  ...MONTH_LABELS.map(month => `individual_cost_${month}`),
+])
+const purchasePlanManualAmountKeys = new Set([
+  'contract_material_cost',
+  'contract_labor_cost',
+  'ordered_foreign_material_cost',
+  'ordered_domestic_material_cost',
+  'ordered_material_cost',
+  'ordered_subcontract_cost',
+  'ordered_individual_cost',
+  'expected_foreign_material_cost',
+  'expected_domestic_material_cost',
+  'expected_material_cost',
+  'expected_subcontract_cost',
+  'expected_individual_cost',
+  'previous_input_accumulated',
+  'previous_material_input_accumulated',
+  'previous_foreign_material_input_accumulated',
+  'previous_domestic_material_input_accumulated',
+  'previous_subcontract_input_accumulated',
+  'previous_individual_cost_input_accumulated',
+  'previous_direct_expense_input_accumulated',
+  'previous_labor_cost_input_accumulated',
+  ...['foreign_material_input', 'domestic_material_input', 'subcontract_input', 'direct_expense', 'labor_cost']
+    .flatMap(prefix => MONTH_LABELS.map(month => `${prefix}_${month}`)),
+])
+const purchasePlanAmountKeys = new Set([
+  ...purchasePlanManualAmountKeys,
+  ...purchasePlanCalculatedKeys,
 ])
 const domesticOverseasOptions = [
   { value: '내수', label: '내수' },
@@ -769,6 +887,9 @@ const receivables = ref([])
 const previousSalesPlanRows = ref([])
 const salesPlanRows = ref([])
 const salesPlanDirty = ref(false)
+const previousPurchasePlanRows = ref([])
+const purchasePlanRows = ref([])
+const purchasePlanDirty = ref(false)
 const loading   = ref(false)
 const saving    = ref(false)
 const drawerOpen = ref(false)
@@ -886,30 +1007,166 @@ const salesPlanColumns = [
     title: '매출(진행율 인식 및 선수금 조정)',
     align: 'center',
     children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 매출 누계`, 'previous_revenue_accumulated', 155, 'right'),
       salesPlanLeaf('現수주잔고(진행율기준)', 'current_order_balance_progress', 170, 'right'),
       salesPlanLeaf('매출누계', 'revenue_accumulated', 125, 'right'),
       ...salesPlanMonthColumns('revenue_progress', '매출'),
     ],
   },
-  salesPlanLeaf('수주잔(계산서)', 'tax_invoice_order_balance', 135, 'right'),
   {
     title: '매출 세금계산서 발행 실적',
     align: 'center',
     children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 매출 세금계산서 누계`, 'previous_tax_invoice_revenue_accumulated', 190, 'right'),
+      salesPlanLeaf('수주잔(계산서)', 'tax_invoice_order_balance', 135, 'right'),
       salesPlanLeaf('매출누계', 'tax_invoice_revenue_accumulated', 125, 'right'),
       ...salesPlanMonthColumns('tax_invoice_revenue', '매출'),
     ],
   },
-  salesPlanLeaf('채권B/L', 'receivable_bl', 115, 'right'),
-  salesPlanLeaf('VAT포함매출누계', 'vat_included_revenue_accumulated', 150, 'right'),
-  salesPlanLeaf('당년수금누계', 'current_year_collection_accumulated', 135, 'right'),
-  ...salesPlanMonthColumns('collection', '수금'),
-  salesPlanLeaf('채권제각', 'bad_debt_writeoff', 115, 'right'),
-  salesPlanLeaf('외상매출금', 'accounts_receivable', 125, 'right'),
+  {
+    title: '수금현황',
+    align: 'center',
+    children: [
+      salesPlanLeaf('채권B/L', 'receivable_bl', 115, 'right'),
+      salesPlanLeaf('VAT포함매출누계', 'vat_included_revenue_accumulated', 150, 'right'),
+      salesPlanLeaf('당년수금누계', 'current_year_collection_accumulated', 135, 'right'),
+      ...salesPlanMonthColumns('collection', '수금'),
+      salesPlanLeaf('채권제각', 'bad_debt_writeoff', 115, 'right'),
+      salesPlanLeaf('외상매출금', 'accounts_receivable', 125, 'right'),
+    ],
+  },
   salesPlanLeaf('관리', 'action', 80, 'center', { fixed: 'right' }),
 ]
 
-const salesPlanScrollX = 8100
+const salesPlanScrollX = 8450
+
+function purchasePlanMonthColumns(prefix, width = 105) {
+  return MONTH_LABELS.map(month => salesPlanLeaf(month, `${prefix}_${month}`, width, 'right'))
+}
+
+const purchasePlanColumns = [
+  salesPlanLeaf('JOB NO', 'job_no', 150, 'center', { fixed: 'left' }),
+  salesPlanLeaf('프로젝트명', 'project_name', 180, 'center', { ellipsis: true, fixed: 'left' }),
+  salesPlanLeaf('계약업체명', 'contract_company', 150, 'center', { ellipsis: true }),
+  salesPlanLeaf('내수/해외', 'domestic_overseas', 100),
+  salesPlanLeaf('특수관계', 'special_relation', 100),
+  salesPlanLeaf('진행/종료', 'progress_status', 100),
+  salesPlanLeaf('계약일', 'contract_date', 125),
+  salesPlanLeaf('준공일', 'completion_date', 125),
+  salesPlanLeaf('개월수', 'months', 80),
+  {
+    title: '계약금액',
+    align: 'center',
+    children: [
+      salesPlanLeaf('총 계약금액', 'contract_total_amount', 135, 'right'),
+      salesPlanLeaf('자재비', 'contract_material_cost', 125, 'right'),
+      salesPlanLeaf('노무비', 'contract_labor_cost', 125, 'right'),
+    ],
+  },
+  {
+    title: '수주원가',
+    align: 'center',
+    children: [
+      salesPlanLeaf('외자', 'ordered_foreign_material_cost', 120, 'right'),
+      salesPlanLeaf('내자', 'ordered_domestic_material_cost', 120, 'right'),
+      salesPlanLeaf('자재비', 'ordered_material_cost', 120, 'right'),
+      salesPlanLeaf('외주비', 'ordered_subcontract_cost', 120, 'right'),
+      salesPlanLeaf('개별비', 'ordered_individual_cost', 120, 'right'),
+      salesPlanLeaf('합계', 'ordered_cost_total', 120, 'right'),
+    ],
+  },
+  {
+    title: '예정원가',
+    align: 'center',
+    children: [
+      salesPlanLeaf('외자', 'expected_foreign_material_cost', 120, 'right'),
+      salesPlanLeaf('내자', 'expected_domestic_material_cost', 120, 'right'),
+      salesPlanLeaf('자재비', 'expected_material_cost', 120, 'right'),
+      salesPlanLeaf('외주비', 'expected_subcontract_cost', 120, 'right'),
+      salesPlanLeaf('개별비', 'expected_individual_cost', 120, 'right'),
+      salesPlanLeaf('합계', 'expected_cost_total', 120, 'right'),
+      salesPlanLeaf('자재비+외주비', 'material_subcontract_total', 135, 'right'),
+      salesPlanLeaf('재료비율', 'material_ratio', 110, 'center'),
+    ],
+  },
+  salesPlanLeaf('잔여재료비', 'remaining_material_cost', 135, 'right'),
+  salesPlanLeaf('누적투입금액', 'accumulated_input_amount', 140, 'right'),
+  salesPlanLeaf(`${orgYear}년이전투입누계`, 'previous_input_accumulated', 150, 'right'),
+  {
+    title: `${orgYear}년 투입금액(자재+외주비)-노무비, 경비 제외`,
+    align: 'center',
+    children: [
+      salesPlanLeaf('총투입금액', 'current_year_input_total', 130, 'right'),
+      ...purchasePlanMonthColumns('input_amount'),
+    ],
+  },
+  {
+    title: '자재 투입',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 자재 투입 누계`, 'previous_material_input_accumulated', 175, 'right'),
+      salesPlanLeaf('자재투입합', 'material_input_total', 130, 'right'),
+      ...purchasePlanMonthColumns('material_input'),
+    ],
+  },
+  {
+    title: '외자재투입금액',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 외자재 투입 누계`, 'previous_foreign_material_input_accumulated', 185, 'right'),
+      salesPlanLeaf('외자재투입합', 'foreign_material_input_total', 135, 'right'),
+      ...purchasePlanMonthColumns('foreign_material_input'),
+    ],
+  },
+  {
+    title: '내자재투입금액',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 내자재 투입 누계`, 'previous_domestic_material_input_accumulated', 185, 'right'),
+      salesPlanLeaf('내자재투입합', 'domestic_material_input_total', 135, 'right'),
+      ...purchasePlanMonthColumns('domestic_material_input'),
+    ],
+  },
+  {
+    title: '외주비투입',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 외주비 투입 누계`, 'previous_subcontract_input_accumulated', 185, 'right'),
+      salesPlanLeaf('외주비투입계', 'subcontract_input_total', 135, 'right'),
+      ...purchasePlanMonthColumns('subcontract_input'),
+    ],
+  },
+  {
+    title: '개별비',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 개별비 투입 누계`, 'previous_individual_cost_input_accumulated', 185, 'right'),
+      salesPlanLeaf('개별비계', 'individual_cost_total', 120, 'right'),
+      ...purchasePlanMonthColumns('individual_cost'),
+    ],
+  },
+  {
+    title: '직접경비',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 직접경비 투입 누계`, 'previous_direct_expense_input_accumulated', 195, 'right'),
+      salesPlanLeaf('직접경비계', 'direct_expense_total', 120, 'right'),
+      ...purchasePlanMonthColumns('direct_expense'),
+    ],
+  },
+  {
+    title: '인건비',
+    align: 'center',
+    children: [
+      salesPlanLeaf(`${String(orgYear).slice(2)}년 이전 인건비 투입 누계`, 'previous_labor_cost_input_accumulated', 185, 'right'),
+      salesPlanLeaf('인건비 계', 'labor_cost_total', 120, 'right'),
+      ...purchasePlanMonthColumns('labor_cost'),
+    ],
+  },
+  salesPlanLeaf('관리', 'action', 80, 'center', { fixed: 'right' }),
+]
+
+const purchasePlanScrollX = 12900
 
 // ── 테이블 컬럼 ──
 const columns = [
@@ -1042,6 +1299,11 @@ function calculateCostTotals(source = {}) {
 function formatAmount(value) {
   const amount = toNumber(value)
   return amount ? amount.toLocaleString() : '—'
+}
+
+function formatPercent(value) {
+  const amount = toNumber(value)
+  return amount ? `${amount.toFixed(1)}%` : '0.0%'
 }
 
 function projectAmountValue(record, key) {
@@ -1321,6 +1583,233 @@ function applyProjectToSalesRow(row, projectId) {
 }
 
 // ── 폼 ──
+function createEmptyPurchasePlanRow() {
+  const amountFields = Object.fromEntries([...purchasePlanAmountKeys].map(key => [key, 0]))
+  return {
+    id: `purchase-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    project_id: undefined,
+    job_no: '',
+    project_name: '',
+    contract_company: '',
+    domestic_overseas: '내수',
+    special_relation: 'x',
+    progress_status: '진행',
+    contract_date: null,
+    completion_date: null,
+    months: '',
+    ...amountFields,
+  }
+}
+
+function normalizePurchasePlanRow(row = {}) {
+  const empty = createEmptyPurchasePlanRow()
+  const normalized = { ...empty, ...row }
+  purchasePlanAmountKeys.forEach(key => { normalized[key] = toNumber(normalized[key]) })
+  return normalized
+}
+
+function sumPurchasePlanMonths(row, prefix) {
+  return MONTH_LABELS.reduce((sum, month) => sum + toNumber(row[`${prefix}_${month}`]), 0)
+}
+
+function sumPurchaseCalculatedMonths(row, prefix) {
+  return MONTH_LABELS.reduce((sum, month) => sum + purchasePlanCalculatedValue(row, `${prefix}_${month}`), 0)
+}
+
+function purchasePlanCalculatedValue(row, key) {
+  const contractTotalAmount = toNumber(row.contract_material_cost) + toNumber(row.contract_labor_cost)
+  const orderedCostTotal = toNumber(row.ordered_foreign_material_cost)
+    + toNumber(row.ordered_domestic_material_cost)
+    + toNumber(row.ordered_material_cost)
+    + toNumber(row.ordered_subcontract_cost)
+    + toNumber(row.ordered_individual_cost)
+  const expectedCostTotal = toNumber(row.expected_foreign_material_cost)
+    + toNumber(row.expected_domestic_material_cost)
+    + toNumber(row.expected_material_cost)
+    + toNumber(row.expected_subcontract_cost)
+    + toNumber(row.expected_individual_cost)
+  const materialSubcontractTotal = toNumber(row.expected_material_cost) + toNumber(row.expected_subcontract_cost)
+
+  if (key.startsWith('input_amount_')) {
+    const month = key.replace('input_amount_', '')
+    return purchasePlanCalculatedValue(row, `material_input_${month}`)
+      + toNumber(row[`subcontract_input_${month}`])
+  }
+  if (key.startsWith('material_input_')) {
+    const month = key.replace('material_input_', '')
+    return toNumber(row[`foreign_material_input_${month}`])
+      + toNumber(row[`domestic_material_input_${month}`])
+  }
+  if (key.startsWith('individual_cost_')) {
+    const month = key.replace('individual_cost_', '')
+    return toNumber(row[`direct_expense_${month}`])
+      + toNumber(row[`labor_cost_${month}`])
+  }
+
+  const currentYearInputTotal = sumPurchaseCalculatedMonths(row, 'input_amount')
+  const accumulatedInputAmount = toNumber(row.previous_input_accumulated) + currentYearInputTotal
+
+  switch (key) {
+    case 'contract_total_amount':
+      return contractTotalAmount
+    case 'ordered_cost_total':
+      return orderedCostTotal
+    case 'expected_cost_total':
+      return expectedCostTotal
+    case 'material_subcontract_total':
+      return materialSubcontractTotal
+    case 'material_ratio':
+      return contractTotalAmount ? (materialSubcontractTotal / contractTotalAmount) * 100 : 0
+    case 'remaining_material_cost':
+      return materialSubcontractTotal - accumulatedInputAmount
+    case 'accumulated_input_amount':
+      return accumulatedInputAmount
+    case 'current_year_input_total':
+      return currentYearInputTotal
+    case 'material_input_total':
+      return sumPurchaseCalculatedMonths(row, 'material_input')
+    case 'foreign_material_input_total':
+      return sumPurchasePlanMonths(row, 'foreign_material_input')
+    case 'domestic_material_input_total':
+      return sumPurchasePlanMonths(row, 'domestic_material_input')
+    case 'subcontract_input_total':
+      return sumPurchasePlanMonths(row, 'subcontract_input')
+    case 'individual_cost_total':
+      return sumPurchaseCalculatedMonths(row, 'individual_cost')
+    case 'direct_expense_total':
+      return sumPurchasePlanMonths(row, 'direct_expense')
+    case 'labor_cost_total':
+      return sumPurchasePlanMonths(row, 'labor_cost')
+    default:
+      return toNumber(row[key])
+  }
+}
+
+function purchasePlanRowsForSave() {
+  return purchasePlanRows.value.map(row => ({
+    ...row,
+    ...Object.fromEntries(
+      [...purchasePlanCalculatedKeys].map(key => [key, purchasePlanCalculatedValue(row, key)])
+    ),
+  }))
+}
+
+function findPreviousPurchasePlanRow(project) {
+  if (!project) return null
+  return previousPurchasePlanRows.value.find(row => row.project_id && row.project_id === project.id)
+    || previousPurchasePlanRows.value.find(row => row.job_no && row.job_no === project.project_no)
+    || null
+}
+
+function purchasePlanCarryoverFields(project) {
+  const previousRow = findPreviousPurchasePlanRow(project)
+  if (!previousRow) return {}
+  return {
+    previous_input_accumulated: purchasePlanCalculatedValue(previousRow, 'accumulated_input_amount'),
+  }
+}
+
+function projectToPurchasePlanBase(project) {
+  return projectToSalesPlanBase(project)
+}
+
+function applyPurchasePlanCarryover(row, project) {
+  const carryover = purchasePlanCarryoverFields(project)
+  if (!toNumber(row.previous_input_accumulated) && toNumber(carryover.previous_input_accumulated)) {
+    row.previous_input_accumulated = carryover.previous_input_accumulated
+  }
+}
+
+function markPurchasePlanDirty() {
+  purchasePlanDirty.value = true
+}
+
+async function savePurchasePlanRows() {
+  saving.value = true
+  try {
+    const res = await executionApi.saveProjectPurchasePlans(orgYear, purchasePlanRowsForSave())
+    purchasePlanRows.value = (res.data || []).map(normalizePurchasePlanRow)
+    purchasePlanDirty.value = false
+    message.success('프로젝트리스트(매입)이 DB에 저장되었습니다.')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '프로젝트리스트(매입) 저장 오류')
+  } finally {
+    saving.value = false
+  }
+}
+
+function addPurchasePlanRow() {
+  purchasePlanRows.value = [...purchasePlanRows.value, createEmptyPurchasePlanRow()]
+  markPurchasePlanDirty()
+}
+
+function removePurchasePlanRow(id) {
+  purchasePlanRows.value = purchasePlanRows.value.filter(row => row.id !== id)
+  markPurchasePlanDirty()
+}
+
+function applyProjectToPurchaseRow(row, projectId) {
+  const project = items.value.find(item => item.id === projectId)
+  if (!project) {
+    Object.assign(row, {
+      project_id: undefined,
+      job_no: '',
+      project_name: '',
+      contract_company: '',
+    })
+    markPurchasePlanDirty()
+    return
+  }
+  Object.assign(row, projectToPurchasePlanBase(project))
+  applyPurchasePlanCarryover(row, project)
+  markPurchasePlanDirty()
+}
+
+function syncPurchasePlanRowsWithProjects({ silent = false } = {}) {
+  const existingByProjectId = new Map(
+    purchasePlanRows.value
+      .filter(row => row.project_id)
+      .map(row => [row.project_id, row])
+  )
+  const existingByJobNo = new Map(
+    purchasePlanRows.value
+      .filter(row => row.job_no)
+      .map(row => [row.job_no, row])
+  )
+  const syncedRows = [...purchasePlanRows.value]
+  let added = 0
+
+  items.value.forEach(project => {
+    const base = projectToPurchasePlanBase(project)
+    const existing = existingByProjectId.get(project.id) || existingByJobNo.get(base.job_no)
+    if (existing) {
+      Object.assign(existing, {
+        project_id: base.project_id,
+        job_no: base.job_no,
+        project_name: base.project_name,
+        contract_company: base.contract_company,
+        domestic_overseas: base.domestic_overseas,
+        special_relation: base.special_relation,
+        progress_status: base.progress_status,
+        contract_date: base.contract_date,
+        completion_date: base.completion_date,
+        months: base.months,
+      })
+      applyPurchasePlanCarryover(existing, project)
+      return
+    }
+    const created = normalizePurchasePlanRow({ ...createEmptyPurchasePlanRow(), ...base, ...purchasePlanCarryoverFields(project) })
+    syncedRows.push(created)
+    added += 1
+  })
+
+  purchasePlanRows.value = syncedRows.map(normalizePurchasePlanRow)
+  if (added > 0) purchasePlanDirty.value = true
+  if (!silent) {
+    message.success(added ? `${added}개 수주 프로젝트를 매입 탭에 반영했습니다.` : '수주 프로젝트 정보가 최신 상태입니다.')
+  }
+}
+
 const emptyForm = {
   project_no: '', project_name: '', client_id: null, client_name: '',
   contract_form: '원도급', contract_type: '국내', status: '미진행',
@@ -1619,13 +2108,15 @@ async function handleDelete(id) {
 async function load() {
   loading.value = true
   try {
-    const [proj, co, dept, recv, salesPlan, previousSalesPlan] = await Promise.all([
+    const [proj, co, dept, recv, salesPlan, previousSalesPlan, purchasePlan, previousPurchasePlan] = await Promise.all([
       executionApi.getProjects(),
       masterApi.getCompanies(),
       masterApi.getDepartments({ org_year: orgYear, include_inactive: false, tree: true }),
       managementApi.getReceivables(),
       executionApi.getProjectSalesPlans(orgYear),
       executionApi.getProjectSalesPlans(orgYear - 1),
+      executionApi.getProjectPurchasePlans(orgYear),
+      executionApi.getProjectPurchasePlans(orgYear - 1),
       loadBusinessCategories(),
     ])
     items.value     = proj.data.map(withRequirementMeta)
@@ -1634,7 +2125,10 @@ async function load() {
     receivables.value = recv.data?.items || []
     salesPlanRows.value = (salesPlan.data || []).map(normalizeSalesPlanRow)
     previousSalesPlanRows.value = (previousSalesPlan.data || []).map(normalizeSalesPlanRow)
+    purchasePlanRows.value = (purchasePlan.data || []).map(normalizePurchasePlanRow)
+    previousPurchasePlanRows.value = (previousPurchasePlan.data || []).map(normalizePurchasePlanRow)
     syncSalesPlanRowsWithProjects({ silent: true })
+    syncPurchasePlanRowsWithProjects({ silent: true })
   } finally {
     loading.value = false
   }

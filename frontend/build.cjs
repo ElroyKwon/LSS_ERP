@@ -1,24 +1,40 @@
-// Programmatic Vite build — workaround for Rollup native module crash on Windows/Node 24+
 const path = require('path')
 const fs = require('fs')
+const { spawnSync } = require('child_process')
 
 const root = __dirname
 const outDir = 'dist'
+const outputIndex = path.join(root, outDir, 'index.html')
+const viteBin = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js')
+const knownWindowsRollupCrashCodes = new Set([
+  -1073740791, // signed 0xc0000409
+  3221226505, // unsigned 0xc0000409
+])
 
-async function run() {
-  const { build } = await import('vite')
-  await build({ root, build: { outDir, emptyOutDir: true } })
+function hasBuildOutput() {
+  return fs.existsSync(outputIndex)
 }
 
-run()
-  .then(() => {
-    const ok = fs.existsSync(path.join(root, outDir, 'index.html'))
-    console.log(ok ? '\nBuild complete' : '\nBuild output missing')
-    process.exitCode = ok ? 0 : 1
-    // Force-flush stdout before the process might crash on Rollup cleanup
-    process.stdout.write('', () => process.exit(process.exitCode))
-  })
-  .catch(e => {
-    console.error('\nBuild failed:', e.message)
-    process.exit(1)
-  })
+const result = spawnSync(process.execPath, [viteBin, 'build'], {
+  cwd: root,
+  env: process.env,
+  stdio: 'inherit',
+})
+
+if (result.error) {
+  console.error('\nBuild failed:', result.error.message)
+  process.exit(1)
+}
+
+if (result.status === 0 && hasBuildOutput()) {
+  console.log('\nBuild complete')
+  process.exit(0)
+}
+
+if (process.platform === 'win32' && knownWindowsRollupCrashCodes.has(result.status) && hasBuildOutput()) {
+  console.warn('\nBuild completed; ignored known Rollup native cleanup crash on Windows.')
+  process.exit(0)
+}
+
+console.error(hasBuildOutput() ? '\nBuild failed after output generation' : '\nBuild output missing')
+process.exit(result.status || 1)

@@ -1,183 +1,310 @@
 <template>
   <div class="page-wrap">
-
-    <!-- 요약 카드 -->
     <a-row :gutter="16">
-      <a-col :flex="1" v-for="s in summaryCards" :key="s.key">
-        <a-card :bordered="false" class="stat-card" :class="s.cls">
+      <a-col :flex="1" v-for="card in statCards" :key="card.key">
+        <a-card :bordered="false" class="stat-card" :class="card.cls">
           <div class="stat-inner">
             <div>
-              <div class="stat-label">{{ s.label }}</div>
-              <div class="stat-value" :style="`color:${s.color}`">{{ s.value }}<span class="stat-unit">백만</span></div>
-              <div class="stat-sub">{{ s.sub }}</div>
+              <div class="stat-label">{{ card.label }}</div>
+              <div class="stat-value" :style="`color:${card.color}`">
+                {{ card.value }}<span class="stat-unit">{{ card.unit }}</span>
+              </div>
             </div>
           </div>
         </a-card>
       </a-col>
     </a-row>
 
-    <!-- 지급 일정 테이블 -->
     <a-card :bordered="false" class="table-card">
-      <template #title><span class="card-title">채무 현황 (지급 일정)</span></template>
+      <template #title><span class="card-title">채무관리</span></template>
       <template #extra>
         <a-space>
-          <a-radio-group v-model:value="filterRange" button-style="solid" size="small" @change="applyFilter">
+          <a-radio-group v-model:value="filterRange" button-style="solid" size="small">
             <a-radio-button value="all">전체</a-radio-button>
             <a-radio-button value="overdue">연체</a-radio-button>
             <a-radio-button value="d30">30일 이내</a-radio-button>
-            <a-radio-button value="d60">60일 이내</a-radio-button>
+            <a-radio-button value="unpaid">미지급</a-radio-button>
           </a-radio-group>
-          <a-button :loading="loading" @click="load" size="small">
+          <a-button :loading="loading" @click="load">
             <template #icon><ReloadOutlined /></template>새로고침
+          </a-button>
+          <a-button type="primary" :loading="adding" @click="addRow">
+            <template #icon><PlusOutlined /></template>행 추가
           </a-button>
         </a-space>
       </template>
 
-      <a-table :columns="columns" :data-source="displayItems" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 1500 }"
-               :row-class-name="r => r.overdue ? 'row-overdue' : ''">
+      <a-table
+        :columns="columns"
+        :data-source="displayItems"
+        :loading="loading"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        row-key="id"
+        size="middle"
+        :scroll="{ x: 3300 }"
+        :row-class-name="record => record.overdue ? 'row-overdue' : ''"
+      >
         <template #bodyCell="{ column, record }">
-          <template v-if="['total_amount','paid_amount','outstanding_amount','contract_amount_vat','cash_paid_amount','note_issued_amount','payment_amount'].includes(column.key)">
-            {{ Number(record[column.key]).toLocaleString() }}
+          <template v-if="TEXT_FIELDS.includes(column.key)">
+            <a-input
+              v-model:value="record[column.key]"
+              class="cell-control"
+              @blur="saveInline(record)"
+              @pressEnter="saveInline(record)"
+            />
           </template>
-          <template v-if="column.key === 'days_left'">
-            <span v-if="record.overdue" style="color:#f5222d;font-weight:700">
-              D+{{ Math.abs(record.days_left) }} 연체
-            </span>
-            <span v-else-if="record.days_left <= 7" style="color:#fa8c16;font-weight:600">
-              D-{{ record.days_left }}
-            </span>
-            <span v-else-if="record.days_left != null" style="color:#595959">D-{{ record.days_left }}</span>
-            <span v-else>—</span>
+
+          <template v-else-if="DATE_FIELDS.includes(column.key)">
+            <a-date-picker
+              v-model:value="record[column.key]"
+              class="cell-control"
+              value-format="YYYY-MM-DD"
+              @change="saveInline(record)"
+            />
           </template>
-          <template v-if="column.key === 'status'">
-            <a-tag :color="record.overdue ? 'red' : record.days_left <= 7 ? 'orange' : 'blue'">
-              {{ record.overdue ? '연체' : record.status === 'partial' ? '부분지급' : '미지급' }}
-            </a-tag>
+
+          <template v-else-if="AMOUNT_INPUT_FIELDS.includes(column.key)">
+            <a-input-number
+              v-model:value="record[column.key]"
+              class="cell-control"
+              :min="0"
+              :formatter="formatInputAmount"
+              :parser="parseAmount"
+              @focus="clearZero(record, column.key)"
+              @blur="saveInline(record)"
+              @pressEnter="saveInline(record)"
+            />
+          </template>
+
+          <template v-else-if="column.key === 'purchase_type'">
+            <a-select v-model:value="record.purchase_type" class="cell-control" allow-clear @change="saveInline(record)">
+              <a-select-option v-for="type in PURCHASE_TYPES" :key="type" :value="type">{{ type }}</a-select-option>
+            </a-select>
+          </template>
+
+          <template v-else-if="column.key === 'subcontract_type'">
+            <a-select v-model:value="record.subcontract_type" class="cell-control" allow-clear @change="saveInline(record)">
+              <a-select-option v-for="type in SUBCONTRACT_TYPES" :key="type" :value="type">{{ type }}</a-select-option>
+            </a-select>
+          </template>
+
+          <template v-else-if="column.key === 'payment_type'">
+            <a-select v-model:value="record.payment_type" class="cell-control" allow-clear @change="saveInline(record)">
+              <a-select-option v-for="type in PAYMENT_TYPES" :key="type" :value="type">{{ type }}</a-select-option>
+            </a-select>
+          </template>
+
+          <template v-else-if="AMOUNT_DISPLAY_FIELDS.includes(column.key)">
+            <span class="num-cell">{{ formatAmount(record[column.key]) }}</span>
           </template>
         </template>
       </a-table>
-    </a-card>
-
-    <!-- 월별 지급 예정 차트 -->
-    <a-card :bordered="false" class="dash-card" title="향후 90일 지급 일정">
-      <div v-if="hasScheduleData">
-        <v-chart :option="scheduleOption" style="height:220px" autoresize />
-      </div>
-      <a-empty v-else description="지급 예정 데이터가 없습니다." style="padding:40px 0" />
     </a-card>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { managementApi } from '@/api'
 
-use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
+const PURCHASE_TYPES = ['자재', '외주', '안전', '기타']
+const SUBCONTRACT_TYPES = ['하도급', '비하도급']
+const PAYMENT_TYPES = ['현금', '어음', '현금+어음', '기타']
 
-const loading = ref(false), filterRange = ref('all')
-const data = ref({ items: [], summary: {} })
+const TEXT_FIELDS = [
+  'job_no',
+  'contract_name',
+  'vendor_name',
+  'payment_terms',
+  'collection_terms',
+  'related_revenue_collection_method',
+]
+const DATE_FIELDS = [
+  'debt_date',
+  'related_revenue_collection_date',
+  'payment_due_date',
+  'actual_payment_date',
+  'note_maturity_date',
+]
+const AMOUNT_INPUT_FIELDS = [
+  'debt_amount',
+  'contract_amount_ex_vat',
+  'contract_amount',
+  'related_revenue',
+  'cash_paid_amount',
+  'note_issued_amount',
+]
+const AMOUNT_DISPLAY_FIELDS = [
+  ...AMOUNT_INPUT_FIELDS,
+  'payment_amount',
+  'payable_balance',
+]
 
-const items   = computed(() => data.value?.items   || [])
-const summary = computed(() => data.value?.summary || {})
-const fmtM = v => Math.round(v / 1_000_000).toLocaleString()
+const loading = ref(false)
+const adding = ref(false)
+const filterRange = ref('all')
+const items = ref([])
 
-const enrichedItems = computed(() => items.value.map(r => {
-  const payment_method = r.payment_method || '현금'
-  const paid = Number(r.paid_amount) || 0
-  return {
-    ...r,
-    payable_type: r.payable_type || '매입 청구 승인시 생성',
-    purchase_type: r.purchase_type || '자재',
-    subcontract_flag: r.subcontract_flag || '하도급',
-    payment_method,
-    contract_amount_vat: Math.round((Number(r.total_amount) || 0) * 1.1),
-    cash_paid_amount: payment_method.includes('현금') ? paid : 0,
-    note_issued_amount: payment_method.includes('어음') ? paid : 0,
-    payment_amount: paid,
-    remaining_amount: Number(r.outstanding_amount) || 0,
-  }
-}))
+const emptyForm = {
+  job_no: '',
+  contract_name: '',
+  vendor_name: '',
+  debt_date: null,
+  debt_amount: null,
+  contract_amount_ex_vat: null,
+  contract_amount: null,
+  purchase_type: null,
+  subcontract_type: null,
+  payment_terms: '',
+  collection_terms: '',
+  related_revenue: null,
+  related_revenue_collection_date: null,
+  related_revenue_collection_method: '',
+  payment_due_date: null,
+  actual_payment_date: null,
+  payment_type: null,
+  cash_paid_amount: null,
+  note_issued_amount: null,
+  note_maturity_date: null,
+  payment_amount: 0,
+  payable_balance: 0,
+}
+
+const columns = [
+  { title: 'JOB NO', key: 'job_no', dataIndex: 'job_no', width: 130, align: 'center', fixed: 'left' },
+  { title: '계약명', key: 'contract_name', dataIndex: 'contract_name', width: 200, align: 'center', ellipsis: true },
+  { title: '구매업체', key: 'vendor_name', dataIndex: 'vendor_name', width: 170, align: 'center', ellipsis: true },
+  { title: '채무발생일', key: 'debt_date', dataIndex: 'debt_date', width: 145, align: 'center' },
+  { title: '채무금액', key: 'debt_amount', dataIndex: 'debt_amount', width: 140, align: 'right' },
+  { title: '계약금(VAT제외)', key: 'contract_amount_ex_vat', dataIndex: 'contract_amount_ex_vat', width: 155, align: 'right' },
+  { title: '계약금액', key: 'contract_amount', dataIndex: 'contract_amount', width: 140, align: 'right' },
+  { title: '매입구분', key: 'purchase_type', dataIndex: 'purchase_type', width: 110, align: 'center' },
+  { title: '하도급/비하도급', key: 'subcontract_type', dataIndex: 'subcontract_type', width: 140, align: 'center' },
+  { title: '지불조건', key: 'payment_terms', dataIndex: 'payment_terms', width: 170, align: 'center', ellipsis: true },
+  { title: '수금조건', key: 'collection_terms', dataIndex: 'collection_terms', width: 170, align: 'center', ellipsis: true },
+  { title: '관련매출', key: 'related_revenue', dataIndex: 'related_revenue', width: 140, align: 'right' },
+  { title: '관련매출 수금일', key: 'related_revenue_collection_date', dataIndex: 'related_revenue_collection_date', width: 150, align: 'center' },
+  { title: '관련매출 수금방법', key: 'related_revenue_collection_method', dataIndex: 'related_revenue_collection_method', width: 160, align: 'center' },
+  { title: '지급예정일', key: 'payment_due_date', dataIndex: 'payment_due_date', width: 145, align: 'center' },
+  { title: '실 지급일', key: 'actual_payment_date', dataIndex: 'actual_payment_date', width: 145, align: 'center' },
+  { title: '지급구분', key: 'payment_type', dataIndex: 'payment_type', width: 110, align: 'center' },
+  { title: '현금지급액', key: 'cash_paid_amount', dataIndex: 'cash_paid_amount', width: 140, align: 'right' },
+  { title: '어음발행금액', key: 'note_issued_amount', dataIndex: 'note_issued_amount', width: 145, align: 'right' },
+  { title: '어음만기일', key: 'note_maturity_date', dataIndex: 'note_maturity_date', width: 145, align: 'center' },
+  { title: '지급액', key: 'payment_amount', dataIndex: 'payment_amount', width: 130, align: 'right' },
+  { title: '채무잔액', key: 'payable_balance', dataIndex: 'payable_balance', width: 140, align: 'right' },
+]
 
 const displayItems = computed(() => {
-  const r = filterRange.value
-  if (r === 'all')     return enrichedItems.value
-  if (r === 'overdue') return enrichedItems.value.filter(i => i.overdue)
-  if (r === 'd30')     return enrichedItems.value.filter(i => !i.overdue && i.days_left != null && i.days_left <= 30)
-  if (r === 'd60')     return enrichedItems.value.filter(i => !i.overdue && i.days_left != null && i.days_left <= 60)
-  return enrichedItems.value
+  if (filterRange.value === 'overdue') return items.value.filter(row => row.overdue)
+  if (filterRange.value === 'd30') {
+    return items.value.filter(row => !row.overdue && row.days_left != null && row.days_left <= 30 && Number(row.payable_balance || 0) > 0)
+  }
+  if (filterRange.value === 'unpaid') return items.value.filter(row => Number(row.payable_balance || 0) > 0)
+  return items.value
 })
-function applyFilter() {}
 
-const summaryCards = computed(() => {
-  const s = summary.value
+const statCards = computed(() => {
+  const totalDebt = items.value.reduce((sum, row) => sum + Number(row.debt_amount || 0), 0)
+  const balance = items.value.reduce((sum, row) => sum + Number(row.payable_balance || 0), 0)
+  const overdue = items.value.filter(row => row.overdue).reduce((sum, row) => sum + Number(row.payable_balance || 0), 0)
+  const due30 = items.value.filter(row => !row.overdue && row.days_left != null && row.days_left <= 30)
+    .reduce((sum, row) => sum + Number(row.payable_balance || 0), 0)
   return [
-    { key: 'total',  label: '총 미지급',      value: fmtM(s.total_outstanding || 0), color: '#1a2535', cls: '',           sub: '전체 잔액' },
-    { key: 'over',   label: '연체',            value: fmtM(s.overdue_amount    || 0), color: '#f5222d', cls: 'stat-red',   sub: '기한 초과' },
-    { key: 'd30',    label: '30일 내 지급예정', value: fmtM(s.due_30           || 0), color: '#fa8c16', cls: 'stat-orange', sub: '이번달 중심' },
-    { key: 'count',  label: '지급 건수',        value: items.value.length + '건',     color: '#1677ff', cls: 'stat-blue',  sub: '미지급 전체' },
+    { key: 'total', label: '채무금액 합계', value: formatAmount(totalDebt), unit: '원', color: '#1677ff', cls: 'stat-blue' },
+    { key: 'balance', label: '채무잔액', value: formatAmount(balance), unit: '원', color: '#fa8c16', cls: 'stat-orange' },
+    { key: 'overdue', label: '연체금액', value: formatAmount(overdue), unit: '원', color: '#f5222d', cls: 'stat-red' },
+    { key: 'due30', label: '30일 이내 지급예정', value: formatAmount(due30), unit: '원', color: '#722ed1', cls: 'stat-purple' },
   ]
 })
 
-// 향후 30일 단위 그룹 집계
-const scheduleData = computed(() => {
-  const today = new Date()
-  const buckets = { '연체': 0, '~30일': 0, '31~60일': 0, '61~90일': 0 }
-  items.value.forEach(r => {
-    if (r.overdue) { buckets['연체'] += r.outstanding_amount; return }
-    const d = r.days_left
-    if (d == null) return
-    if (d <= 30)       buckets['~30일']   += r.outstanding_amount
-    else if (d <= 60)  buckets['31~60일'] += r.outstanding_amount
-    else if (d <= 90)  buckets['61~90일'] += r.outstanding_amount
-  })
-  return buckets
-})
-const hasScheduleData = computed(() => Object.values(scheduleData.value).some(v => v > 0))
+function formatAmount(value) {
+  return Number(value || 0).toLocaleString()
+}
 
-const scheduleOption = computed(() => ({
-  tooltip: { trigger: 'axis', formatter: ps => `${ps[0].axisValue}: ${fmtM(ps[0].value)}백만원` },
-  grid: { top: 20, bottom: 40, left: 60, right: 20 },
-  xAxis: { type: 'category', data: Object.keys(scheduleData.value) },
-  yAxis: { type: 'value', axisLabel: { formatter: v => fmtM(v) + 'M', fontSize: 10 } },
-  series: [{
-    type: 'bar',
-    data: Object.entries(scheduleData.value).map(([k, v]) => ({
-      value: v,
-      itemStyle: { color: k === '연체' ? '#f5222d' : k === '~30일' ? '#fa8c16' : '#1677ff' },
-    })),
-    barMaxWidth: 60,
-  }],
-}))
+function formatInputAmount(value) {
+  if (value === null || value === undefined || value === '') return ''
+  return `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
 
-const columns = [
-  { title: '구분',     dataIndex: 'payable_type',       width: 150, align: 'center' },
-  { title: '매입구분', dataIndex: 'purchase_type',      width: 90,  align: 'center' },
-  { title: '하도급',   dataIndex: 'subcontract_flag',   width: 90,  align: 'center' },
-  { title: '청구일',   dataIndex: 'issue_date',        width: 110, align: 'center' },
-  { title: '지급기한', dataIndex: 'due_date',           width: 110, align: 'center' },
-  { title: '청구금액', key: 'total_amount',             width: 130, align: 'right' },
-  { title: '계약금액(VAT포함)', key: 'contract_amount_vat', width: 150, align: 'right' },
-  { title: '지급구분', dataIndex: 'payment_method',     width: 105, align: 'center' },
-  { title: '현금지급액', key: 'cash_paid_amount',       width: 130, align: 'right' },
-  { title: '어음발행금액', key: 'note_issued_amount',   width: 130, align: 'right' },
-  { title: '지급금액', key: 'paid_amount',              width: 130, align: 'right' },
-  { title: '미지급',   key: 'outstanding_amount',       width: 130, align: 'right' },
-  { title: 'D-Day',    key: 'days_left',                width: 100, align: 'center' },
-  { title: '상태',     key: 'status',                   width: 90,  align: 'center' },
-]
+function parseAmount(value) {
+  return String(value || '').replace(/,/g, '')
+}
+
+function clearZero(row, key) {
+  if (Number(row[key]) === 0) row[key] = null
+}
+
+function normalizeRow(row) {
+  const normalized = { ...emptyForm, ...row }
+  normalized.payment_amount = Number(normalized.cash_paid_amount || 0) + Number(normalized.note_issued_amount || 0)
+  normalized.payable_balance = Math.max(Number(normalized.debt_amount || 0) - normalized.payment_amount, 0)
+  return normalized
+}
+
+function toPayload(row) {
+  const paymentAmount = Number(row.cash_paid_amount || 0) + Number(row.note_issued_amount || 0)
+  return {
+    job_no: row.job_no || '',
+    contract_name: row.contract_name || '',
+    vendor_name: row.vendor_name || '',
+    debt_date: row.debt_date || null,
+    debt_amount: Number(row.debt_amount || 0),
+    contract_amount_ex_vat: Number(row.contract_amount_ex_vat || 0),
+    contract_amount: Number(row.contract_amount || 0),
+    purchase_type: row.purchase_type || null,
+    subcontract_type: row.subcontract_type || null,
+    payment_terms: row.payment_terms || '',
+    collection_terms: row.collection_terms || '',
+    related_revenue: Number(row.related_revenue || 0),
+    related_revenue_collection_date: row.related_revenue_collection_date || null,
+    related_revenue_collection_method: row.related_revenue_collection_method || '',
+    payment_due_date: row.payment_due_date || null,
+    actual_payment_date: row.actual_payment_date || null,
+    payment_type: row.payment_type || null,
+    cash_paid_amount: Number(row.cash_paid_amount || 0),
+    note_issued_amount: Number(row.note_issued_amount || 0),
+    note_maturity_date: row.note_maturity_date || null,
+    payment_amount: paymentAmount,
+    notes: row.notes || '',
+  }
+}
 
 async function load() {
   loading.value = true
-  try { data.value = (await managementApi.getPayables()).data }
-  finally { loading.value = false }
+  try {
+    const res = await managementApi.getPayables()
+    items.value = (res.data?.items || []).map(normalizeRow)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function saveInline(row) {
+  if (!row.id) return
+  Object.assign(row, normalizeRow(row))
+  try {
+    const res = await managementApi.updatePayable(row.id, toPayload(row))
+    Object.assign(row, normalizeRow(res.data))
+  } catch (e) {
+    message.error(e.response?.data?.detail || '채무 정보 저장 오류')
+    load()
+  }
+}
+
+async function addRow() {
+  adding.value = true
+  try {
+    const res = await managementApi.createPayable(toPayload(emptyForm))
+    items.value = [normalizeRow(res.data), ...items.value]
+    message.success('테이블에 채무 행이 추가되었습니다.')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '채무 행 추가 오류')
+  } finally {
+    adding.value = false
+  }
 }
 
 onMounted(load)
@@ -185,17 +312,21 @@ onMounted(load)
 
 <style scoped>
 .page-wrap { display: flex; flex-direction: column; gap: 16px; }
-.stat-card   { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }
-.stat-red    { border-left-color: #f5222d; } .stat-orange { border-left-color: #fa8c16; }
-.stat-blue   { border-left-color: #1677ff; }
-.stat-inner  { display: flex; }
-.stat-label  { font-size: 12px; color: #8c8c8c; margin-bottom: 2px; }
-.stat-value  { font-size: 22px; font-weight: 700; color: #1a2535; line-height: 1.2; }
-.stat-unit   { font-size: 11px; font-weight: 400; margin-left: 2px; color: #8c8c8c; }
-.stat-sub    { font-size: 11px; color: #bfbfbf; margin-top: 2px; }
-.table-card, .dash-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-.card-title  { font-size: 15px; font-weight: 600; color: #1a2535; }
+.stat-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }
+.stat-blue { border-left-color: #1677ff; }
+.stat-orange { border-left-color: #fa8c16; }
+.stat-red { border-left-color: #f5222d; }
+.stat-purple { border-left-color: #722ed1; }
+.stat-inner { display: flex; align-items: center; min-height: 58px; }
+.stat-label { font-size: 12px; color: #8c8c8c; margin-bottom: 4px; }
+.stat-value { font-size: 22px; font-weight: 700; color: #1a2535; line-height: 1.2; }
+.stat-unit { font-size: 12px; font-weight: 400; margin-left: 3px; color: #8c8c8c; }
+.table-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+.card-title { font-size: 15px; font-weight: 600; color: #1a2535; }
+.cell-control { width: 100%; }
+.num-cell { font-weight: 600; }
 :deep(.row-overdue td) { background: #fff1f0 !important; }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
+:deep(.ant-table-cell) { white-space: nowrap; }
 </style>

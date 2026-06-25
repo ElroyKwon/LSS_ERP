@@ -7,7 +7,7 @@ from datetime import date
 import json
 from ..database import get_db
 from ..models.execution import (
-    Project, ProjectPlan, ProjectSalesPlanRow, ProjectBusinessCategory, ProjectPlanMeta,
+    Project, ProjectPlan, ProjectSalesPlanRow, ProjectPurchasePlanRow, ProjectBusinessCategory, ProjectPlanMeta, ProjectPlanWeeklySnapshot,
     PurchaseContract, ReleaseRequest, SalesBill, APBill,
 )
 from ..models.accounting import AccountsReceivable
@@ -175,6 +175,7 @@ class ProjectPlanUpsert(BaseModel):
     project_id:       int
     plan_year:        int
     plan_month:       int
+    invoice_plan:     Decimal = Decimal(0)
     revenue_plan:     Decimal = Decimal(0)
     material_plan:    Decimal = Decimal(0)
     labor_plan:       Decimal = Decimal(0)
@@ -188,8 +189,22 @@ class ProjectPlanMetaSave(BaseModel):
     plan_year: int
     version: Optional[int] = None
     contractDate: Optional[str] = None
+    orderDate: Optional[str] = None
+    orderAmount: Optional[float] = 0
+    orderCompanyName: Optional[str] = None
+    orderLaborCost: Optional[float] = 0
+    orderExpenseCost: Optional[float] = 0
     changeColumnGroups: dict = {}
     materialVendorRows: List[dict] = []
+    laborDetailRows: List[dict] = []
+
+
+class ProjectPlanWeeklySnapshotSave(BaseModel):
+    project_id: int
+    plan_year: int
+    week_start: date
+    planData: dict = {}
+    meta: dict = {}
 
 
 class ProjectBusinessCategoriesSave(BaseModel):
@@ -218,6 +233,7 @@ def list_plans(project_id: int, plan_year: int,
     return [{
         "id": r.id, "project_id": r.project_id,
         "plan_year": r.plan_year, "plan_month": r.plan_month,
+        "invoice_plan":     float(getattr(r, "invoice_plan", 0) or 0),
         "revenue_plan":     float(r.revenue_plan or 0),
         "material_plan":    float(r.material_plan or 0),
         "labor_plan":       float(r.labor_plan or 0),
@@ -299,6 +315,86 @@ def save_project_plan_meta(
     return {**payload, "exists": True, "id": row.id}
 
 
+def _weekly_snapshot_dict(row: ProjectPlanWeeklySnapshot) -> dict:
+    try:
+        payload = json.loads(row.data_json or "{}")
+        if not isinstance(payload, dict):
+            payload = {}
+    except (TypeError, ValueError):
+        payload = {}
+    payload["exists"] = True
+    payload["id"] = row.id
+    payload["project_id"] = row.project_id
+    payload["plan_year"] = row.plan_year
+    payload["week_start"] = to_kst_date(row.week_start)
+    return payload
+
+
+@router.get("/project-plan-weekly")
+def get_project_plan_weekly(
+    project_id: int,
+    plan_year: int,
+    week_start: date,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    row = db.query(ProjectPlanWeeklySnapshot).filter(
+        ProjectPlanWeeklySnapshot.project_id == project_id,
+        ProjectPlanWeeklySnapshot.plan_year == plan_year,
+        ProjectPlanWeeklySnapshot.week_start == week_start,
+    ).first()
+    if not row:
+        return {"exists": False}
+    return _weekly_snapshot_dict(row)
+
+
+@router.get("/project-plan-weekly/latest-before")
+def get_latest_project_plan_weekly_before(
+    project_id: int,
+    plan_year: int,
+    week_start: date,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    row = db.query(ProjectPlanWeeklySnapshot).filter(
+        ProjectPlanWeeklySnapshot.project_id == project_id,
+        ProjectPlanWeeklySnapshot.plan_year == plan_year,
+        ProjectPlanWeeklySnapshot.week_start < week_start,
+    ).order_by(ProjectPlanWeeklySnapshot.week_start.desc()).first()
+    if not row:
+        return {"week_start": None, "exists": False}
+    return _weekly_snapshot_dict(row)
+
+
+@router.post("/project-plan-weekly")
+def save_project_plan_weekly(
+    data: ProjectPlanWeeklySnapshotSave,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    if not db.query(Project).filter(Project.id == data.project_id).first():
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    payload = data.dict()
+    row = db.query(ProjectPlanWeeklySnapshot).filter(
+        ProjectPlanWeeklySnapshot.project_id == data.project_id,
+        ProjectPlanWeeklySnapshot.plan_year == data.plan_year,
+        ProjectPlanWeeklySnapshot.week_start == data.week_start,
+    ).first()
+    if not row:
+        row = ProjectPlanWeeklySnapshot(
+            project_id=data.project_id,
+            plan_year=data.plan_year,
+            week_start=data.week_start,
+            created_by=current.id,
+            data_json="{}",
+        )
+        db.add(row)
+    row.data_json = json.dumps(payload, ensure_ascii=False, default=str)
+    db.commit()
+    db.refresh(row)
+    return _weekly_snapshot_dict(row)
+
+
 @router.get("/project-business-categories")
 def list_project_business_categories(
     db: Session = Depends(get_db),
@@ -347,6 +443,11 @@ class ProjectSalesPlanBulk(BaseModel):
     rows: List[dict] = []
 
 
+class ProjectPurchasePlanBulk(BaseModel):
+    plan_year: int
+    rows: List[dict] = []
+
+
 def _sales_plan_row_key(row: dict) -> str:
     if row.get("project_id"):
         return f"project:{row.get('project_id')}"
@@ -366,6 +467,21 @@ def _sales_plan_dict(row: ProjectSalesPlanRow) -> dict:
         data = {}
     data["db_id"] = row.id
     data["id"] = data.get("id") or row.row_key
+    data["plan_year"] = row.plan_year
+    data["project_id"] = data.get("project_id") or row.project_id
+    return data
+
+
+def _purchase_plan_dict(row: ProjectPurchasePlanRow) -> dict:
+    try:
+        data = json.loads(row.data_json or "{}")
+        if not isinstance(data, dict):
+            data = {}
+    except (TypeError, ValueError):
+        data = {}
+    data["db_id"] = row.id
+    data["id"] = data.get("id") or row.row_key
+    data["plan_year"] = row.plan_year
     data["project_id"] = data.get("project_id") or row.project_id
     return data
 
@@ -432,6 +548,70 @@ def save_project_sales_plans(
         ProjectSalesPlanRow.plan_year == data.plan_year
     ).order_by(ProjectSalesPlanRow.id.asc()).all()
     return [_sales_plan_dict(row) for row in rows]
+
+
+@router.get("/project-purchase-plans")
+def list_project_purchase_plans(
+    plan_year: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = db.query(ProjectPurchasePlanRow).filter(
+        ProjectPurchasePlanRow.plan_year == plan_year
+    ).order_by(ProjectPurchasePlanRow.id.asc()).all()
+    return [_purchase_plan_dict(row) for row in rows]
+
+
+@router.post("/project-purchase-plans/bulk")
+def save_project_purchase_plans(
+    data: ProjectPurchasePlanBulk,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    incoming = []
+    seen = set()
+    for item in data.rows:
+        row_data = dict(item)
+        row_key = _sales_plan_row_key(row_data)
+        unique_key = row_key
+        suffix = 1
+        while unique_key in seen:
+            suffix += 1
+            unique_key = f"{row_key}:{suffix}"
+        seen.add(unique_key)
+        row_data["id"] = row_data.get("id") or unique_key
+        incoming.append((unique_key, row_data))
+
+    existing = {
+        row.row_key: row
+        for row in db.query(ProjectPurchasePlanRow).filter(
+            ProjectPurchasePlanRow.plan_year == data.plan_year
+        ).all()
+    }
+
+    keep_keys = set()
+    for row_key, row_data in incoming:
+        keep_keys.add(row_key)
+        row = existing.get(row_key)
+        if not row:
+            row = ProjectPurchasePlanRow(
+                plan_year=data.plan_year,
+                row_key=row_key,
+                created_by=current.id,
+            )
+            db.add(row)
+        row.project_id = row_data.get("project_id")
+        row.data_json = json.dumps(row_data, ensure_ascii=False)
+
+    for row_key, row in existing.items():
+        if row_key not in keep_keys:
+            db.delete(row)
+
+    db.commit()
+    rows = db.query(ProjectPurchasePlanRow).filter(
+        ProjectPurchasePlanRow.plan_year == data.plan_year
+    ).order_by(ProjectPurchasePlanRow.id.asc()).all()
+    return [_purchase_plan_dict(row) for row in rows]
 
 
 # ══════════════════════════════════════════════════════
@@ -649,7 +829,6 @@ def approve_sales_bill(rid: int, db: Session = Depends(get_db), _=Depends(get_cu
     if not receivable:
         receivable = AccountsReceivable(
             sales_bill_id=bill.id,
-            billing_id=None,
             issue_date=bill.bill_date or date.today(),
             collected_amount=Decimal(0),
             status="outstanding",

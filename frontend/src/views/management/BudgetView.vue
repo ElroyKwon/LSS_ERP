@@ -83,6 +83,9 @@
           </template>
         </template>
       </a-table>
+      <div class="budget-guide">
+        ※ 예산 입력 및 수정은 상단의 부서 선택에서 대상 부서를 선택한 후 진행할 수 있습니다.
+      </div>
     </a-card>
   </div>
 </template>
@@ -401,6 +404,16 @@ onMounted(load)
 .stat-unit { font-size: 11px; font-weight: 400; margin-left: 2px; color: #8c8c8c; }
 .table-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
 .card-title { font-size: 15px; font-weight: 600; color: #1a2535; }
+.budget-guide {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d6e4ff;
+  border-radius: 6px;
+  background: #f0f7ff;
+  color: #315c8c;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .month-input { width: 96px; }
 .num-bold { font-weight: 700; }
 :deep(.subtotal-row td) { background: #fafafa; font-weight: 600; }

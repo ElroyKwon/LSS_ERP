@@ -47,6 +47,7 @@
       v-model:open="modalOpen"
       :title="editItem ? '설계의뢰 수정' : '설계의뢰 신규 등록'"
       width="1180px"
+      wrap-class-name="design-request-modal"
       @ok="handleSave"
       :confirm-loading="saving"
       ok-text="저장"

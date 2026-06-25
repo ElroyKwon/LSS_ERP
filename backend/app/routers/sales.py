@@ -1,21 +1,166 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func as sqlfunc
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date
+import json
+import os
+import shutil
+import uuid
 from ..database import get_db
-from ..models.sales import Estimate, EstimateItem, Contract, ContractChange, ProgressBilling, Collection, DesignRequest
-from ..models.accounting import AccountsReceivable, JournalEntry, JournalLine
-from ..models.master import AccountCode
+from ..models.sales import Estimate, EstimateItem, EstimateAttachment, DesignRequest, SalesManagementWeeklyRow
 from ..utils.auth import get_current_user
 from ..utils import to_kst, to_kst_date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["영업·수주"])
+UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "estimates")
 
 
 # ── 견적 ──────────────────────────────────────────
+class SalesManagementBulk(BaseModel):
+    week_start: date
+    rows: List[dict] = Field(default_factory=list)
+
+
+def _sales_management_row_key(row: dict) -> str:
+    if row.get("sales_no"):
+        return str(row.get("sales_no"))
+    if row.get("id"):
+        return str(row.get("id"))
+    if row.get("project_name"):
+        return f"name:{row.get('project_name')}"
+    return f"manual:{len(json.dumps(row, ensure_ascii=False, sort_keys=True))}"
+
+
+def _sales_management_dict(row: SalesManagementWeeklyRow) -> dict:
+    try:
+        data = json.loads(row.data_json or "{}")
+        if not isinstance(data, dict):
+            data = {}
+    except (TypeError, ValueError):
+        data = {}
+    data["db_id"] = row.id
+    data["id"] = data.get("id") or row.row_key
+    data["week_start"] = to_kst_date(row.week_start)
+    return data
+
+
+def _next_sales_management_no(db: Session, year: int, reserved: set[str]) -> str:
+    prefix = f"B{year % 100:02d}"
+    max_seq = 0
+    rows = db.query(SalesManagementWeeklyRow.data_json).all()
+    for (data_json,) in rows:
+        try:
+            data = json.loads(data_json or "{}")
+        except (TypeError, ValueError):
+            continue
+        sales_no = str(data.get("sales_no") or "")
+        if not sales_no.startswith(prefix):
+            continue
+        suffix = sales_no[len(prefix):]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+
+    next_seq = max_seq + 1
+    while True:
+        candidate = f"{prefix}{next_seq:03d}"
+        if candidate not in reserved:
+            reserved.add(candidate)
+            return candidate
+        next_seq += 1
+
+
+@router.get("/sales-management")
+def list_sales_management_rows(
+    week_start: date,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = db.query(SalesManagementWeeklyRow).filter(
+        SalesManagementWeeklyRow.week_start == week_start
+    ).order_by(SalesManagementWeeklyRow.id.asc()).all()
+    return [_sales_management_dict(row) for row in rows]
+
+
+@router.get("/sales-management/latest-before")
+def latest_sales_management_rows_before(
+    week_start: date,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    latest_week = db.query(sqlfunc.max(SalesManagementWeeklyRow.week_start)).filter(
+        SalesManagementWeeklyRow.week_start < week_start
+    ).scalar()
+    if not latest_week:
+        return {"week_start": None, "rows": []}
+    rows = db.query(SalesManagementWeeklyRow).filter(
+        SalesManagementWeeklyRow.week_start == latest_week
+    ).order_by(SalesManagementWeeklyRow.id.asc()).all()
+    return {"week_start": to_kst_date(latest_week), "rows": [_sales_management_dict(row) for row in rows]}
+
+
+@router.post("/sales-management/bulk")
+def save_sales_management_rows(
+    data: SalesManagementBulk,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    year = data.week_start.year
+    reserved_sales_numbers = {
+        str(item.get("sales_no"))
+        for item in data.rows
+        if item.get("sales_no")
+    }
+    incoming = []
+    seen = set()
+    for item in data.rows:
+        row_data = dict(item)
+        if not row_data.get("sales_no"):
+            row_data["sales_no"] = _next_sales_management_no(db, year, reserved_sales_numbers)
+        row_key = _sales_management_row_key(row_data)
+        unique_key = row_key
+        suffix = 1
+        while unique_key in seen:
+            suffix += 1
+            unique_key = f"{row_key}:{suffix}"
+        seen.add(unique_key)
+        row_data["id"] = row_data.get("id") or unique_key
+        incoming.append((unique_key, row_data))
+
+    existing = {
+        row.row_key: row
+        for row in db.query(SalesManagementWeeklyRow).filter(
+            SalesManagementWeeklyRow.week_start == data.week_start
+        ).all()
+    }
+
+    keep_keys = set()
+    for row_key, row_data in incoming:
+        keep_keys.add(row_key)
+        row = existing.get(row_key)
+        if not row:
+            row = SalesManagementWeeklyRow(
+                week_start=data.week_start,
+                row_key=row_key,
+                created_by=current.id,
+            )
+            db.add(row)
+        row.data_json = json.dumps(row_data, ensure_ascii=False)
+
+    for row_key, row in existing.items():
+        if row_key not in keep_keys:
+            db.delete(row)
+
+    db.commit()
+    rows = db.query(SalesManagementWeeklyRow).filter(
+        SalesManagementWeeklyRow.week_start == data.week_start
+    ).order_by(SalesManagementWeeklyRow.id.asc()).all()
+    return [_sales_management_dict(row) for row in rows]
+
+
 class EstimateItemIn(BaseModel):
     cost_code_id: Optional[int] = None
     item_name: str
@@ -98,223 +243,92 @@ def update_estimate(eid: int, data: EstimateCreate, db: Session = Depends(get_db
 
 
 # ── 계약 ──────────────────────────────────────────
-class ContractCreate(BaseModel):
-    contract_no: str
-    site_id: Optional[int] = None
-    estimate_id: Optional[int] = None
-    client_id: Optional[int] = None
-    contract_name: str
-    contract_type: str
-    revenue_type: str = "general"
-    original_amount: Decimal = Decimal(0)
-    current_amount: Decimal = Decimal(0)
-    original_cost: Decimal = Decimal(0)
-    current_cost: Decimal = Decimal(0)
-    contract_date: Optional[date] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    status: str = "active"
-    notes: Optional[str] = None
+def _estimate_attachment_dict(row: EstimateAttachment) -> dict:
+    return {
+        "id": row.id,
+        "estimate_id": row.estimate_id,
+        "original_name": row.original_name,
+        "content_type": row.content_type,
+        "file_size": row.file_size,
+        "created_at": to_kst(row.created_at),
+    }
 
 
-@router.get("/contracts")
-def list_contracts(status: Optional[str] = None, site_id: Optional[int] = None,
-                   search: Optional[str] = None, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    q = db.query(Contract)
-    if status:
-        q = q.filter(Contract.status == status)
-    if site_id:
-        q = q.filter(Contract.site_id == site_id)
-    if search:
-        q = q.filter(or_(Contract.contract_name.ilike(f"%{search}%"), Contract.contract_no.ilike(f"%{search}%")))
-    return q.order_by(Contract.created_at.desc()).all()
+@router.get("/estimates/{eid}/attachments")
+def list_estimate_attachments(eid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    estimate = db.query(Estimate).filter(Estimate.id == eid).first()
+    if not estimate:
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
+    rows = db.query(EstimateAttachment).filter(
+        EstimateAttachment.estimate_id == eid
+    ).order_by(EstimateAttachment.created_at.desc()).all()
+    return [_estimate_attachment_dict(row) for row in rows]
 
 
-@router.get("/contracts/{cid}")
-def get_contract(cid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    c = db.query(Contract).filter(Contract.id == cid).first()
-    if not c:
-        raise HTTPException(status_code=404, detail="계약을 찾을 수 없습니다.")
-    return c
-
-
-@router.post("/contracts")
-def create_contract(data: ContractCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    c = Contract(**data.dict(), sales_manager_id=current.id, created_by=current.id)
-    db.add(c)
-    db.commit()
-    db.refresh(c)
-    return c
-
-
-@router.put("/contracts/{cid}")
-def update_contract(cid: int, data: ContractCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    c = db.query(Contract).filter(Contract.id == cid).first()
-    if not c:
-        raise HTTPException(status_code=404, detail="계약을 찾을 수 없습니다.")
-    for field, val in data.dict(exclude_none=True).items():
-        setattr(c, field, val)
-    db.commit()
-    return c
-
-
-# ── 계약 변경 (설계변경) ──────────────────────────────────────────
-class ContractChangeCreate(BaseModel):
-    contract_id: int
-    change_no: int
-    change_date: date
-    amount_change: Decimal = Decimal(0)
-    cost_change: Decimal = Decimal(0)
-    end_date_after: Optional[date] = None
-    reason: Optional[str] = None
-
-
-@router.get("/contract-changes")
-def list_contract_changes(contract_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    return db.query(ContractChange).filter(ContractChange.contract_id == contract_id).order_by(ContractChange.change_no).all()
-
-
-@router.post("/contract-changes")
-def create_contract_change(data: ContractChangeCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    contract = db.query(Contract).filter(Contract.id == data.contract_id).first()
-    if not contract:
-        raise HTTPException(status_code=404, detail="계약을 찾을 수 없습니다.")
-    change = ContractChange(
-        contract_id=data.contract_id,
-        change_no=data.change_no,
-        change_date=data.change_date,
-        amount_before=contract.current_amount,
-        amount_change=data.amount_change,
-        amount_after=contract.current_amount + data.amount_change,
-        cost_before=contract.current_cost,
-        cost_change=data.cost_change,
-        cost_after=contract.current_cost + data.cost_change,
-        end_date_before=contract.end_date,
-        end_date_after=data.end_date_after or contract.end_date,
-        reason=data.reason,
+@router.post("/estimates/{eid}/attachments")
+def upload_estimate_attachment(
+    eid: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    estimate = db.query(Estimate).filter(Estimate.id == eid).first()
+    if not estimate:
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
+    original_name = os.path.basename(file.filename or "attachment")
+    ext = os.path.splitext(original_name)[1]
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    directory = os.path.join(UPLOAD_ROOT, str(eid))
+    os.makedirs(directory, exist_ok=True)
+    file_path = os.path.join(directory, stored_name)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file_size = os.path.getsize(file_path)
+    finally:
+        file.file.close()
+    row = EstimateAttachment(
+        estimate_id=eid,
+        original_name=original_name,
+        stored_name=stored_name,
+        content_type=file.content_type,
+        file_size=file_size,
+        file_path=file_path,
         created_by=current.id,
     )
-    contract.current_amount += data.amount_change
-    contract.current_cost += data.cost_change
-    if data.end_date_after:
-        contract.end_date = data.end_date_after
-    db.add(change)
+    db.add(row)
     db.commit()
-    db.refresh(change)
-    return change
+    db.refresh(row)
+    return _estimate_attachment_dict(row)
 
 
-# ── 기성 ──────────────────────────────────────────
-class ProgressBillingCreate(BaseModel):
-    billing_no: str
-    contract_id: int
-    site_id: Optional[int] = None
-    billing_seq: int
-    billing_date: date
-    progress_rate: Decimal = Decimal(0)
-    billing_amount: Decimal = Decimal(0)
-    vat_amount: Decimal = Decimal(0)
-    total_amount: Decimal = Decimal(0)
-    due_date: Optional[date] = None
-    notes: Optional[str] = None
+@router.get("/estimate-attachments/{attachment_id}/download")
+def download_estimate_attachment(attachment_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    row = db.query(EstimateAttachment).filter(EstimateAttachment.id == attachment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+    if not os.path.isfile(row.file_path):
+        raise HTTPException(status_code=404, detail="파일이 서버에 존재하지 않습니다.")
+    return FileResponse(row.file_path, filename=row.original_name, media_type=row.content_type or "application/octet-stream")
 
 
-@router.get("/progress-billings")
-def list_progress_billings(contract_id: Optional[int] = None, site_id: Optional[int] = None,
-                            status: Optional[str] = None, db: Session = Depends(get_db),
-                            _=Depends(get_current_user)):
-    q = db.query(ProgressBilling)
-    if contract_id:
-        q = q.filter(ProgressBilling.contract_id == contract_id)
-    if site_id:
-        q = q.filter(ProgressBilling.site_id == site_id)
-    if status:
-        q = q.filter(ProgressBilling.status == status)
-    return q.order_by(ProgressBilling.billing_date.desc()).all()
-
-
-@router.get("/progress-billings/{bid}")
-def get_billing(bid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    b = db.query(ProgressBilling).filter(ProgressBilling.id == bid).first()
-    if not b:
-        raise HTTPException(status_code=404, detail="기성을 찾을 수 없습니다.")
-    return b
-
-
-@router.post("/progress-billings")
-def create_billing(data: ProgressBillingCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    b = ProgressBilling(**data.dict(), created_by=current.id)
-    db.add(b)
-    db.flush()
-    # 누계 계산
-    prev = db.query(sqlfunc.coalesce(sqlfunc.sum(ProgressBilling.billing_amount), 0)).filter(
-        ProgressBilling.contract_id == data.contract_id,
-        ProgressBilling.id != b.id,
-        ProgressBilling.status != "cancelled",
-    ).scalar()
-    b.cumulative_amount = float(prev) + float(data.billing_amount)
+@router.delete("/estimate-attachments/{attachment_id}")
+def delete_estimate_attachment(attachment_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    row = db.query(EstimateAttachment).filter(EstimateAttachment.id == attachment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+    file_path = row.file_path
+    db.delete(row)
     db.commit()
-    db.refresh(b)
-    return b
+    if file_path and os.path.isfile(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+    return {"ok": True}
 
 
-@router.patch("/progress-billings/{bid}/approve")
-def approve_billing(bid: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    from datetime import datetime
-    b = db.query(ProgressBilling).filter(ProgressBilling.id == bid).first()
-    if not b:
-        raise HTTPException(status_code=404, detail="기성을 찾을 수 없습니다.")
-    b.status = "approved"
-    b.approved_by = current.id
-    b.approved_at = datetime.utcnow()
-    # 자동 전표 및 매출채권 생성
-    ar = AccountsReceivable(
-        billing_id=b.id, site_id=b.site_id, client_id=b.contract.client_id if b.contract else None,
-        issue_date=b.billing_date, due_date=b.due_date,
-        billing_amount=b.total_amount, outstanding_amount=b.total_amount,
-    )
-    db.add(ar)
-    db.commit()
-    return {"message": "승인되었습니다.", "id": bid}
 
-
-# ── 수금 ──────────────────────────────────────────
-class CollectionCreate(BaseModel):
-    collection_no: str
-    billing_id: Optional[int] = None
-    contract_id: Optional[int] = None
-    site_id: Optional[int] = None
-    client_id: Optional[int] = None
-    collected_date: date
-    collected_amount: Decimal
-    bank_name: Optional[str] = None
-    notes: Optional[str] = None
-
-
-@router.get("/collections")
-def list_collections(site_id: Optional[int] = None, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    q = db.query(Collection)
-    if site_id:
-        q = q.filter(Collection.site_id == site_id)
-    return q.order_by(Collection.collected_date.desc()).all()
-
-
-@router.post("/collections")
-def create_collection(data: CollectionCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
-    c = Collection(**data.dict(), created_by=current.id)
-    db.add(c)
-    if data.billing_id:
-        ar = db.query(AccountsReceivable).filter(AccountsReceivable.billing_id == data.billing_id).first()
-        if ar:
-            ar.collected_amount = float(ar.collected_amount) + float(data.collected_amount)
-            ar.outstanding_amount = float(ar.billing_amount) - float(ar.collected_amount)
-            ar.status = "collected" if ar.outstanding_amount <= 0 else "partial"
-    db.commit()
-    db.refresh(c)
-    return c
-
-
-# ── 설계 의뢰 ──────────────────────────────────────────
 class DesignRequestCreate(BaseModel):
     project_name: str
     department: Optional[str] = None

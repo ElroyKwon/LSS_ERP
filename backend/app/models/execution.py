@@ -39,6 +39,7 @@ class ProjectPlan(Base):
     project_id       = Column(Integer, ForeignKey("projects.id"), nullable=False)
     plan_year        = Column(Integer, nullable=False)
     plan_month       = Column(Integer, nullable=False)           # 1–12
+    invoice_plan     = Column(Numeric(18, 2), default=0)
     revenue_plan     = Column(Numeric(18, 2), default=0)         # 매출 계획
     material_plan    = Column(Numeric(18, 2), default=0)         # 재료비
     labor_plan       = Column(Numeric(18, 2), default=0)         # 노무비
@@ -55,6 +56,22 @@ class ProjectPlan(Base):
 class ProjectSalesPlanRow(Base):
     """프로젝트리스트(매출) 연도별 행 데이터"""
     __tablename__ = "project_sales_plan_rows"
+    __table_args__ = (UniqueConstraint("plan_year", "row_key"),)
+    id         = Column(Integer, primary_key=True, index=True)
+    plan_year  = Column(Integer, nullable=False)
+    row_key    = Column(String(80), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    data_json  = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    project = relationship("Project", foreign_keys=[project_id])
+
+
+class ProjectPurchasePlanRow(Base):
+    """Project list purchase tab yearly row data."""
+    __tablename__ = "project_purchase_plan_rows"
     __table_args__ = (UniqueConstraint("plan_year", "row_key"),)
     id         = Column(Integer, primary_key=True, index=True)
     plan_year  = Column(Integer, nullable=False)
@@ -87,6 +104,22 @@ class ProjectPlanMeta(Base):
     id         = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     plan_year  = Column(Integer, nullable=False)
+    data_json  = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    project = relationship("Project", foreign_keys=[project_id])
+
+
+class ProjectPlanWeeklySnapshot(Base):
+    """매출 투입 계획 주차별 작성 스냅샷"""
+    __tablename__ = "project_plan_weekly_snapshots"
+    __table_args__ = (UniqueConstraint("project_id", "plan_year", "week_start"),)
+    id         = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    plan_year  = Column(Integer, nullable=False)
+    week_start = Column(Date, nullable=False, index=True)
     data_json  = Column(Text, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=func.now())

@@ -1,173 +1,519 @@
 <template>
   <div class="page-wrap">
-
-    <!-- 연도 선택 + 요약 카드 -->
-    <a-card :bordered="false" class="selector-card">
-      <div class="sel-row">
-        <a-space>
-          <span class="sel-label">분석 연도</span>
-          <a-select v-model:value="year" style="width:100px" @change="load">
-            <a-select-option v-for="y in years" :key="y" :value="y">{{ y }}년</a-select-option>
-          </a-select>
-        </a-space>
-        <a-spin v-if="loading" size="small" />
-      </div>
-    </a-card>
-
-    <a-row :gutter="16">
-      <a-col :flex="1" v-for="s in summaryCards" :key="s.key">
-        <a-card :bordered="false" class="stat-card" :class="s.cls">
-          <div class="stat-inner">
-            <div>
-              <div class="stat-label">{{ s.label }}</div>
-              <div class="stat-value" :style="`color:${s.color}`">{{ s.value }}<span class="stat-unit">{{ s.unit }}</span></div>
-            </div>
+    <a-tabs class="analysis-tabs">
+      <a-tab-pane v-for="tab in analysisTabs" :key="tab.key" :tab="tab.label">
+    <a-card :bordered="false" class="table-card">
+      <template #title>
+        <div class="title-row">
+          <span class="card-title">{{ tab.label }}</span>
+          <div class="month-nav">
+            <a-button size="small" @click="moveMonth(-1)">
+              <template #icon><LeftOutlined /></template>
+            </a-button>
+            <a-date-picker
+              v-model:value="selectedMonth"
+              picker="month"
+              value-format="YYYY-MM"
+              format="YYYY년 MM월"
+              :allow-clear="false"
+              class="month-picker"
+              @change="load"
+            />
+            <a-button size="small" @click="moveMonth(1)">
+              <template #icon><RightOutlined /></template>
+            </a-button>
           </div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <a-row :gutter="14">
-      <!-- 월별 수주·매출 차트 -->
-      <a-col :span="14">
-        <a-card :bordered="false" class="dash-card" title="월별 수주 · 매출 추이">
-          <template #extra><span class="card-extra">단위: 백만원</span></template>
-          <div v-if="hasData">
-            <v-chart :option="trendOption" style="height:280px" autoresize />
-          </div>
-          <a-empty v-else description="데이터가 없습니다." style="padding:60px 0" />
-        </a-card>
-      </a-col>
-
-      <!-- 누계 수주·매출 표 -->
-      <a-col :span="10">
-        <a-card :bordered="false" class="dash-card" title="누계 현황">
-          <template #extra><span class="card-extra">단위: 백만원</span></template>
-          <a-table :columns="monthlyCols" :data-source="monthlyRows" :pagination="false"
-                   size="small" row-key="month">
-            <template #bodyCell="{ column, record }">
-              <template v-if="['revenue','orders','cost','gp'].includes(column.key)">
-                <span :class="record.isTotal ? 'num-bold' : ''">
-                  {{ record[column.key] > 0 ? fmtM(record[column.key]) : '—' }}
-                </span>
-              </template>
-              <template v-if="column.key === 'margin'">
-                <span v-if="record.revenue > 0"
-                      :style="record.margin >= 10 ? 'color:#52c41a' : record.margin >= 0 ? 'color:#fa8c16' : 'color:#f5222d'">
-                  {{ record.margin }}%
-                </span>
-                <span v-else>—</span>
-              </template>
-            </template>
-          </a-table>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <!-- 진행 프로젝트 현황 -->
-    <a-card :bordered="false" class="dash-card" title="진행 프로젝트 현황">
-      <template #extra>
-        <span class="card-extra">{{ projects.length }}건 진행중</span>
+        </div>
       </template>
-      <a-table :columns="projCols" :data-source="projects" :pagination="{ pageSize: 10 }"
-               size="middle" row-key="id" :scroll="{ x: 800 }">
+      <template #extra>
+        <a-space>
+          <a-tag color="blue">1주차 {{ tabAnalysis(tab)?.week1_start || '-' }}</a-tag>
+          <a-tag color="purple">4주차 {{ tabAnalysis(tab)?.week4_start || '-' }}</a-tag>
+          <a-tag v-if="tab.key === 'orders' && dirty" color="orange">변경 있음</a-tag>
+          <a-button v-if="tab.key === 'orders'" type="primary" size="small" :loading="saving" :disabled="!dirty" @click="saveBusinessPlan">
+            <template #icon><SaveOutlined /></template>
+            저장
+          </a-button>
+        </a-space>
+      </template>
+
+      <div class="grid-help">
+        영업관리 주차 데이터 중 수주확도 A~C 항목만 불러옵니다. 사업계획은 직접 입력하고, 실적/이동계획은 선택 월의 1주차와 4주차 영업관리 저장본을 기준으로 표시합니다.
+      </div>
+
+      <a-table
+        :columns="tableColumns(tab)"
+        :data-source="tableRows(tab)"
+        :loading="loading"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :scroll="{ x: tableScrollXValue(tab), y: 620 }"
+        row-key="row_key"
+        size="small"
+        bordered
+        class="analysis-table"
+      >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'contract_amount'">
-            {{ record.contract_amount > 0 ? fmtM(record.contract_amount) : '—' }}
+          <template v-if="tab.key === 'orders' && column.groupKey === 'business_plan' && column.month">
+            <a-input-number
+              v-model:value="record.business_plan.months[column.month]"
+              :min="0"
+              :formatter="amountFormatter"
+              :parser="amountParser"
+              class="table-number-input"
+              @focus="clearZero(record.business_plan.months, column.month)"
+              @change="markDirty"
+            />
           </template>
-          <template v-if="column.key === 'status'">
-            <a-tag color="blue">{{ record.status }}</a-tag>
+
+          <template v-else-if="column.groupKey === 'business_plan' && column.total">
+            <span class="num-cell readonly-cell">{{ formatAmount(businessPlanTotal(record)) }}</span>
+          </template>
+
+          <template v-else-if="column.groupKey">
+            <span class="num-cell readonly-cell">{{ formatAmount(groupValue(record, column)) }}</span>
+          </template>
+
+          <template v-else-if="column.key === 'probability'">
+            <a-tag :color="probabilityColor(record.probability)">{{ record.probability || '-' }}</a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'sales_status'">
+            <a-tag color="blue">{{ record.sales_status || '-' }}</a-tag>
+          </template>
+
+          <template v-else>
+            {{ record[column.key] || '-' }}
           </template>
         </template>
       </a-table>
     </a-card>
+
+    <a-card :bordered="false" class="table-card">
+      <template #title>
+        <span class="card-title">{{ tab.divisionTitle }}</span>
+      </template>
+      <a-table
+        :columns="summaryColumns"
+        :data-source="businessDivisionSummaryRows"
+        :loading="loading"
+        :pagination="false"
+        :scroll="{ x: summaryTableScrollX }"
+        row-key="business_division"
+        size="small"
+        bordered
+        class="analysis-table"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key !== 'business_division'">
+            <span class="num-cell readonly-cell">{{ formatAmount(record[column.key]) }}</span>
+          </template>
+        </template>
+      </a-table>
+    </a-card>
+
+    <a-card :bordered="false" class="table-card">
+      <template #title>
+        <span class="card-title">{{ tab.groupTitle }}</span>
+      </template>
+      <a-table
+        :columns="businessGroupSummaryColumns"
+        :data-source="businessGroupSummaryRows"
+        :loading="loading"
+        :pagination="false"
+        :scroll="{ x: businessGroupSummaryTableScrollX }"
+        row-key="business_category"
+        size="small"
+        bordered
+        class="analysis-table"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key !== 'business_category'">
+            <span class="num-cell readonly-cell">{{ formatAmount(record[column.key]) }}</span>
+          </template>
+        </template>
+      </a-table>
+    </a-card>
+      </a-tab-pane>
+    </a-tabs>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { BarChart, LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import { managementApi } from '@/api'
+import { computed, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { LeftOutlined, RightOutlined, SaveOutlined } from '@ant-design/icons-vue'
+import { executionApi, managementApi, masterApi } from '@/api'
+import { flattenDepartmentTree } from '@/utils/departments'
 
-use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
-
-const now   = new Date()
-const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 1 + i)
-const year  = ref(now.getFullYear())
+const now = new Date()
+const selectedMonth = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
 const loading = ref(false)
-const data = ref(null)
+const saving = ref(false)
+const dirty = ref(false)
+const analysis = ref(null)
+const rows = ref([])
+const revenueAnalysis = ref(null)
+const revenueRows = ref([])
+const departments = ref([])
+const businessCategories = ref([])
 
-const monthly  = computed(() => data.value?.monthly  || [])
-const projects = computed(() => data.value?.projects || [])
-const summary  = computed(() => data.value?.summary  || {})
+const DEFAULT_BUSINESS_CATEGORIES = ['빌딩', 'DC', 'BAS', 'E&M', 'O&M', 'DR', 'FEMS리스', 'SE', '솔루션', 'CS', '스테콤', 'SCADA']
+const EXCLUDED_SUMMARY_DIVISIONS = new Set(['사장실', 'CFO 부문', '공통'])
+const analysisTabs = [
+  {
+    key: 'orders',
+    label: '경영 분석(수주)',
+    divisionTitle: '사업계획 수주 종합(사업부)',
+    groupTitle: '사업계획 수주 종합(사업군)',
+  },
+  {
+    key: 'revenue',
+    label: '경영 분석(매출)',
+    divisionTitle: '사업계획 매출 종합(사업부)',
+    groupTitle: '사업계획 매출 종합(사업군)',
+  },
+]
 
-const fmtM = v => Math.round(v / 1_000_000).toLocaleString()
-const hasData = computed(() => monthly.value.some(m => m.revenue > 0 || m.orders > 0))
+const selectedYear = computed(() => Number(selectedMonth.value.slice(0, 4)))
+const selectedMonthNo = computed(() => Number(selectedMonth.value.slice(5, 7)))
+const nextYear = computed(() => selectedYear.value + 1)
+const shortYear = computed(() => String(selectedYear.value).slice(2))
+const shortNextYear = computed(() => String(nextYear.value).slice(2))
+const monthLabels = Array.from({ length: 12 }, (_, index) => `${index + 1}월`)
 
-const summaryCards = computed(() => {
-  const s = summary.value
+const tableScrollX = computed(() => sumColumnWidths(columns.value))
+const revenueTableScrollX = computed(() => sumColumnWidths(revenueColumns.value))
+const summaryTableScrollX = computed(() => sumColumnWidths(summaryColumns.value))
+const businessGroupSummaryTableScrollX = computed(() => sumColumnWidths(businessGroupSummaryColumns.value))
+
+const columns = computed(() => [
+  leaf('사업부', 'business_division', 130, 'center', true, 'left'),
+  leaf('영업팀', 'sales_team', 130, 'center', true, 'left'),
+  leaf('사업구분', 'business_category', 110, 'center', true, 'left'),
+  leaf('영업번호', 'sales_no', 110, 'center', false, 'left'),
+  leaf('프로젝트명', 'project_name', 220, 'center', true, 'left'),
+  leaf('수주확도', 'probability', 90),
+  leaf('영업상태', 'sales_status', 130),
+  leaf('내수/해외', 'domestic_overseas', 100),
+  leaf('특수관계', 'special_relation', 100),
+  amountGroup(`${selectedYear.value}년도 사업계획`, 'business_plan', `${shortYear.value}년도 발주 합계`, true),
+  amountGroup(`${selectedYear.value}년도 실적/이동계획(1주)`, 'current_week1', `${shortYear.value}년도 발주 합계`),
+  amountGroup(`${selectedYear.value}년도 실적/이동계획(4주)`, 'current_week4', `${shortYear.value}년도 발주 합계`),
+  amountGroup(`${nextYear.value}년도 실적/이동계획(1주)`, 'next_week1', `${shortNextYear.value}년도 발주 합계`),
+  amountGroup(`${nextYear.value}년도 실적/이동계획(4주)`, 'next_week4', `${shortNextYear.value}년도 발주 합계`),
+])
+
+const revenueColumns = computed(() => [
+  leaf('구분', 'source_type', 90, 'center', false, 'left'),
+  leaf('사업부', 'business_division', 130, 'center', true, 'left'),
+  leaf('팀', 'sales_team', 130, 'center', true, 'left'),
+  leaf('사업구분', 'business_category', 110, 'center', true, 'left'),
+  leaf('영업번호', 'sales_no', 110, 'center'),
+  leaf('JOB NO', 'job_no', 120, 'center'),
+  leaf('프로젝트명', 'project_name', 220, 'center', true),
+  leaf('계약업체명', 'contract_company', 160, 'center', true),
+  leaf('내수/해외', 'domestic_overseas', 100),
+  leaf('특수관계', 'special_relation', 100),
+  amountGroup(`${selectedYear.value}년도 사업계획`, 'business_plan', `${selectedYear.value}년도 매출 합계`, false),
+  amountGroup(`${selectedYear.value}년 실적/이동계획(1주)`, 'current_week1', `${selectedYear.value}년도 매출 합계`),
+  amountGroup(`${selectedYear.value}년 실적/이동계획(4주)`, 'current_week4', `${selectedYear.value}년도 매출 합계`),
+  amountGroup(`${nextYear.value}년 실적/이동계획(1주)`, 'next_week1', `${nextYear.value}년도 매출 합계`),
+  amountGroup(`${nextYear.value}년 실적/이동계획(4주)`, 'next_week4', `${nextYear.value}년도 매출 합계`),
+])
+
+const summaryColumns = computed(() => [
+  leaf('사업부', 'business_division', 150, 'center', true, 'left'),
+  group('기준월 실적', [
+    leaf('실적', 'base_actual', 120, 'right'),
+    leaf('이동', 'base_move', 120, 'right'),
+    leaf('이동비', 'base_move_rate', 100, 'right'),
+  ]),
+  group('기준월 누계', [
+    leaf('실적', 'monthly_actual', 120, 'right'),
+    leaf('전년 사업부별 실적 누계', 'monthly_prev_actual', 170, 'right'),
+    leaf('계획', 'monthly_plan', 120, 'right'),
+    leaf('이동', 'monthly_move', 120, 'right'),
+    leaf('전년비', 'monthly_prev_rate', 100, 'right'),
+    leaf('계획비', 'monthly_plan_rate', 100, 'right'),
+    leaf('이동비', 'monthly_move_rate', 100, 'right'),
+  ]),
+  group('연간 누계', [
+    leaf('실적', 'year_actual', 120, 'right'),
+    leaf('전년 사업부별 실적 누계', 'year_prev_plan', 170, 'right'),
+    leaf('이동', 'year_move', 120, 'right'),
+    leaf('전년비', 'year_prev_rate', 100, 'right'),
+    leaf('계획비', 'year_plan_rate', 100, 'right'),
+    leaf('이동비', 'year_move_rate', 100, 'right'),
+  ]),
+])
+
+const businessGroupSummaryColumns = computed(() => [
+  leaf('사업군', 'business_category', 150, 'center', true, 'left'),
+  ...summaryColumns.value.slice(1),
+])
+
+const businessDivisionSummaryRows = computed(() => {
+  const divisions = businessDivisionOptions.value
+  const rowsByDivision = divisions.map(division => buildSummaryRow(
+    rows.value.filter(row => row.business_division === division),
+    { business_division: division },
+  ))
   return [
-    { key: 'ord', label: `${now.getMonth()+1}월 누계 수주`, value: fmtM(s.ytd_orders  || 0), color: '#722ed1', cls: 'stat-purple', unit: '백만' },
-    { key: 'rev', label: `${now.getMonth()+1}월 누계 매출`, value: fmtM(s.ytd_revenue || 0), color: '#1677ff', cls: 'stat-blue',   unit: '백만' },
-    { key: 'gp',  label: '누계 매출총이익',  value: fmtM(s.gross_profit || 0), color: '#52c41a', cls: 'stat-green',  unit: '백만' },
-    { key: 'mg',  label: '이익률',           value: (s.gross_margin || 0) + '%', color: s.gross_margin >= 10 ? '#52c41a' : '#fa8c16', cls: 'stat-orange', unit: '' },
+    buildSummaryRow(
+      rows.value.filter(row => divisions.includes(row.business_division)),
+      { business_division: '합계(전사)' },
+    ),
+    ...rowsByDivision,
   ]
 })
 
-const trendOption = computed(() => ({
-  tooltip: { trigger: 'axis', formatter: (ps) => {
-    let s = `<b>${ps[0].axisValue}월</b><br/>`
-    ps.forEach(p => { s += `${p.marker}${p.seriesName}: ${fmtM(p.value)}백만<br/>` })
-    return s
-  }},
-  legend: { data: ['수주', '매출', '원가'], bottom: 0, itemHeight: 10, textStyle: { fontSize: 11 } },
-  grid: { top: 20, bottom: 36, left: 48, right: 12 },
-  xAxis: { type: 'category', data: monthly.value.map(m => m.month + '월'), axisLabel: { fontSize: 11 } },
-  yAxis: { type: 'value', axisLabel: { formatter: v => fmtM(v) + 'M', fontSize: 10 } },
-  series: [
-    { name: '수주', type: 'bar', data: monthly.value.map(m => m.orders),  itemStyle: { color: '#722ed1' }, barMaxWidth: 18 },
-    { name: '매출', type: 'bar', data: monthly.value.map(m => m.revenue), itemStyle: { color: '#1677ff' }, barMaxWidth: 18 },
-    { name: '원가', type: 'line', data: monthly.value.map(m => m.cost), lineStyle: { color: '#f5222d', type: 'dashed' }, symbol: 'circle', symbolSize: 4, itemStyle: { color: '#f5222d' } },
-  ],
-}))
-
-const monthlyCols = [
-  { title: '월',     key: 'month',   width: 45,  align: 'center', customRender: ({ record }) => record.isTotal ? '합계' : record.month + '월' },
-  { title: '수주',   key: 'orders',  width: 90,  align: 'right' },
-  { title: '매출',   key: 'revenue', width: 90,  align: 'right' },
-  { title: '이익률', key: 'margin',  width: 70,  align: 'center' },
-]
-const monthlyRows = computed(() => {
-  const rows = monthly.value.map(m => ({
-    month: m.month, orders: m.orders, revenue: m.revenue, cost: m.cost,
-    gp: m.revenue - m.cost,
-    margin: m.revenue > 0 ? Math.round((m.revenue - m.cost) / m.revenue * 100 * 10) / 10 : 0,
-    isTotal: false,
-  }))
-  const s = summary.value
-  rows.push({ month: 0, orders: s.ytd_orders || 0, revenue: s.ytd_revenue || 0, cost: s.ytd_cost || 0, gp: s.gross_profit || 0, margin: s.gross_margin || 0, isTotal: true })
-  return rows
+const businessGroupSummaryRows = computed(() => {
+  const categories = businessCategoryOptions.value
+  return [
+    buildSummaryRow(rows.value, { business_category: '합계(전사)' }),
+    ...categories.map(category => buildSummaryRow(
+      rows.value.filter(row => row.business_category === category),
+      { business_category: category },
+    )),
+  ]
 })
 
-const projCols = [
-  { title: 'PJT NO.', dataIndex: 'project_no',   width: 130, align: 'center' },
-  { title: '프로젝트명', dataIndex: 'project_name', width: 220, align: 'center', ellipsis: true },
-  { title: '발주처',    dataIndex: 'client_name',  width: 160, align: 'center', ellipsis: true },
-  { title: '계약금액(백만)', key: 'contract_amount', width: 130, align: 'right' },
-  { title: '담당 PM',  dataIndex: 'pm_name',      width: 100, align: 'center' },
-  { title: '상태',     key: 'status',             width: 80,  align: 'center' },
-]
+const businessDivisionOptions = computed(() => {
+  const topLevel = flattenDepartmentTree(departments.value)
+    .filter(dept => !dept.parent_id)
+    .filter(dept => ['office', 'business', 'division'].includes(dept.dept_type))
+    .map(dept => dept.name)
+    .filter(name => name && !EXCLUDED_SUMMARY_DIVISIONS.has(name))
+  return [...new Set(topLevel)]
+})
+
+const businessCategoryOptions = computed(() => {
+  const categories = businessCategories.value.length ? businessCategories.value : DEFAULT_BUSINESS_CATEGORIES
+  return [...new Set(categories.filter(Boolean))]
+})
+
+function leaf(title, key, width = 120, align = 'center', ellipsis = false, fixed = undefined) {
+  return { title, key, dataIndex: key, width, align, ellipsis, fixed }
+}
+
+function group(title, children) {
+  return { title, align: 'center', children }
+}
+
+function amountGroup(title, groupKey, totalTitle, editable = false) {
+  return {
+    title,
+    align: 'center',
+    children: [
+      { title: totalTitle, key: `${groupKey}_total`, width: 145, align: 'right', groupKey, total: true },
+      ...monthLabels.map((label, index) => ({
+        title: label,
+        key: `${groupKey}_${index + 1}`,
+        width: 105,
+        align: 'right',
+        groupKey,
+        month: String(index + 1),
+        editable,
+      })),
+    ],
+  }
+}
+
+function tableColumns(tab) {
+  return tab.key === 'revenue' ? revenueColumns.value : columns.value
+}
+
+function tableRows(tab) {
+  return tab.key === 'revenue' ? revenueRows.value : rows.value
+}
+
+function tableScrollXValue(tab) {
+  return tab.key === 'revenue' ? revenueTableScrollX.value : tableScrollX.value
+}
+
+function tabAnalysis(tab) {
+  return tab.key === 'revenue' ? revenueAnalysis.value : analysis.value
+}
+
+function monthValue(row, groupKey, month) {
+  return toNumber(row[groupKey]?.months?.[String(month)])
+}
+
+function monthSum(row, groupKey, toMonth = 12) {
+  let sum = 0
+  for (let month = 1; month <= toMonth; month += 1) {
+    sum += monthValue(row, groupKey, month)
+  }
+  return sum
+}
+
+function rowsMonthSum(sourceRows, groupKey, month) {
+  return sourceRows.reduce((sum, row) => sum + monthValue(row, groupKey, month), 0)
+}
+
+function rowsCumulativeSum(sourceRows, groupKey, toMonth = 12) {
+  return sourceRows.reduce((sum, row) => sum + monthSum(row, groupKey, toMonth), 0)
+}
+
+function buildSummaryRow(sourceRows, identity) {
+  const baseMonth = selectedMonthNo.value
+  const baseActual = rowsMonthSum(sourceRows, 'current_week1', baseMonth)
+  const baseMove = rowsMonthSum(sourceRows, 'current_week4', baseMonth)
+  const monthlyActual = rowsCumulativeSum(sourceRows, 'current_week1', baseMonth)
+  const monthlyPrevActual = 0
+  const monthlyPlan = rowsCumulativeSum(sourceRows, 'business_plan', baseMonth)
+  const monthlyMove = rowsCumulativeSum(sourceRows, 'current_week4', baseMonth)
+  const yearActual = rowsCumulativeSum(sourceRows, 'current_week1', 12)
+  const yearPrevPlan = 0
+  const yearPlan = rowsCumulativeSum(sourceRows, 'business_plan', 12)
+  const yearMove = rowsCumulativeSum(sourceRows, 'current_week4', 12)
+
+  return {
+    ...identity,
+    base_actual: baseActual,
+    base_move: baseMove,
+    base_move_rate: baseActual - baseMove,
+    monthly_actual: monthlyActual,
+    monthly_prev_actual: monthlyPrevActual,
+    monthly_plan: monthlyPlan,
+    monthly_move: monthlyMove,
+    monthly_prev_rate: monthlyActual - monthlyPrevActual,
+    monthly_plan_rate: monthlyActual - monthlyPlan,
+    monthly_move_rate: monthlyActual - monthlyMove,
+    year_actual: yearActual,
+    year_prev_plan: yearPrevPlan,
+    year_move: yearMove,
+    year_prev_rate: yearActual - yearPrevPlan,
+    year_plan_rate: yearActual - yearPlan,
+    year_move_rate: yearActual - yearMove,
+  }
+}
+
+function sumColumnWidths(list) {
+  return list.reduce((sum, column) => sum + (column.children ? sumColumnWidths(column.children) : (column.width || 120)), 0)
+}
+
+function moveMonth(delta) {
+  const [year, month] = selectedMonth.value.split('-').map(Number)
+  const date = new Date(year, month - 1 + delta, 1)
+  selectedMonth.value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  load()
+}
+
+function toNumber(value) {
+  const parsed = Number(String(value ?? 0).replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function amountFormatter(value) {
+  if (value === null || value === undefined || value === '') return ''
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+function amountParser(value) {
+  return String(value ?? '').replace(/,/g, '')
+}
+
+function formatAmount(value) {
+  const amount = Math.round(toNumber(value))
+  return amount ? amount.toLocaleString() : '-'
+}
+
+function clearZero(target, key) {
+  if (toNumber(target[key]) === 0) target[key] = undefined
+}
+
+function probabilityColor(value) {
+  if (value === 'A') return 'green'
+  if (value === 'B') return 'blue'
+  if (value === 'C') return 'orange'
+  return 'default'
+}
+
+function businessPlanTotal(record) {
+  return monthLabels.reduce((sum, _label, index) => sum + toNumber(record.business_plan?.months?.[String(index + 1)]), 0)
+}
+
+function groupValue(record, column) {
+  const group = record[column.groupKey] || {}
+  if (column.total) return group.total || 0
+  return group.months?.[column.month] || 0
+}
+
+function normalizeRow(source = {}) {
+  const businessMonths = {}
+  for (let month = 1; month <= 12; month += 1) {
+    businessMonths[String(month)] = toNumber(source.business_plan?.months?.[String(month)])
+  }
+  return {
+    ...source,
+    business_plan: {
+      total: toNumber(source.business_plan?.total),
+      months: businessMonths,
+    },
+  }
+}
+
+function serializeBusinessPlanRow(row) {
+  const months = {}
+  for (let month = 1; month <= 12; month += 1) {
+    months[String(month)] = toNumber(row.business_plan?.months?.[String(month)])
+  }
+  return {
+    row_key: row.row_key,
+    business_division: row.business_division,
+    sales_team: row.sales_team,
+    business_category: row.business_category,
+    sales_no: row.sales_no,
+    project_name: row.project_name,
+    probability: row.probability,
+    sales_status: row.sales_status,
+    domestic_overseas: row.domestic_overseas,
+    special_relation: row.special_relation,
+    business_plan_total: Object.values(months).reduce((sum, value) => sum + toNumber(value), 0),
+    business_plan_months: months,
+  }
+}
+
+function markDirty() {
+  dirty.value = true
+}
 
 async function load() {
   loading.value = true
   try {
-    const res = await managementApi.getAnalysis(year.value)
-    data.value = res.data
-  } finally { loading.value = false }
+    const [res, revenueRes, deptRes, categoryRes] = await Promise.all([
+      managementApi.getSalesPlanAnalysis(selectedYear.value, selectedMonthNo.value),
+      managementApi.getRevenuePlanAnalysis(selectedYear.value, selectedMonthNo.value),
+      masterApi.getDepartments({ org_year: selectedYear.value, include_inactive: false, tree: true }),
+      executionApi.getProjectBusinessCategories(),
+    ])
+    analysis.value = res.data
+    rows.value = (res.data?.rows || []).map(normalizeRow)
+    revenueAnalysis.value = revenueRes.data
+    revenueRows.value = (revenueRes.data?.rows || []).map(normalizeRow)
+    departments.value = deptRes.data || []
+    businessCategories.value = Array.isArray(categoryRes.data) ? categoryRes.data : []
+    dirty.value = false
+  } catch (error) {
+    message.error(error.response?.data?.detail || '경영분석 데이터를 불러오지 못했습니다.')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function saveBusinessPlan() {
+  saving.value = true
+  try {
+    await managementApi.saveSalesBusinessPlan(selectedYear.value, rows.value.map(serializeBusinessPlanRow))
+    dirty.value = false
+    message.success('사업계획이 저장되었습니다.')
+    await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '저장 중 오류가 발생했습니다.')
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(load)
@@ -175,19 +521,34 @@ onMounted(load)
 
 <style scoped>
 .page-wrap { display: flex; flex-direction: column; gap: 16px; }
-.selector-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-.sel-row   { display: flex; align-items: center; justify-content: space-between; }
-.sel-label { font-size: 13px; font-weight: 600; color: #595959; }
-.stat-card   { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }
-.stat-blue   { border-left-color: #1677ff; } .stat-green  { border-left-color: #52c41a; }
-.stat-orange { border-left-color: #fa8c16; } .stat-purple { border-left-color: #722ed1; }
-.stat-inner  { display: flex; align-items: center; gap: 14px; }
-.stat-label  { font-size: 12px; color: #8c8c8c; margin-bottom: 2px; }
-.stat-value  { font-size: 22px; font-weight: 700; color: #1a2535; line-height: 1.2; }
-.stat-unit   { font-size: 11px; font-weight: 400; margin-left: 2px; color: #8c8c8c; }
-.dash-card   { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-.card-extra  { font-size: 11px; color: #8c8c8c; }
-.num-bold    { font-weight: 700; }
+.table-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+.title-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.card-title { justify-self: start; font-size: 15px; font-weight: 600; color: #1a2535; }
+.month-nav { justify-self: center; display: inline-flex; align-items: center; gap: 8px; }
+.month-picker { width: 145px; }
+.grid-help { margin-bottom: 10px; color: #8c8c8c; font-size: 12px; }
+.table-number-input { width: 100%; }
+.num-cell {
+  display: block;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.readonly-cell {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #fafafa;
+  color: #1a2535;
+  font-weight: 600;
+}
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
+:deep(.ant-table-tbody > tr > td) { padding: 6px 8px; }
+:deep(.analysis-table .ant-input-number-input) { text-align: right; }
 </style>

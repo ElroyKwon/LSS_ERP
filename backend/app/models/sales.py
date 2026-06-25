@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -50,106 +50,19 @@ class EstimateItem(Base):
     cost_code = relationship("CostCode")
 
 
-class Contract(Base):
-    __tablename__ = "contracts"
+class EstimateAttachment(Base):
+    __tablename__ = "estimate_attachments"
     id = Column(Integer, primary_key=True, index=True)
-    contract_no = Column(String(30), unique=True, nullable=False)
-    site_id = Column(Integer, ForeignKey("sites.id"))
-    estimate_id = Column(Integer, ForeignKey("estimates.id"))
-    client_id = Column(Integer, ForeignKey("companies.id"))
-    contract_name = Column(String(300), nullable=False)
-    contract_type = Column(String(20), nullable=False)
-    revenue_type = Column(String(20), default="general")
-    original_amount = Column(Numeric(18, 2), default=0)
-    current_amount = Column(Numeric(18, 2), default=0)
-    original_cost = Column(Numeric(18, 2), default=0)
-    current_cost = Column(Numeric(18, 2), default=0)
-    contract_date = Column(Date)
-    start_date = Column(Date)
-    end_date = Column(Date)
-    status = Column(String(20), default="active")
-    sales_manager_id = Column(Integer, ForeignKey("users.id"))
-    notes = Column(Text)
-    created_by = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    site = relationship("Site")
-    client = relationship("Company")
-    changes = relationship("ContractChange", back_populates="contract")
-    billings = relationship("ProgressBilling", back_populates="contract")
-
-
-class ContractChange(Base):
-    __tablename__ = "contract_changes"
-    id = Column(Integer, primary_key=True, index=True)
-    contract_id = Column(Integer, ForeignKey("contracts.id"))
-    change_no = Column(Integer, nullable=False)
-    change_date = Column(Date, nullable=False)
-    amount_before = Column(Numeric(18, 2))
-    amount_change = Column(Numeric(18, 2), default=0)
-    amount_after = Column(Numeric(18, 2))
-    cost_before = Column(Numeric(18, 2))
-    cost_change = Column(Numeric(18, 2), default=0)
-    cost_after = Column(Numeric(18, 2))
-    end_date_before = Column(Date)
-    end_date_after = Column(Date)
-    reason = Column(Text)
-    status = Column(String(20), default="draft")
-    approved_by = Column(Integer, ForeignKey("users.id"))
-    approved_at = Column(DateTime)
+    estimate_id = Column(Integer, ForeignKey("estimates.id", ondelete="CASCADE"), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False)
+    content_type = Column(String(120))
+    file_size = Column(Integer, default=0)
+    file_path = Column(Text, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=func.now())
 
-    contract = relationship("Contract", back_populates="changes")
-
-
-class ProgressBilling(Base):
-    __tablename__ = "progress_billings"
-    id = Column(Integer, primary_key=True, index=True)
-    billing_no = Column(String(30), unique=True, nullable=False)
-    contract_id = Column(Integer, ForeignKey("contracts.id"))
-    site_id = Column(Integer, ForeignKey("sites.id"))
-    billing_seq = Column(Integer, nullable=False)
-    billing_date = Column(Date, nullable=False)
-    progress_rate = Column(Numeric(6, 2), default=0)
-    billing_amount = Column(Numeric(18, 2), default=0)
-    vat_amount = Column(Numeric(18, 2), default=0)
-    total_amount = Column(Numeric(18, 2), default=0)
-    cumulative_amount = Column(Numeric(18, 2), default=0)
-    status = Column(String(20), default="draft")
-    invoice_no = Column(String(50))
-    invoice_date = Column(Date)
-    due_date = Column(Date)
-    notes = Column(Text)
-    approved_by = Column(Integer, ForeignKey("users.id"))
-    approved_at = Column(DateTime)
-    created_by = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    contract = relationship("Contract", back_populates="billings")
-    site = relationship("Site")
-
-
-class Collection(Base):
-    __tablename__ = "collections"
-    id = Column(Integer, primary_key=True, index=True)
-    collection_no = Column(String(30), unique=True, nullable=False)
-    billing_id = Column(Integer, ForeignKey("progress_billings.id"))
-    contract_id = Column(Integer, ForeignKey("contracts.id"))
-    site_id = Column(Integer, ForeignKey("sites.id"))
-    client_id = Column(Integer, ForeignKey("companies.id"))
-    collected_date = Column(Date, nullable=False)
-    collected_amount = Column(Numeric(18, 2), nullable=False)
-    bank_name = Column(String(50))
-    notes = Column(Text)
-    created_by = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=func.now())
-
-    billing = relationship("ProgressBilling")
-    site = relationship("Site")
-    client = relationship("Company")
+    estimate = relationship("Estimate")
 
 
 class DesignRequest(Base):
@@ -172,3 +85,16 @@ class DesignRequest(Base):
     order_company = relationship("Company", foreign_keys=[order_company_id])
     construction_company = relationship("Company", foreign_keys=[construction_company_id])
     partner_company = relationship("Company", foreign_keys=[partner_company_id])
+
+
+class SalesManagementWeeklyRow(Base):
+    """Weekly sales management project list row snapshot."""
+    __tablename__ = "sales_management_weekly_rows"
+    __table_args__ = (UniqueConstraint("week_start", "row_key"),)
+    id         = Column(Integer, primary_key=True, index=True)
+    week_start = Column(Date, nullable=False, index=True)
+    row_key    = Column(String(80), nullable=False)
+    data_json  = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

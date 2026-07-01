@@ -119,13 +119,14 @@
           :columns="getPlanColumns(section.key)"
           :data-source="section.rows"
           :loading="planLoading"
-          :pagination="false"
+          :pagination="{ pageSize: 20, showSizeChanger: true }"
           row-key="key"
           size="small"
           :scroll="{ x: tableScrollX }"
           :row-class-name="rowClassName"
           bordered
-        >
+        
+        :sticky="{ offsetHeader: 56 }">
           <template #headerCell="{ column }">
             <template v-if="column.changeGroup">
               <div class="header-change-title">
@@ -614,15 +615,15 @@ function getPlanColumns(sectionKey) {
         dataIndex: column.key,
         year: column.year,
         month: column.month,
-        width: 110,
+        width: 135,
         align: 'right',
       })),
     })),
     {
       title: '집계',
       children: [
-        { title: '합계', key: 'total', dataIndex: 'total', width: 130, align: 'right' },
-        { title: '미실행', key: 'remain', dataIndex: 'remain', width: 130, align: 'right' },
+        { title: '합계', key: 'total', dataIndex: 'total', width: 135, align: 'right' },
+        { title: '미실행', key: 'remain', dataIndex: 'remain', width: 135, align: 'right' },
         { title: '진행율', key: 'rate', dataIndex: 'rate', width: 100, align: 'center' },
       ],
     },

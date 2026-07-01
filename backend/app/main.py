@@ -3,14 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 import os
 
 from .config import settings
 from .database import engine, Base
 from .models import *  # noqa: register all models
+from .utils.authorization import enforce_api_permissions
 from .utils.schema import ensure_accounting_columns, ensure_execution_columns, ensure_master_columns
 
-from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle
+from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion
 
 # Development convenience. Production deployments should run Alembic migrations
 # and set AUTO_CREATE_SCHEMA=false to keep schema changes explicit.
@@ -28,6 +30,12 @@ app = FastAPI(
     openapi_url="/api/openapi.json" if settings.API_DOCS_ENABLED else None,
 )
 
+if settings.is_production_like:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.hosts,
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins,
@@ -35,6 +43,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.middleware("http")(enforce_api_permissions)
 
 app.include_router(auth.router)
 app.include_router(master.router)
@@ -44,6 +54,7 @@ app.include_router(execution.router)
 app.include_router(management.router)
 app.include_router(timesheet.router)
 app.include_router(vehicle.router)
+app.include_router(opinion.router)
 
 # 프론트엔드 정적 파일 서빙
 FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")

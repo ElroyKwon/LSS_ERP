@@ -7,6 +7,11 @@ const api = axios.create({
   timeout: 30000,
 })
 
+const excelUploadConfig = {
+  headers: { 'Content-Type': 'multipart/form-data' },
+  timeout: 180000,
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -46,6 +51,11 @@ export const masterApi = {
   createDepartment: (d) => api.post('/departments', d),
   updateDepartment: (id, d) => api.put(`/departments/${id}`, d),
   deleteDepartment: (id) => api.delete(`/departments/${id}`),
+  getNotices: () => api.get('/notices'),
+  getActiveNotices: () => api.get('/notices/active'),
+  createNotice: (d) => api.post('/notices', d),
+  updateNotice: (id, d) => api.put(`/notices/${id}`, d),
+  deleteNotice: (id) => api.delete(`/notices/${id}`),
   getUsers: () => api.get('/users'),
   createUser: (d) => api.post('/users', d),
   updateUser: (id, d) => api.put(`/users/${id}`, d),
@@ -56,14 +66,19 @@ export const masterApi = {
   createCompany: (d) => api.post('/companies', d),
   updateCompany: (id, d) => api.put(`/companies/${id}`, d),
   deleteCompany: (id) => api.delete(`/companies/${id}`),
+  importCompaniesExcel: (formData) => api.post('/companies/import-excel', formData, excelUploadConfig),
+  downloadCompaniesTemplate: () => api.get('/companies/template', { responseType: 'blob' }),
   getBusinessStatus: (businessNo) => api.get('/external/business-status', { params: { business_no: businessNo } }),
   searchPostalAddresses: (query) => api.get('/external/postal-addresses', { params: { query } }),
   updateExternalApiKey: (d) => api.patch('/external/api-key', d),
 
   getMaterials: (p) => api.get('/materials', { params: p }),
+  getMaterial: (id) => api.get(`/materials/${id}`),
   createMaterial: (d) => api.post('/materials', d),
   updateMaterial: (id, d) => api.put(`/materials/${id}`, d),
   deleteMaterial: (id) => api.delete(`/materials/${id}`),
+  importMaterialsExcel: (formData) => api.post('/materials/import-excel', formData, excelUploadConfig),
+  downloadMaterialsTemplate: () => api.get('/materials/template', { responseType: 'blob' }),
 
   getEmployees: (p) => api.get('/employees', { params: p }),
   createEmployee: (d) => api.post('/employees', d),
@@ -94,6 +109,11 @@ export const salesApi = {
   getSalesManagementRows: (weekStart) => api.get('/sales-management', { params: { week_start: weekStart } }),
   getLatestSalesManagementRowsBefore: (weekStart) => api.get('/sales-management/latest-before', { params: { week_start: weekStart } }),
   saveSalesManagementRows: (weekStart, rows) => api.post('/sales-management/bulk', { week_start: weekStart, rows }),
+  importSalesManagementExcel: (weekStart, formData) => api.post('/sales-management/import-excel', formData, {
+    params: { week_start: weekStart },
+    ...excelUploadConfig,
+  }),
+  downloadSalesManagementTemplate: () => api.get('/sales-management/template', { responseType: 'blob' }),
 
 }
 // Execution
@@ -103,6 +123,8 @@ export const executionApi = {
   createProject: (d) => api.post('/projects', d),
   updateProject: (id, d) => api.put(`/projects/${id}`, d),
   deleteProject: (id) => api.delete(`/projects/${id}`),
+  importProjectsExcel: (formData) => api.post('/projects/import-excel', formData, excelUploadConfig),
+  downloadProjectsTemplate: () => api.get('/projects/template', { responseType: 'blob' }),
 
   // 매출/투입 계획
   getProjectPlans: (projectId, year) => api.get('/project-plans', { params: { project_id: projectId, plan_year: year } }),
@@ -142,6 +164,7 @@ export const executionApi = {
   getAPBills: (p) => api.get('/ap-bills', { params: p }),
   createAPBill: (d) => api.post('/ap-bills', d),
   updateAPBill: (id, d) => api.put(`/ap-bills/${id}`, d),
+  approveAPBill: (id) => api.patch(`/ap-bills/${id}/approve`),
   deleteAPBill: (id) => api.delete(`/ap-bills/${id}`),
 }
 
@@ -156,6 +179,23 @@ export const vehicleApi = {
   updateLog:      (id, d) => api.put(`/vehicle-logs/${id}`, d),
   deleteLog:      (id) => api.delete(`/vehicle-logs/${id}`),
   getStats:       (p) => api.get('/vehicle-stats', { params: p }),
+}
+
+// Opinion Listening
+export const opinionApi = {
+  getOpinions: (p) => api.get('/opinions', { params: p }),
+  getOpinion: (id) => api.get(`/opinions/${id}`),
+  createOpinion: (d) => api.post('/opinions', d),
+  updateOpinion: (id, d) => api.put(`/opinions/${id}`, d),
+  deleteOpinion: (id) => api.delete(`/opinions/${id}`),
+  answerOpinion: (id, d) => api.put(`/opinions/${id}/answer`, d),
+  uploadAttachment: (id, formData) => api.post(`/opinions/${id}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
+  }),
+  deleteAttachment: (id) => api.delete(`/opinion-attachments/${id}`),
+  getNotificationSettings: () => api.get('/opinion-notification-settings'),
+  updateNotificationSetting: (userId, d) => api.put(`/opinion-notification-settings/${userId}`, d),
 }
 
 // Timesheet
@@ -192,5 +232,5 @@ export const managementApi = {
 
 // Dashboard
 export const forecastApi = {
-  getDashboard: () => api.get('/dashboard'),
+  getDashboard: (p) => api.get('/dashboard', { params: p }),
 }

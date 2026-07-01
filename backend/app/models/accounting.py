@@ -102,6 +102,7 @@ class AccountsPayable(Base):
     subcontract_type = Column(String(30))
     payment_terms = Column(String(200))
     collection_terms = Column(String(200))
+    related_revenue_no = Column(String(50))
     related_revenue = Column(Numeric(18, 2), default=0)
     related_revenue_collection_date = Column(Date)
     related_revenue_collection_method = Column(String(50))

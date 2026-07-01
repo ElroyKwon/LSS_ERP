@@ -23,6 +23,7 @@ class Project(Base):
     pm_name         = Column(String(100))
     pm_dept         = Column(String(100))
     region          = Column(String(100))
+    excel_data_json = Column(Text)
     notes           = Column(Text)
     created_by      = Column(Integer, ForeignKey("users.id"))
     created_at      = Column(DateTime, default=func.now())

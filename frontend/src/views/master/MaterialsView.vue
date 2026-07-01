@@ -47,22 +47,36 @@
       </a-col>
     </a-row>
 
+    <div class="type-guide">
+      <span class="type-guide-title">계정구분</span>
+      <span v-for="option in materialTypeOptions" :key="option.value" class="type-guide-item">
+        {{ option.value }} {{ option.label }}
+      </span>
+    </div>
+
     <a-card :bordered="false" class="table-card">
       <template #title><span class="card-title">자재 관리</span></template>
       <template #extra>
         <a-space>
-          <a-select v-model:value="filterType" placeholder="계정구분 전체" style="width:140px" allow-clear @change="load">
-            <a-select-option value="raw">원재료</a-select-option>
-            <a-select-option value="sub">부재료</a-select-option>
-            <a-select-option value="goods">상품</a-select-option>
+          <a-select v-model:value="filterType" placeholder="계정구분 전체" style="width:150px" allow-clear @change="resetAndLoad">
+            <a-select-option v-for="option in materialTypeOptions" :key="option.value" :value="option.value">
+              {{ option.value }}. {{ option.label }}
+            </a-select-option>
           </a-select>
           <a-input-search
             v-model:value="search"
             placeholder="품번 / 품명 검색"
             style="width:220px"
             allow-clear
-            @search="load"
+            @search="resetAndLoad"
           />
+          <input ref="excelInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="handleExcelFile" />
+          <a-button :loading="importing" @click="excelInput?.click()">
+            <template #icon><UploadOutlined /></template>엑셀 업로드
+          </a-button>
+          <a-button @click="downloadTemplate">
+            <template #icon><DownloadOutlined /></template>양식 다운로드
+          </a-button>
           <a-button type="primary" @click="openEditor(null)">
             <template #icon><PlusOutlined /></template>신규 등록
           </a-button>
@@ -73,17 +87,36 @@
         :columns="columns"
         :data-source="items"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="tablePagination"
         row-key="id"
         size="middle"
-        :scroll="{ x: 800 }"
-      >
+        :scroll="{ x: 1890 }"
+        @change="handleTableChange"
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'material_type'">
-            <a-tag :color="typeColor[record.material_type]">{{ typeLabel[record.material_type] || record.material_type || '-' }}</a-tag>
+            <a-tag :color="typeColor[record.material_type]">{{ record.material_type || '-' }}</a-tag>
           </template>
-          <template v-else-if="column.key === 'standard_price'">
-            <span class="num-text">{{ formatPrice(record.standard_price) }}</span>
+          <template v-else-if="column.key === 'conversion_factor'">
+            <span class="num-text">{{ formatPrice(record.conversion_factor) }}</span>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <a-space>
+              <a-button type="link" size="small" @click="openEditor(record)">
+                <template #icon><EditOutlined /></template>수정
+              </a-button>
+              <a-popconfirm
+                title="삭제하시겠습니까?"
+                ok-text="삭제"
+                cancel-text="취소"
+                @confirm="handleDelete(record.id)"
+              >
+                <a-button type="link" size="small" danger>
+                  <template #icon><DeleteOutlined /></template>삭제
+                </a-button>
+              </a-popconfirm>
+            </a-space>
           </template>
         </template>
       </a-table>
@@ -102,12 +135,25 @@
       <div class="legacy-editor">
         <div class="legacy-list">
           <div class="legacy-grid-head">
+            <div></div>
             <div>품번</div>
             <div>품명</div>
             <div>규격</div>
           </div>
           <div class="legacy-grid-body">
-            <div v-for="item in items" :key="item.id" class="legacy-grid-row" @click="openEditor(item)">
+            <div
+              v-for="item in items"
+              :key="item.id"
+              :class="['legacy-grid-row', editItem?.id === item.id ? 'selected' : '']"
+              @click="openEditor(item)"
+            >
+              <div class="check-cell-body">
+                <a-checkbox
+                  :checked="editItem?.id === item.id"
+                  @click.stop
+                  @change="openEditor(item)"
+                />
+              </div>
               <div>{{ item.material_code }}</div>
               <div>{{ item.material_name }}</div>
               <div>{{ item.spec }}</div>
@@ -120,6 +166,9 @@
           <a-tabs v-model:activeKey="activeTab" type="card" size="small" class="legacy-tabs">
             <a-tab-pane key="master" tab="MASTER/SPEC">
               <div class="spec-box">
+                <FormLine label="회사코드" name="material_company_group_code" wide>
+                  <a-input v-model:value="form.material_company_group_code" />
+                </FormLine>
                 <FormLine label="품번" name="material_code" required wide>
                   <a-input v-model:value="form.material_code" />
                 </FormLine>
@@ -133,9 +182,9 @@
                 <div class="two-col">
                   <FormLine label="계정구분" name="material_type">
                     <a-select v-model:value="form.material_type">
-                      <a-select-option value="raw">1. 원재료</a-select-option>
-                      <a-select-option value="sub">2. 부재료</a-select-option>
-                      <a-select-option value="goods">5. 상품</a-select-option>
+                      <a-select-option v-for="option in materialTypeOptions" :key="option.value" :value="option.value">
+                        {{ option.value }}. {{ option.label }}
+                      </a-select-option>
                     </a-select>
                   </FormLine>
                   <FormLine label="조달구분" name="procurement_type">
@@ -149,13 +198,13 @@
 
                 <div class="three-col">
                   <FormLine label="재고단위" name="unit">
-                    <a-input v-model:value="form.unit" />
+                    <a-input v-model:value="form.unit" class="small-unit-input" />
                   </FormLine>
                   <FormLine label="관리단위" name="management_unit">
-                    <a-input v-model:value="form.management_unit" />
+                    <a-input v-model:value="form.management_unit" class="small-unit-input" />
                   </FormLine>
                   <FormLine label="환산계수" name="conversion_factor">
-                    <a-input-number v-model:value="form.conversion_factor" :precision="6" />
+                    <a-input-number v-model:value="form.conversion_factor" :precision="6" class="conversion-input" />
                     <a-button class="mini-button" @click="setDefaultConversion">F2</a-button>
                   </FormLine>
                 </div>
@@ -292,12 +341,6 @@
                   </FormLine>
                 </div>
 
-                <FormLine label="비고" name="notes" wide>
-                  <a-input v-model:value="form.notes" />
-                </FormLine>
-                <FormLine label="주문비고" name="order_notes" wide>
-                  <a-input v-model:value="form.order_notes" />
-                </FormLine>
               </div>
             </a-tab-pane>
           </a-tabs>
@@ -309,11 +352,12 @@
       <a-table
         :columns="lookupColumns"
         :data-source="lookupRows"
-        :pagination="false"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
         row-key="code"
         size="small"
         :custom-row="record => ({ onDblclick: () => selectLookup(record) })"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
             <a-button type="link" size="small" @click="selectLookup(record)">선택</a-button>
@@ -331,10 +375,14 @@ import { masterApi } from '@/api'
 import {
   AppstoreOutlined,
   BuildOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  EditOutlined,
   InboxOutlined,
   PlusOutlined,
   SearchOutlined,
   ShoppingOutlined,
+  UploadOutlined,
 } from '@ant-design/icons-vue'
 
 const FormLine = defineComponent({
@@ -362,8 +410,10 @@ const FormLine = defineComponent({
 })
 
 const items = ref([])
+const statsData = ref({ total: 0, raw: 0, sub: 0, goods: 0 })
 const loading = ref(false)
 const saving = ref(false)
+const importing = ref(false)
 const editorOpen = ref(false)
 const lookupOpen = ref(false)
 const editItem = ref(null)
@@ -371,16 +421,19 @@ const activeTab = ref('master')
 const filterType = ref(null)
 const search = ref('')
 const formRef = ref()
+const excelInput = ref()
+const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 const lookupConfig = ref({ codeField: '', nameField: '' })
 
 const emptyForm = {
+  material_company_group_code: '',
   material_code: '',
   material_name: '',
   spec: '',
   unit: 'EA',
   management_unit: 'EA',
   conversion_factor: 1,
-  material_type: 'goods',
+  material_type: '5',
   procurement_type: 'purchase',
   item_group_code: '',
   item_group_name: '',
@@ -416,22 +469,65 @@ const emptyForm = {
 
 const form = reactive({ ...emptyForm })
 
-const typeColor = { raw: 'blue', sub: 'green', goods: 'orange' }
-const typeLabel = { raw: '원재료', sub: '부재료', goods: '상품' }
+const materialTypeOptions = [
+  { value: '0', label: '원재료' },
+  { value: '1', label: '부재료' },
+  { value: '2', label: '제품' },
+  { value: '4', label: '반제품' },
+  { value: '5', label: '상품' },
+  { value: '6', label: '저장품' },
+  { value: '7', label: '비용' },
+  { value: '8', label: '수익' },
+]
+const typeColor = {
+  0: 'blue',
+  1: 'green',
+  2: 'purple',
+  4: 'cyan',
+  5: 'orange',
+  6: 'geekblue',
+  7: 'red',
+  8: 'gold',
+  raw: 'blue',
+  sub: 'green',
+  goods: 'orange',
+}
+const typeLabel = Object.fromEntries(materialTypeOptions.map(option => [option.value, option.label]))
+Object.assign(typeLabel, { raw: '원재료', sub: '부재료', goods: '상품' })
+function isMaterialType(item, ...values) {
+  return values.includes(String(item.material_type || ''))
+}
 
 const stats = computed(() => ({
-  total: items.value.length,
-  raw: items.value.filter(m => m.material_type === 'raw').length,
-  sub: items.value.filter(m => m.material_type === 'sub').length,
-  goods: items.value.filter(m => m.material_type === 'goods').length,
+  total: statsData.value.total,
+  raw: statsData.value.raw,
+  sub: statsData.value.sub,
+  goods: statsData.value.goods,
+}))
+
+const tablePagination = computed(() => ({
+  current: pagination.current,
+  pageSize: pagination.pageSize,
+  total: pagination.total,
+  showSizeChanger: true,
+  showTotal: total => `총 ${total.toLocaleString()}건`,
 }))
 
 const columns = [
-  { title: '품번', dataIndex: 'material_code', width: 140, align: 'center' },
-  { title: '품명', dataIndex: 'material_name', width: 220, align: 'center', ellipsis: true },
-  { title: '규격', dataIndex: 'spec', width: 180, align: 'center', ellipsis: true },
-  { title: '계정구분', key: 'material_type', width: 110, align: 'center' },
-  { title: '구매단가(품목별)', key: 'standard_price', width: 150, align: 'right' },
+  { title: '회사코드', dataIndex: 'material_company_group_code', width: 90, align: 'center' },
+  { title: '품번', dataIndex: 'material_code', width: 220, align: 'center', ellipsis: true },
+  { title: '품명', dataIndex: 'material_name', width: 260, align: 'center', ellipsis: true },
+  { title: '규격', dataIndex: 'spec', width: 300, align: 'center', ellipsis: true },
+  { title: '계정구분', key: 'material_type', dataIndex: 'material_type', width: 90, align: 'center' },
+  { title: '조달구분', dataIndex: 'procurement_type', width: 90, align: 'center' },
+  { title: '재고단위', dataIndex: 'unit', width: 90, align: 'center' },
+  { title: '관리단위', dataIndex: 'management_unit', width: 90, align: 'center' },
+  { title: '환산계수', key: 'conversion_factor', dataIndex: 'conversion_factor', width: 135, align: 'right' },
+  { title: '사용여부', dataIndex: 'use_yn', width: 90, align: 'center' },
+  { title: 'LOT여부', dataIndex: 'lot_use_yn', width: 84, align: 'center' },
+  { title: 'SET여부', dataIndex: 'set_item_yn', width: 84, align: 'center' },
+  { title: '검사여부', dataIndex: 'inspection_type', width: 90, align: 'center' },
+  { title: '관리', key: 'action', width: 160, align: 'center', fixed: 'right' },
 ]
 
 const lookupColumns = [
@@ -458,17 +554,75 @@ async function load() {
     const res = await masterApi.getMaterials({
       material_type: filterType.value || undefined,
       search: search.value || undefined,
+      page: pagination.current,
+      page_size: pagination.pageSize,
     })
-    items.value = res.data
+    items.value = res.data.items || res.data
+    pagination.total = res.data.total ?? items.value.length
+    statsData.value = res.data.stats || {
+      total: items.value.length,
+      raw: items.value.filter(m => isMaterialType(m, '0', 'raw')).length,
+      sub: items.value.filter(m => isMaterialType(m, '1', 'sub')).length,
+      goods: items.value.filter(m => isMaterialType(m, '5', 'goods')).length,
+    }
   } finally {
     loading.value = false
   }
 }
 
-function openEditor(item) {
+function resetAndLoad() {
+  pagination.current = 1
+  load()
+}
+
+function handleTableChange(nextPagination) {
+  pagination.current = nextPagination.current || 1
+  pagination.pageSize = nextPagination.pageSize || 20
+  load()
+}
+
+function saveBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.URL.revokeObjectURL(url)
+}
+
+async function downloadTemplate() {
+  const res = await masterApi.downloadMaterialsTemplate()
+  saveBlob(res.data, '자재_관리_양식.xlsx')
+}
+
+async function handleExcelFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await masterApi.importMaterialsExcel(formData)
+    const { imported = 0, updated = 0, skipped = 0 } = res.data || {}
+    message.success(`엑셀 업로드 완료: 신규 ${imported}건, 수정 ${updated}건, 제외 ${skipped}건`)
+    await load()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '엑셀 업로드 중 오류가 발생했습니다.')
+  } finally {
+    importing.value = false
+  }
+}
+
+async function openEditor(item) {
   editItem.value = item
   activeTab.value = 'master'
-  Object.assign(form, emptyForm, item || {})
+  let detail = item
+  if (item?.id) {
+    const res = await masterApi.getMaterial(item.id)
+    detail = res.data
+  }
+  Object.assign(form, emptyForm, detail || {})
   editorOpen.value = true
 }
 
@@ -600,38 +754,70 @@ onMounted(load)
 .stat-label { font-size: 12px; color: #8c8c8c; margin-bottom: 2px; }
 .stat-value { font-size: 24px; font-weight: 700; color: #1a2535; line-height: 1.2; }
 .stat-unit { font-size: 13px; font-weight: 400; margin-left: 3px; color: #8c8c8c; }
+.type-guide {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  font-size: 12px;
+}
+.type-guide-title { font-weight: 700; color: #1a2535; margin-right: 2px; }
+.type-guide-item { color: #595959; white-space: nowrap; }
 .table-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
 .card-title { font-size: 15px; font-weight: 600; color: #1a2535; }
 .num-text { font-variant-numeric: tabular-nums; }
 .del-link { color: #e74c3c; }
 .del-link:hover { color: #c0392b; }
-.legacy-editor { display: grid; grid-template-columns: 260px 1fr; gap: 10px; height: 560px; background: #f7fbff; overflow: hidden; }
-.legacy-list { border: 1px solid #b9d3ef; background: #fff; display: flex; flex-direction: column; min-width: 0; }
-.legacy-grid-head { display: grid; grid-template-columns: 86px 1fr 80px; background: #2f76a7; color: #fff; font-weight: 700; font-size: 13px; height: 30px; line-height: 30px; text-align: center; }
+.legacy-editor {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  background: #f7fbff;
+  overflow: hidden;
+}
+.legacy-list { border: 1px solid #b9d3ef; background: #fff; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.legacy-grid-head { display: grid; grid-template-columns: 34px 86px 1fr 80px; background: #2f76a7; color: #fff; font-weight: 700; font-size: 13px; height: 30px; line-height: 30px; text-align: center; }
 .legacy-grid-head > div { border-right: 1px solid rgba(255,255,255,0.35); }
 .legacy-grid-body { flex: 1; overflow: auto; background: #fff; }
-.legacy-grid-row { display: grid; grid-template-columns: 86px 1fr 80px; min-height: 28px; border-bottom: 1px solid #e6f0fb; cursor: pointer; font-size: 12px; }
+.legacy-grid-row { display: grid; grid-template-columns: 34px 86px 1fr 80px; min-height: 28px; border-bottom: 1px solid #e6f0fb; cursor: pointer; font-size: 12px; }
 .legacy-grid-row:hover { background: #eef6ff; }
+.legacy-grid-row.selected { background: #e6f4ff; }
 .legacy-grid-row > div { padding: 5px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid #eef2f7; }
+.check-cell-body { display: flex; align-items: center; justify-content: center; padding: 0 !important; }
 .legacy-grid-foot { height: 24px; border-top: 1px solid #f4c06d; background: linear-gradient(90deg, #fff0c4 0 80px, #f38b00 80px 170px, #fff0c4 170px); }
-.legacy-form { min-width: 0; overflow: hidden; }
-.legacy-tabs { height: 100%; }
-.spec-box { border: 1px solid #8fbbe8; border-top: none; background: #eaf4fb; padding: 10px 16px; min-height: 501px; }
+.legacy-form { min-width: 0; min-height: 0; overflow: hidden; }
+.legacy-tabs { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.spec-box { border: 1px solid #8fbbe8; border-top: none; background: #eaf4fb; padding: 10px 16px 24px; min-height: 100%; }
 .two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-.three-col { display: grid; grid-template-columns: 154px 154px minmax(0, 1fr); gap: 12px; }
+.three-col { display: grid; grid-template-columns: 112px 112px minmax(170px, 1fr); gap: 10px; }
 .form-line { display: grid; grid-template-columns: 70px minmax(0, 1fr); align-items: center; min-height: 25px; }
 .field-label { text-align: right; padding-right: 8px; font-size: 13px; color: #111; white-space: nowrap; }
 .code-input { max-width: 92px; }
+.small-unit-input { max-width: 64px; }
 .unit-input { max-width: 44px; }
+.conversion-input { max-width: 96px; }
 .icon-button { width: 24px; padding: 0; flex: 0 0 24px; color: #557ca5; }
 .mini-button { height: 24px; padding: 0 5px; }
 .calc-button { height: 24px; padding: 0 8px; }
-:deep(.legacy-tabs > .ant-tabs-nav) { margin: 0; }
+:deep(.legacy-tabs > .ant-tabs-nav) { flex: 0 0 auto; margin: 0; }
 :deep(.legacy-tabs .ant-tabs-tab) { min-width: 112px; justify-content: center; border-color: #8aa9cf !important; background: linear-gradient(#f7f7f7, #d7d7d7) !important; font-weight: 700; }
 :deep(.legacy-tabs .ant-tabs-tab-active) { background: #eaf4fb !important; border-bottom-color: #eaf4fb !important; }
-:deep(.legacy-tabs .ant-tabs-content-holder) { border-top: 1px solid #8fbbe8; height: calc(100% - 32px); overflow: auto; background: #eaf4fb; }
+:deep(.legacy-tabs .ant-tabs-content-holder) { flex: 1 1 auto; min-height: 0; border-top: 1px solid #8fbbe8; overflow: hidden; background: #eaf4fb; }
 :deep(.legacy-tabs .ant-tabs-content) { height: 100%; }
-:deep(.legacy-tabs .ant-tabs-tabpane) { padding: 0; }
+:deep(.legacy-tabs .ant-tabs-tabpane) { height: 100%; padding: 0 0 18px; overflow: auto; box-sizing: border-box; }
+:deep(.material-editor-modal .ant-modal) { top: 24px; }
+:deep(.material-editor-modal .ant-modal-body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
 :deep(.form-line .ant-form-item) { margin: 0; min-width: 0; }
 :deep(.form-line .ant-form-item-control-input) { min-height: 24px; }
 :deep(.form-line .ant-form-item-control-input-content) { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -641,5 +827,14 @@ onMounted(load)
 :deep(.form-line .ant-input-number-input) { height: 22px; font-size: 12px; text-align: right; }
 :deep(.wide .ant-form-item-control-input-content > .ant-input) { max-width: 352px; }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
+:deep(.ant-table-thead > tr > th),
+:deep(.ant-table-tbody > tr > td) { white-space: nowrap; }
+:deep(.ant-table-tbody > tr > td) {
+  height: 44px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
 </style>

@@ -66,7 +66,8 @@
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 1000 }">
+               row-key="id" size="middle" :scroll="{ x: 1000 }"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'status'">
             <a-tag :color="statusColor[record.status]">{{ statusLabel[record.status] }}</a-tag>

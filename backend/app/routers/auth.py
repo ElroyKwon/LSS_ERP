@@ -3,7 +3,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime
 from ..database import get_db
-from ..models.common import User, UserRegistration
+from ..models.common import Department, User, UserRegistration
+from ..services.user_employee_sync import sync_employee_for_user
 from ..utils.auth import verify_password, create_access_token, get_current_user, hash_password
 from ..utils.permissions import ROLE_OPTIONS, is_system_admin, normalize_role, validate_role
 from ..utils import to_kst
@@ -75,6 +76,7 @@ class RegistrationCreate(BaseModel):
     username: str
     password: str
     name: str
+    employee_code: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     department: Optional[str] = None
@@ -88,12 +90,14 @@ class RejectRequest(BaseModel):
 
 class ApproveRegistrationRequest(BaseModel):
     role: str
+    department_id: Optional[int] = None
 
 
 def _reg_dict(r):
     return {
         "id": r.id,
         "username": r.username,
+        "employee_code": r.employee_code,
         "name": r.name,
         "email": r.email,
         "phone": r.phone,
@@ -117,8 +121,18 @@ def register(data: RegistrationCreate, db: Session = Depends(get_db)):
         UserRegistration.status == "pending"
     ).first():
         raise HTTPException(status_code=400, detail="이미 가입 신청이 접수된 아이디입니다.")
+    employee_code = (data.employee_code or "").strip() or None
+    if employee_code:
+        if db.query(User).filter(User.employee_code == employee_code).first():
+            raise HTTPException(status_code=400, detail="이미 사용 중인 사원번호입니다.")
+        if db.query(UserRegistration).filter(
+            UserRegistration.employee_code == employee_code,
+            UserRegistration.status == "pending",
+        ).first():
+            raise HTTPException(status_code=400, detail="이미 가입 신청된 사원번호입니다.")
     reg = UserRegistration(
         username=data.username,
+        employee_code=employee_code,
         password_hash=hash_password(data.password),
         name=data.name,
         email=data.email,
@@ -174,21 +188,41 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
         raise HTTPException(status_code=400, detail="이미 처리된 신청입니다.")
     if db.query(User).filter(User.username == reg.username).first():
         raise HTTPException(status_code=400, detail="이미 동일한 아이디의 사용자가 존재합니다.")
+    if reg.employee_code:
+        if db.query(User).filter(User.employee_code == reg.employee_code).first():
+            raise HTTPException(status_code=400, detail="이미 사용 중인 사원번호입니다.")
     try:
         role = validate_role(data.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    department = None
+    if data.department_id:
+        department = (
+            db.query(Department)
+            .filter(Department.id == data.department_id, Department.is_active == True)
+            .first()
+        )
+    if not department and reg.department:
+        department = (
+            db.query(Department)
+            .filter(Department.name == reg.department, Department.is_active == True)
+            .first()
+        )
     user = User(
         username=reg.username,
+        employee_code=reg.employee_code,
         password_hash=reg.password_hash,
         name=reg.name,
         email=reg.email,
         phone=reg.phone,
+        department_id=department.id if department else None,
         position=reg.position,
         role=role,
         is_active=True,
     )
     db.add(user)
+    db.flush()
+    sync_employee_for_user(db, user)
     reg.status = "approved"
     reg.reviewed_by = current.id
     reg.reviewed_at = datetime.utcnow()

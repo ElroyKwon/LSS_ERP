@@ -1,19 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, text
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date
+from io import BytesIO
+from urllib.parse import quote
 import json
 from ..database import get_db
 from ..models.execution import (
     Project, ProjectPlan, ProjectSalesPlanRow, ProjectPurchasePlanRow, ProjectBusinessCategory, ProjectPlanMeta, ProjectPlanWeeklySnapshot,
     PurchaseContract, ReleaseRequest, SalesBill, APBill,
 )
-from ..models.accounting import AccountsReceivable
+from ..models.accounting import AccountsReceivable, AccountsPayable
 from ..models.master import Company, Material
 from ..utils.auth import get_current_user
 from ..utils import to_kst_date, to_kst
+from ..utils.excel_import import (
+    PROJECT_HEADERS,
+    make_source_header_template_response,
+    make_template_response,
+    read_upload_rows,
+    read_upload_rows_with_raw_headers,
+    to_date_value,
+    to_decimal_value,
+)
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["실행"])
@@ -22,6 +35,8 @@ CONTRACT_FORMS = ["원도급", "하도급", "공동도급", "위탁", "기타"]
 CONTRACT_TYPES = ["국내", "국외"]
 STATUSES       = ["미진행", "진행중", "완료"]
 PROJECT_REQ_MARKER = "\n---프로젝트리스트요구사항---\n"
+AP_BILL_REQ_MARKER = "\n---매입청구요구사항---\n"
+PURCHASE_CONTRACT_REQ_MARKER = "\n---구매계약요구사항---\n"
 DEFAULT_BUSINESS_CATEGORIES = ["빌딩", "DC", "BAS", "E&M", "O&M", "DR", "FEMS리스", "SE", "솔루션", "CS", "스테콤", "SCADA"]
 
 
@@ -35,6 +50,35 @@ def _json_meta(notes: Optional[str], marker: str) -> dict:
         return parsed if isinstance(parsed, dict) else {}
     except (TypeError, ValueError):
         return {}
+
+
+def _json_tail_meta(notes: Optional[str]) -> dict:
+    raw = notes or ""
+    marker_start = raw.rfind("\n---")
+    marker_end = raw.find("---\n", marker_start + 4) if marker_start >= 0 else -1
+    if marker_start < 0 or marker_end < 0:
+        return {}
+    try:
+        parsed = json.loads(raw[marker_end + 4:])
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _project_req(project: Optional[Project]) -> dict:
+    return _json_meta(project.notes if project else None, PROJECT_REQ_MARKER)
+
+
+def _purchase_contract_meta(contract: Optional[PurchaseContract]) -> dict:
+    if not contract:
+        return {}
+    return _json_meta(contract.notes, PURCHASE_CONTRACT_REQ_MARKER) or _json_tail_meta(contract.notes)
+
+
+def _ap_bill_meta(bill: Optional[APBill]) -> dict:
+    if not bill:
+        return {}
+    return _json_meta(bill.notes, AP_BILL_REQ_MARKER) or _json_tail_meta(bill.notes)
 
 
 def _valid_customer_class(value: Optional[str]) -> str:
@@ -83,6 +127,124 @@ def _proj_dict(p: Project) -> dict:
         "notes":          p.notes,
         "created_at":     to_kst(p.created_at),
     }
+
+
+def _excel_response(content: bytes, filename: str):
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+MONTH_LABELS = [f"{month}월" for month in range(1, 13)]
+
+
+def _numbered_month_from_key(key: str, prefix: str) -> int | None:
+    if not key.startswith(f"{prefix}_"):
+        return None
+    rest = key[len(prefix) + 1:]
+    digits = ""
+    for char in rest:
+        if char.isdigit():
+            digits += char
+        else:
+            break
+    if not digits:
+        return None
+    month = int(digits)
+    return month if 1 <= month <= 12 else None
+
+
+def _month_amount(row: dict, prefix: str, month: int) -> float:
+    for key, value in row.items():
+        if _numbered_month_from_key(str(key), prefix) == month:
+            return float(to_decimal_value(value, Decimal(0)) or 0)
+    return 0.0
+
+
+def _month_fields(row: dict, source_prefix: str, target_prefix: str) -> dict:
+    return {
+        f"{target_prefix}_{month_label}": _month_amount(row, source_prefix, month)
+        for month, month_label in enumerate(MONTH_LABELS, start=1)
+    }
+
+
+def _plan_row_key(project: Project, fallback: dict) -> str:
+    if project.id:
+        return f"project:{project.id}"
+    if project.project_no:
+        return f"job:{project.project_no}"
+    return _sales_plan_row_key(fallback)
+
+
+def _upsert_sales_plan_from_project(db: Session, project: Project, row: dict, plan_year: int, current) -> None:
+    contract_material = float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0)
+    contract_labor = float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0)
+    order_months = _month_fields(row, "order_current", "order")
+    revenue_months = _month_fields(row, "revenue_current", "revenue_progress")
+    tax_invoice_months = _month_fields(row, "revenue_current", "tax_invoice_revenue")
+    row_data = {
+        "project_id": project.id,
+        "job_no": project.project_no or "",
+        "project_name": project.project_name or "",
+        "contract_company": row.get("client_name") or "",
+        "domestic_overseas": "해외" if project.contract_type == "국외" else "내수",
+        "special_relation": "특수관계" if row.get("special_relation") == "특수관계" else "x",
+        "progress_status": "종료" if project.status == "완료" else "진행",
+        "contract_date": to_kst_date(project.contract_start),
+        "completion_date": to_kst_date(project.construct_end or project.contract_end),
+        "months": str(row.get("months") or ""),
+        "contract_material_cost": contract_material or float(project.contract_amount or 0),
+        "contract_labor_cost": contract_labor,
+        "current_order_amount": sum(order_months.values()),
+        **order_months,
+        **revenue_months,
+        **tax_invoice_months,
+    }
+    row_key = _plan_row_key(project, row_data)
+    existing = db.query(ProjectSalesPlanRow).filter(
+        ProjectSalesPlanRow.plan_year == plan_year,
+        ProjectSalesPlanRow.row_key == row_key,
+    ).first()
+    if not existing:
+        existing = ProjectSalesPlanRow(plan_year=plan_year, row_key=row_key, created_by=current.id)
+        db.add(existing)
+    existing.project_id = project.id
+    existing.data_json = json.dumps({"id": row_key, **row_data}, ensure_ascii=False, default=str)
+
+
+def _upsert_purchase_plan_from_project(db: Session, project: Project, row: dict, plan_year: int, current) -> None:
+    contract_material = float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0)
+    contract_labor = float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0)
+    input_months = _month_fields(row, "input_current", "input_amount")
+    material_input_months = _month_fields(row, "input_current", "material_input")
+    row_data = {
+        "project_id": project.id,
+        "job_no": project.project_no or "",
+        "project_name": project.project_name or "",
+        "contract_company": row.get("client_name") or "",
+        "domestic_overseas": "해외" if project.contract_type == "국외" else "내수",
+        "special_relation": "특수관계" if row.get("special_relation") == "특수관계" else "x",
+        "progress_status": "종료" if project.status == "완료" else "진행",
+        "contract_date": to_kst_date(project.contract_start),
+        "completion_date": to_kst_date(project.construct_end or project.contract_end),
+        "months": str(row.get("months") or ""),
+        "contract_material_cost": contract_material or float(project.contract_amount or 0),
+        "contract_labor_cost": contract_labor,
+        **input_months,
+        **material_input_months,
+    }
+    row_key = _plan_row_key(project, row_data)
+    existing = db.query(ProjectPurchasePlanRow).filter(
+        ProjectPurchasePlanRow.plan_year == plan_year,
+        ProjectPurchasePlanRow.row_key == row_key,
+    ).first()
+    if not existing:
+        existing = ProjectPurchasePlanRow(plan_year=plan_year, row_key=row_key, created_by=current.id)
+        db.add(existing)
+    existing.project_id = project.id
+    existing.data_json = json.dumps({"id": row_key, **row_data}, ensure_ascii=False, default=str)
 
 
 @router.get("/projects")
@@ -137,6 +299,110 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db),
     return _proj_dict(p)
 
 
+@router.get("/projects/template")
+def download_project_template(_=Depends(get_current_user)):
+    filename = "프로젝트리스트_수주_양식.xlsx"
+    content, filename = make_source_header_template_response(
+        "프로젝트리스트.xlsx",
+        filename,
+        2,
+        make_template_response("프로젝트리스트(수주)", PROJECT_HEADERS, filename),
+    )
+    return _excel_response(content, filename)
+
+
+@router.post("/projects/import-excel")
+def import_projects_excel(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    fields = [field for _, field in PROJECT_HEADERS]
+    rows = read_upload_rows_with_raw_headers(file, fields)
+    imported = 0
+    updated = 0
+    skipped = 0
+    errors = []
+    for index, row_packet in enumerate(rows, start=1):
+        try:
+            row = row_packet["mapped"]
+            raw_excel = row_packet["raw"]
+            project_name = row.get("project_name")
+            if not project_name:
+                skipped += 1
+                errors.append({"row": index, "detail": "프로젝트명이 없습니다."})
+                continue
+
+            project_no = str(row.get("project_no") or "").strip() or None
+            client_name = row.get("order_company")
+            client = None
+            if client_name:
+                client = db.query(Company).filter(Company.company_name == str(client_name)).first()
+            payload = {
+                "project_no": project_no,
+                "project_name": project_name,
+                "client_id": client.id if client else None,
+                "client_name": client_name,
+                "contract_form": row.get("contract_form") or CONTRACT_FORMS[0],
+                "contract_type": row.get("contract_type") or CONTRACT_TYPES[0],
+                "status": row.get("status") or STATUSES[0],
+                "contract_amount": to_decimal_value(row.get("contract_amount"), Decimal(0)) or Decimal(0),
+                "contract_start": to_date_value(row.get("contract_start")),
+                "construct_end": to_date_value(row.get("construct_end")),
+                "pm_name": row.get("execution_manager") or row.get("sales_manager"),
+                "pm_dept": row.get("team_name") or row.get("business_division"),
+                "region": row.get("site_address"),
+                "excel_data_json": json.dumps(raw_excel, ensure_ascii=False, default=str),
+            }
+            req = {
+                "business_division": row.get("business_division"),
+                "team_name": row.get("team_name"),
+                "contract_company_name": row.get("client_name"),
+                "business_category": row.get("business_category"),
+                "sales_manager": row.get("sales_manager"),
+                "execution_manager": row.get("execution_manager"),
+                "collection_manager": row.get("collection_manager"),
+                "revenue_type": row.get("revenue_type"),
+                "work_type": row.get("work_type"),
+                "collection_terms": row.get("collection_terms"),
+                "warranty_period": row.get("warranty_period"),
+                "special_relation": row.get("special_relation"),
+                "contract_material_cost": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
+                "contract_labor_cost": float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0),
+                "sales_domestic_material_cost": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
+                "sales_material_cost_total": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
+                "sales_labor_cost": float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0),
+                "_excel_raw": raw_excel,
+            }
+            payload["notes"] = PROJECT_REQ_MARKER + json.dumps(req, ensure_ascii=False, default=str)
+
+            project = None
+            if project_no:
+                project = db.query(Project).filter(Project.project_no == project_no).first()
+            if not project:
+                project = db.query(Project).filter(
+                    Project.project_name == str(project_name),
+                    Project.client_name == str(client_name) if client_name else Project.client_name.is_(None),
+                ).first()
+            if project:
+                for field, value in payload.items():
+                    setattr(project, field, value)
+                updated += 1
+            else:
+                project = Project(**payload, created_by=current.id)
+                db.add(project)
+                imported += 1
+            db.flush()
+            plan_year = date.today().year
+            _upsert_sales_plan_from_project(db, project, row, plan_year, current)
+            _upsert_purchase_plan_from_project(db, project, row, plan_year, current)
+        except Exception as exc:
+            skipped += 1
+            errors.append({"row": index, "detail": str(exc)})
+    db.commit()
+    return {"imported": imported, "updated": updated, "skipped": skipped, "errors": errors[:20]}
+
+
 @router.put("/projects/{pid}")
 def update_project(pid: int, data: ProjectCreate, db: Session = Depends(get_db),
                    _=Depends(get_current_user)):
@@ -155,9 +421,34 @@ def delete_project(pid: int, db: Session = Depends(get_db), _=Depends(get_curren
     p = db.query(Project).filter(Project.id == pid).first()
     if not p:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
-    db.delete(p)
-    db.commit()
-    return {"message": "삭제되었습니다."}
+    try:
+        for model in (
+            ProjectPlanWeeklySnapshot,
+            ProjectPlanMeta,
+            ProjectPlan,
+            ProjectSalesPlanRow,
+            ProjectPurchasePlanRow,
+        ):
+            db.query(model).filter(model.project_id == pid).delete(synchronize_session=False)
+
+        for model in (PurchaseContract, ReleaseRequest, SalesBill, APBill, AccountsReceivable):
+            db.query(model).filter(model.project_id == pid).update(
+                {model.project_id: None},
+                synchronize_session=False,
+            )
+
+        for table_name in ("sales_management_weekly_rows", "timesheet_entries", "vehicle_logs"):
+            db.execute(text(f"UPDATE {table_name} SET project_id = NULL WHERE project_id = :pid"), {"pid": pid})
+
+        db.delete(p)
+        db.commit()
+        return {"message": "삭제되었습니다."}
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="프로젝트를 참조하는 데이터가 있어 삭제할 수 없습니다. 연결된 자료를 먼저 확인해 주세요.",
+        ) from exc
 
 
 # ── 공통 헬퍼 ──────────────────────────────────────────
@@ -912,6 +1203,89 @@ def update_ap_bill(rid: int, data: APBillCreate,
     for f, v in data.dict().items(): setattr(r, f, v)
     db.commit(); db.refresh(r)
     return _ap_dict(r, db)
+
+
+@router.patch("/ap-bills/{rid}/approve")
+def approve_ap_bill(rid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    bill = db.query(APBill).filter(APBill.id == rid).first()
+    if not bill:
+        raise HTTPException(404, "매입청구를 찾을 수 없습니다.")
+
+    project = db.query(Project).filter(Project.id == bill.project_id).first() if bill.project_id else None
+    project_req = _project_req(project)
+    bill_req = _ap_bill_meta(bill)
+
+    purchase_contract = None
+    purchase_contract_id = bill_req.get("purchase_contract_id")
+    if purchase_contract_id:
+        purchase_contract = db.query(PurchaseContract).filter(PurchaseContract.id == purchase_contract_id).first()
+    if not purchase_contract and bill.project_id:
+        purchase_contract = db.query(PurchaseContract).filter(
+            PurchaseContract.project_id == bill.project_id,
+            PurchaseContract.vendor_name == bill.vendor_name,
+        ).order_by(PurchaseContract.id.desc()).first()
+    if not purchase_contract and bill.vendor_id:
+        purchase_contract = db.query(PurchaseContract).filter(
+            PurchaseContract.vendor_id == bill.vendor_id,
+        ).order_by(PurchaseContract.id.desc()).first()
+
+    contract_req = _purchase_contract_meta(purchase_contract)
+    related_bill_no = (bill_req.get("related_sales_bill") or "").strip()
+    sales_bill = None
+    if related_bill_no:
+        sales_bill = db.query(SalesBill).filter(SalesBill.bill_no == related_bill_no).first()
+    if not sales_bill and bill.project_id:
+        sales_bill = db.query(SalesBill).filter(SalesBill.project_id == bill.project_id).order_by(
+            SalesBill.bill_date.desc(),
+            SalesBill.id.desc(),
+        ).first()
+    related_bill_no = related_bill_no or (sales_bill.bill_no if sales_bill else None)
+
+    receivable = None
+    if sales_bill:
+        receivable = db.query(AccountsReceivable).filter(
+            AccountsReceivable.sales_bill_id == sales_bill.id
+        ).order_by(AccountsReceivable.id.desc()).first()
+    if not receivable and bill.project_id:
+        receivable = db.query(AccountsReceivable).filter(
+            AccountsReceivable.project_id == bill.project_id
+        ).order_by(AccountsReceivable.issue_date.desc(), AccountsReceivable.id.desc()).first()
+
+    payable = db.query(AccountsPayable).filter(
+        AccountsPayable.ref_type == "ap_bill",
+        AccountsPayable.ref_id == bill.id,
+    ).first()
+    if not payable:
+        payable = AccountsPayable(ref_type="ap_bill", ref_id=bill.id, issue_date=bill.bill_date or date.today())
+        db.add(payable)
+
+    contract_amount_ex_vat = purchase_contract.contract_amount if purchase_contract else Decimal(0)
+    debt_amount = bill.total_amount or bill.bill_amount or Decimal(0)
+    payable.vendor_id = bill.vendor_id or (purchase_contract.vendor_id if purchase_contract else None)
+    payable.job_no = project.project_no if project else None
+    payable.contract_name = project.project_name if project else _proj_name(bill.project_id, db)
+    payable.vendor_name = bill.vendor_name or (purchase_contract.vendor_name if purchase_contract else None)
+    payable.issue_date = bill.bill_date or date.today()
+    payable.due_date = bill.due_date
+    payable.total_amount = debt_amount
+    payable.contract_amount_ex_vat = contract_amount_ex_vat
+    payable.contract_amount = contract_amount_ex_vat * Decimal("1.1")
+    payable.purchase_type = purchase_contract.contract_type if purchase_contract else None
+    payable.subcontract_type = contract_req.get("subcontract_flag")
+    payable.payment_terms = contract_req.get("payment_terms")
+    payable.collection_terms = project_req.get("collection_terms")
+    payable.related_revenue_no = related_bill_no
+    payable.related_revenue = sales_bill.bill_amount if sales_bill else Decimal(0)
+    payable.related_revenue_collection_date = receivable.collection_date if receivable else None
+    payable.related_revenue_collection_method = receivable.collection_terms if receivable else None
+    payable.paid_amount = (payable.cash_paid_amount or Decimal(0)) + (payable.note_issued_amount or Decimal(0))
+    payable.outstanding_amount = max(debt_amount - (payable.paid_amount or Decimal(0)), Decimal(0))
+    payable.status = "paid" if payable.outstanding_amount <= 0 and debt_amount > 0 else "outstanding"
+
+    bill.status = "승인"
+    db.commit()
+    db.refresh(bill)
+    return _ap_dict(bill, db)
 
 
 @router.delete("/ap-bills/{rid}")

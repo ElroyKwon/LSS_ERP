@@ -32,7 +32,8 @@
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 1000 }">
+               row-key="id" size="middle" :scroll="{ x: 1000 }"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'contract_amount'">{{ fmt(record.contract_amount) }}</template>
           <template v-if="column.key === 'contract_amount_vat'">{{ fmt(contractAmountVat(record)) }}</template>
@@ -55,8 +56,9 @@
       </a-table>
     </a-card>
 
-    <a-drawer v-model:open="drawerOpen" :title="editItem ? '구매 발주서 수정' : '구매 발주서 등록'"
-              width="1080" :body-style="{ paddingBottom:'72px' }">
+    <a-modal v-model:open="drawerOpen" :title="editItem ? '구매 발주서 수정' : '구매 발주서 등록'"
+              :width="945" wrap-class-name="purchase-contract-modal" :body-style="{ paddingBottom:'72px' }"
+      centered>
       <a-form :model="form" layout="vertical" ref="formRef" class="order-form">
         <div class="order-sheet" ref="orderSheetRef">
           <div class="order-title">구 매 발 주 서</div>
@@ -193,9 +195,6 @@
             <div class="item-foot"></div>
           </div>
 
-          <a-form-item class="memo-field" name="notes">
-            <a-textarea v-model:value="form.notes" :rows="3" placeholder="내부 비고" />
-          </a-form-item>
         </div>
       </a-form>
       <template #footer>
@@ -207,7 +206,7 @@
           </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 

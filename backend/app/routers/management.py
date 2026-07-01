@@ -68,6 +68,7 @@ class PayableUpsert(BaseModel):
     subcontract_type: Optional[str] = None
     payment_terms: Optional[str] = None
     collection_terms: Optional[str] = None
+    related_revenue_no: Optional[str] = None
     related_revenue: Decimal = Decimal(0)
     related_revenue_collection_date: Optional[date] = None
     related_revenue_collection_method: Optional[str] = None
@@ -654,6 +655,7 @@ def _payable_dict(row: AccountsPayable, today: Optional[date] = None):
         "subcontract_type": row.subcontract_type,
         "payment_terms": row.payment_terms,
         "collection_terms": row.collection_terms,
+        "related_revenue_no": row.related_revenue_no,
         "related_revenue": _payable_amount(row.related_revenue),
         "related_revenue_collection_date": to_kst_date(row.related_revenue_collection_date),
         "related_revenue_collection_method": row.related_revenue_collection_method,
@@ -674,7 +676,15 @@ def _payable_dict(row: AccountsPayable, today: Optional[date] = None):
 
 def _apply_payable(row: AccountsPayable, data: PayableUpsert):
     debt_amount = Decimal(data.debt_amount or 0)
-    payment_amount = Decimal(data.payment_amount or 0)
+    cash_paid = Decimal(data.cash_paid_amount or 0)
+    note_issued = Decimal(data.note_issued_amount or 0)
+    if data.actual_payment_date and data.payment_type == "현금":
+        cash_paid = debt_amount
+        note_issued = Decimal(0)
+    elif data.actual_payment_date and data.payment_type == "어음":
+        cash_paid = Decimal(0)
+        note_issued = debt_amount
+    payment_amount = cash_paid + note_issued
     row.job_no = data.job_no
     row.contract_name = data.contract_name
     row.vendor_name = data.vendor_name
@@ -686,14 +696,15 @@ def _apply_payable(row: AccountsPayable, data: PayableUpsert):
     row.subcontract_type = data.subcontract_type
     row.payment_terms = data.payment_terms
     row.collection_terms = data.collection_terms
+    row.related_revenue_no = data.related_revenue_no
     row.related_revenue = data.related_revenue or Decimal(0)
     row.related_revenue_collection_date = data.related_revenue_collection_date
     row.related_revenue_collection_method = data.related_revenue_collection_method
     row.due_date = data.payment_due_date
     row.actual_payment_date = data.actual_payment_date
     row.payment_type = data.payment_type
-    row.cash_paid_amount = data.cash_paid_amount or Decimal(0)
-    row.note_issued_amount = data.note_issued_amount or Decimal(0)
+    row.cash_paid_amount = cash_paid
+    row.note_issued_amount = note_issued
     row.note_maturity_date = data.note_maturity_date
     row.paid_amount = payment_amount
     row.outstanding_amount = max(debt_amount - payment_amount, Decimal(0))

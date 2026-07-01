@@ -33,6 +33,11 @@ const cruda = ALL
 const cr = ['C', 'R']
 const r = ['R']
 const ru = ['R', 'U']
+const allUsersCrud = {
+  system_admin: cruda, sales_staff: cruda, sales_manager: cruda, execution_staff: cruda,
+  purchase_staff: cruda, purchase_manager: cruda, accounting_staff: cruda, accounting_manager: cruda,
+  design_staff: cruda, design_manager: cruda,
+}
 
 export const MENU_PERMISSIONS = {
   '/master/companies': {
@@ -107,11 +112,6 @@ export const MENU_PERMISSIONS = {
     purchase_staff: cru, purchase_manager: cru, accounting_staff: cru, accounting_manager: cruda,
     design_staff: r, design_manager: r,
   },
-  '/management/profit-loss': {
-    system_admin: cruda, sales_staff: r, sales_manager: r, execution_staff: r,
-    purchase_staff: r, purchase_manager: r, accounting_staff: r, accounting_manager: r,
-    design_staff: r, design_manager: r,
-  },
   '/timesheet': {
     system_admin: cruda, sales_staff: cru, sales_manager: crua, execution_staff: cru,
     purchase_staff: cru, purchase_manager: crua, accounting_staff: cru, accounting_manager: crua,
@@ -122,9 +122,11 @@ export const MENU_PERMISSIONS = {
     purchase_staff: cru, purchase_manager: crua, accounting_staff: cru, accounting_manager: crua,
     design_staff: cru, design_manager: crua,
   },
+  '/opinion-listening': allUsersCrud,
   '/system/users': { system_admin: cruda },
-  '/system/employees': { system_admin: cruda },
   '/system/departments': { system_admin: cruda },
+  '/system/notices': { system_admin: cruda },
+  '/system/opinion-notifications': { system_admin: cruda },
 }
 
 export function normalizeRole(role) {

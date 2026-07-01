@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -27,6 +27,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
+    employee_code = Column(String(20), unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
     name = Column(String(100), nullable=False)
     email = Column(String(150))
@@ -46,6 +47,7 @@ class UserRegistration(Base):
     __tablename__ = "user_registrations"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), nullable=False)
+    employee_code = Column(String(20))
     password_hash = Column(String(255), nullable=False)
     name = Column(String(100), nullable=False)
     email = Column(String(150))
@@ -60,6 +62,64 @@ class UserRegistration(Base):
     created_at = Column(DateTime, default=func.now())
 
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+
+class Notice(Base):
+    __tablename__ = "notices"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class OpinionPost(Base):
+    __tablename__ = "opinion_posts"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)
+    answer = Column(Text)
+    answered_by = Column(Integer, ForeignKey("users.id"))
+    answered_at = Column(DateTime)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    creator = relationship("User", foreign_keys=[created_by])
+    answerer = relationship("User", foreign_keys=[answered_by])
+    attachments = relationship("OpinionAttachment", back_populates="post", cascade="all, delete-orphan")
+
+
+class OpinionAttachment(Base):
+    __tablename__ = "opinion_attachments"
+    id = Column(Integer, primary_key=True, index=True)
+    opinion_id = Column(Integer, ForeignKey("opinion_posts.id"), nullable=False, index=True)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False)
+    content_type = Column(String(100))
+    file_size = Column(Integer, default=0)
+    file_path = Column(String(500), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    post = relationship("OpinionPost", back_populates="attachments")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class OpinionNotificationSetting(Base):
+    __tablename__ = "opinion_notification_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    notify_on_new_post = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class AuditLog(Base):

@@ -30,13 +30,15 @@
       </template>
     </CrudTable>
 
-    <a-drawer
+    <a-modal
       v-model:open="drawerOpen"
       :title="editItem ? '견적 수정' : '견적 등록'"
-      width="620"
+      :width="840"
+      wrap-class-name="estimate-editor-modal"
       :body-style="{ paddingBottom: '76px' }"
-    >
-      <a-form ref="formRef" :model="form" layout="vertical">
+    
+      centered>
+      <a-form ref="formRef" :model="form" layout="vertical" class="estimate-form">
         <a-divider orientation="left">기본 정보</a-divider>
         <a-row :gutter="16">
           <a-col :span="12">
@@ -156,10 +158,6 @@
           </a-col>
         </a-row>
 
-        <a-form-item label="비고" name="notes">
-          <a-textarea v-model:value="form.notes" :rows="3" />
-        </a-form-item>
-
         <a-divider orientation="left">첨부파일</a-divider>
         <a-upload
           v-model:file-list="pendingFiles"
@@ -200,7 +198,7 @@
           <a-button type="primary" :loading="saving" @click="handleSave">저장</a-button>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 
@@ -497,5 +495,17 @@ onMounted(load)
 .field-hint { color: #8c8c8c; font-size: 12px; font-weight: 400; }
 .attachment-list { margin-top: 10px; border: 1px solid #f0f0f0; border-radius: 6px; }
 .drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.estimate-form :deep(.ant-col-8),
+.estimate-form :deep(.ant-col-12),
+.estimate-form :deep(.ant-col-24) {
+  flex: 0 0 50%;
+  max-width: 50%;
+}
+.estimate-form :deep(.ant-input),
+.estimate-form :deep(.ant-input-number),
+.estimate-form :deep(.ant-picker),
+.estimate-form :deep(.ant-select) {
+  max-width: 100%;
+}
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 </style>

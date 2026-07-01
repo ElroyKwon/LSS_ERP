@@ -32,7 +32,8 @@
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 1280 }">
+               row-key="id" size="middle" :scroll="{ x: 1280 }"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['bill_amount','vat_amount','total_amount'].includes(column.key)">
             {{ record[column.key] > 0 ? Number(record[column.key]).toLocaleString() : '—' }}
@@ -62,8 +63,9 @@
       </a-table>
     </a-card>
 
-    <a-drawer v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
-              width="920" :body-style="{ paddingBottom:'72px' }">
+    <a-modal v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
+              width="960" wrap-class-name="sales-billing-modal" :body-style="{ paddingBottom:'72px' }"
+      centered>
       <a-form :model="form" layout="vertical" ref="formRef">
         <a-divider orientation="left" orientation-margin="0"><span class="sec-label">PJT 정보</span></a-divider>
         <a-row :gutter="16">
@@ -146,7 +148,8 @@
               </a-button>
             </div>
             <a-table :columns="relatedPurchaseColumns" :data-source="form.related_purchases"
-                     row-key="uid" size="small" :pagination="false" class="related-purchase-table">
+                     row-key="uid" size="small" :pagination="{ pageSize: 20, showSizeChanger: true }" class="related-purchase-table"
+        :sticky="{ offsetHeader: 56 }">
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'vendor_name'">
                   <a-select v-model:value="record.purchase_id" allow-clear show-search
@@ -173,11 +176,6 @@
               </template>
             </a-table>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="form.notes" :rows="2" />
-            </a-form-item>
-          </a-col>
         </a-row>
       </a-form>
       <template #footer>
@@ -188,7 +186,7 @@
           </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 
@@ -243,10 +241,10 @@ const columns = [
   { title: '발주처',  dataIndex: 'client_name',  width: 160, align: 'center', ellipsis: true },
   { title: '귀속월',  dataIndex: 'attribution_month', width: 95, align: 'center' },
   { title: '발급구분', dataIndex: 'issue_type', width: 90, align: 'center' },
-  { title: '공급가액', key: 'bill_amount',        width: 130, align: 'right' },
-  { title: '부가세',  key: 'vat_amount',          width: 110, align: 'right' },
-  { title: '합계',    key: 'total_amount',        width: 130, align: 'right' },
-  { title: '수주잔',  key: 'order_balance',       width: 130, align: 'right' },
+  { title: '공급가액', key: 'bill_amount',        width: 135, align: 'right' },
+  { title: '부가세',  key: 'vat_amount',          width: 135, align: 'right' },
+  { title: '합계',    key: 'total_amount',        width: 135, align: 'right' },
+  { title: '수주잔',  key: 'order_balance',       width: 135, align: 'right' },
   { title: '청구일',  dataIndex: 'bill_date',     width: 110, align: 'center' },
   { title: '세금계산서', dataIndex: 'invoice_no', width: 130, align: 'center' },
   { title: '상태',    key: 'status',              width: 90,  align: 'center' },
@@ -254,10 +252,10 @@ const columns = [
 ]
 
 const relatedPurchaseColumns = [
-  { title: '업체명', key: 'vendor_name', width: 220, align: 'center' },
-  { title: '발행금액', key: 'issue_amount', width: 130, align: 'right' },
-  { title: '발행일', key: 'issue_day', width: 90, align: 'center' },
-  { title: '구분', key: 'types', width: 300, align: 'center' },
+  { title: '업체명', key: 'vendor_name', width: 170, align: 'center' },
+  { title: '발행금액', key: 'issue_amount', width: 120, align: 'right' },
+  { title: '발행일', key: 'issue_day', width: 70, align: 'center' },
+  { title: '구분', key: 'types', width: 210, align: 'center' },
 ]
 
 function makeRelatedPurchase(overrides = {}) {
@@ -460,7 +458,7 @@ onMounted(load)
 .purchase-type-checks {
   display:flex;
   justify-content:center;
-  gap:16px;
+  gap:8px;
   white-space:nowrap;
 }
 .related-purchase-table {

@@ -1,4 +1,13 @@
-from .common import User, Department, AuditLog, UserRegistration
+from .common import (
+    User,
+    Department,
+    AuditLog,
+    UserRegistration,
+    Notice,
+    OpinionPost,
+    OpinionAttachment,
+    OpinionNotificationSetting,
+)
 from .master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
 from .sales import Estimate, EstimateItem, EstimateAttachment, DesignRequest, SalesManagementWeeklyRow
 from .execution import Project, ProjectPlan, ProjectSalesPlanRow, ProjectPurchasePlanRow, ProjectBusinessCategory, ProjectPlanMeta, ProjectPlanWeeklySnapshot, PurchaseContract, ReleaseRequest, SalesBill, APBill
@@ -10,10 +19,10 @@ from .accounting import (JournalEntry, JournalLine, AccountsReceivable, Accounts
 from .management import DeptBudget, ManagementSalesBusinessPlanRow
 from .timesheet import Timesheet, TimesheetEntry
 from .vehicle import Vehicle, VehicleLog
-from .document_ingestion import DocumentSource, DocumentIngestionJob, DocumentExtractedRecord, DocumentImportError
 
 __all__ = [
-    "User", "Department", "AuditLog", "UserRegistration",
+    "User", "Department", "AuditLog", "UserRegistration", "Notice",
+    "OpinionPost", "OpinionAttachment", "OpinionNotificationSetting",
     "Company", "Site", "CostCode", "AccountCode", "Material", "UnitPrice", "Employee", "OverheadRate",
     "Estimate", "EstimateItem", "EstimateAttachment", "DesignRequest", "SalesManagementWeeklyRow",
     "Project", "ProjectPlan", "ProjectSalesPlanRow", "ProjectPurchasePlanRow", "ProjectBusinessCategory", "ProjectPlanMeta", "ProjectPlanWeeklySnapshot", "PurchaseContract", "ReleaseRequest", "SalesBill", "APBill",
@@ -25,5 +34,4 @@ __all__ = [
     "DeptBudget", "ManagementSalesBusinessPlanRow",
     "Timesheet", "TimesheetEntry",
     "Vehicle", "VehicleLog",
-    "DocumentSource", "DocumentIngestionJob", "DocumentExtractedRecord", "DocumentImportError",
 ]

@@ -1,0 +1,16 @@
+.git
+.omx
+.agents
+.claude
+.codex
+backend/.env
+backend/venv
+frontend/node_modules
+frontend/dist
+frontend/dist_build_tmp
+frontend/dist_new
+frontend/dist_test
+outputs
+__pycache__
+*.pyc
+*.log

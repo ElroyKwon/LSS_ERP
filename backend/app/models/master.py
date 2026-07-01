@@ -7,6 +7,7 @@ from ..database import Base
 class Company(Base):
     __tablename__ = "companies"
     id = Column(Integer, primary_key=True, index=True)
+    company_group_code = Column(String(20))
     company_code = Column(String(20), unique=True, nullable=False)
     short_name = Column(String(40))
     company_name = Column(String(200), nullable=False)
@@ -149,6 +150,7 @@ class AccountCode(Base):
 class Material(Base):
     __tablename__ = "materials"
     id = Column(Integer, primary_key=True, index=True)
+    material_company_group_code = Column(String(20))
     material_code = Column(String(30), unique=True, nullable=False)
     material_name = Column(String(200), nullable=False)
     spec = Column(String(200))

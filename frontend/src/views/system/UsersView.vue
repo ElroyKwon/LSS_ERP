@@ -65,8 +65,9 @@
             :data-source="users"
             :loading="userLoading"
             :pagination="{ pageSize: 20, showSizeChanger: true }"
-            row-key="id" size="middle" :scroll="{ x: 930 }"
-          >
+            row-key="id" size="middle" :scroll="{ x: 1040 }"
+          
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'role'">
                 <a-tag :color="getRoleColor(record.role)">{{ getRoleLabel(record.role) }}</a-tag>
@@ -110,8 +111,9 @@
             :data-source="displayRegistrations"
             :loading="regLoading"
             :pagination="{ pageSize: 20, showSizeChanger: true }"
-            row-key="id" size="middle" :scroll="{ x: 1050 }"
-          >
+            row-key="id" size="middle" :scroll="{ x: 1160 }"
+          
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'created_at'">
                 {{ record.created_at ? record.created_at.slice(0, 16).replace('T', ' ') : '-' }}
@@ -164,6 +166,11 @@
               <a-input v-model:value="form.name" />
             </a-form-item>
           </a-col>
+          <a-col :span="12">
+            <a-form-item label="사원번호" name="employee_code">
+              <a-input v-model:value="form.employee_code" placeholder="사원번호" />
+            </a-form-item>
+          </a-col>
           <a-col :span="12" v-if="!editItem">
             <a-form-item label="비밀번호" name="password" :rules="[{ required: true, message: '비밀번호를 입력하세요.' }]">
               <a-input-password v-model:value="form.password" autocomplete="new-password" />
@@ -182,6 +189,18 @@
           <a-col :span="12">
             <a-form-item label="직위" name="position">
               <a-input v-model:value="form.position" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="부서" name="department_id">
+              <a-select
+                v-model:value="form.department_id"
+                :options="departmentOptions"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+                placeholder="부서 선택"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -211,6 +230,16 @@
       <a-form layout="vertical">
         <a-form-item label="권한" required>
           <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
+        </a-form-item>
+        <a-form-item label="부서">
+          <a-select
+            v-model:value="approveDepartmentId"
+            :options="departmentOptions"
+            allow-clear
+            show-search
+            option-filter-prop="label"
+            placeholder="부서 선택"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -249,6 +278,7 @@ const activeTab = ref('users')
 
 // ── 사용자 ──
 const users      = ref([])
+const departments = ref([])
 const userLoading = ref(false)
 const saving     = ref(false)
 const modalOpen  = ref(false)
@@ -256,10 +286,16 @@ const editItem   = ref(null)
 const formRef    = ref()
 const form = reactive({
   username: '', name: '', password: '', new_password: '',
-  email: '', role: 'sales_staff', position: '', is_active: true,
+  employee_code: '', email: '', role: 'sales_staff', position: '', department_id: null, is_active: true,
 })
 
 const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
+const departmentOptions = computed(() =>
+  departments.value.map(dept => ({
+    value: dept.id,
+    label: dept.path_name || dept.name,
+  }))
+)
 const userStats = computed(() => ({
   total: users.value.length,
   admin: users.value.filter(u => u.role === 'system_admin' || u.role === 'admin').length,
@@ -269,6 +305,7 @@ const userStats = computed(() => ({
 const userColumns = [
   { title: '아이디', dataIndex: 'username', width: 140, align: 'center' },
   { title: '이름',   dataIndex: 'name',     width: 120, align: 'center' },
+  { title: '사원번호', dataIndex: 'employee_code', width: 110, align: 'center' },
   { title: '이메일', dataIndex: 'email',    width: 220, align: 'center', ellipsis: true },
   { title: '직위',   dataIndex: 'position', width: 120, align: 'center' },
   { title: '권한',   key: 'role',           width: 120, align: 'center' },
@@ -282,11 +319,15 @@ async function loadUsers() {
   finally { userLoading.value = false }
 }
 
+async function loadDepartments() {
+  departments.value = (await masterApi.getDepartments({ include_inactive: false })).data
+}
+
 function openModal(item) {
   editItem.value = item
   Object.assign(form, item
     ? { ...item, password: '', new_password: '' }
-    : { username: '', name: '', password: '', new_password: '', email: '', role: 'sales_staff', position: '', is_active: true }
+    : { username: '', name: '', password: '', new_password: '', employee_code: '', email: '', role: 'sales_staff', position: '', department_id: null, is_active: true }
   )
   modalOpen.value = true
 }
@@ -332,6 +373,7 @@ const approveOpen   = ref(false)
 const approving     = ref(false)
 const approveTarget = ref(null)
 const approveRole   = ref('sales_staff')
+const approveDepartmentId = ref(null)
 
 const regStatusColor = { pending: 'orange', rejected: 'red' }
 const regStatusLabel = { pending: '대기', rejected: '거절' }
@@ -355,6 +397,7 @@ const regColumns = [
   { title: '신청일시',  key: 'created_at',       width: 150, align: 'center' },
   { title: '아이디',   dataIndex: 'username',    width: 120, align: 'center' },
   { title: '이름',     dataIndex: 'name',        width: 90,  align: 'center' },
+  { title: '사원번호', dataIndex: 'employee_code', width: 110, align: 'center' },
   { title: '부서',     dataIndex: 'department',  width: 120, align: 'center' },
   { title: '직위',     dataIndex: 'position',    width: 90,  align: 'center' },
   { title: '이메일',   dataIndex: 'email',       width: 180, align: 'center', ellipsis: true },
@@ -373,6 +416,8 @@ async function loadRegistrations() {
 function openApproveModal(record) {
   approveTarget.value = record
   approveRole.value = 'sales_staff'
+  const department = departments.value.find(dept => dept.name === record.department || dept.path_name === record.department)
+  approveDepartmentId.value = department?.id || null
   approveOpen.value = true
 }
 
@@ -383,7 +428,10 @@ async function handleApprove() {
   }
   approving.value = true
   try {
-    await authApi.approveRegistration(approveTarget.value.id, { role: approveRole.value })
+    await authApi.approveRegistration(approveTarget.value.id, {
+      role: approveRole.value,
+      department_id: approveDepartmentId.value,
+    })
     await loadUsers()
     await loadRegistrations()
     message.success(`${approveTarget.value.name} 님이 승인되었습니다. 사용자 목록에서 확인하세요.`)
@@ -429,6 +477,7 @@ watch(activeTab, (tab) => {
 })
 
 onMounted(() => {
+  loadDepartments()
   loadUsers()
   loadRegistrations()
 })

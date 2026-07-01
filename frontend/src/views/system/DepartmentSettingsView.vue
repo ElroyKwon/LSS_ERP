@@ -114,7 +114,8 @@
                 row-key="id"
                 size="small"
                 :scroll="{ x: 860 }"
-              >
+              
+        :sticky="{ offsetHeader: 56 }">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'is_active'">
                     <a-tag :color="record.is_active ? 'green' : 'red'">
@@ -130,12 +131,13 @@
       </a-row>
     </a-card>
 
-    <a-drawer
+    <a-modal
       v-model:open="drawerOpen"
       :title="editItem ? '부서 수정' : '부서 추가'"
       width="520"
       :body-style="{ paddingBottom: '72px' }"
-    >
+    
+      centered>
       <a-form ref="formRef" :model="form" layout="vertical">
         <a-row :gutter="16">
           <a-col :span="12">
@@ -181,11 +183,6 @@
               <a-input v-model:value="form.name" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="form.notes" :rows="3" />
-            </a-form-item>
-          </a-col>
           <a-col :span="12">
             <a-form-item label="활성 여부" name="is_active">
               <a-switch v-model:checked="form.is_active" checked-children="활성" un-checked-children="비활성" />
@@ -200,7 +197,7 @@
           <a-button type="primary" :loading="saving" @click="saveDepartment">저장</a-button>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 
@@ -290,6 +287,7 @@ const selectedEmployees = computed(() => {
   if (!ids.size) return []
   const names = selectedDepartmentNames.value
   return employees.value
+    .filter(emp => emp.is_active !== false)
     .filter(emp => ids.has(emp.department_id) || names.has(emp.department_name))
     .sort((a, b) =>
       Number(b.is_active) - Number(a.is_active) ||

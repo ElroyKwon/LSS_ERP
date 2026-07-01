@@ -32,7 +32,8 @@
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 950 }">
+               row-key="id" size="middle" :scroll="{ x: 950 }"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'material_name'">
             {{ releaseItemsOf(record)[0]?.material_name || record.material_name }}
@@ -57,9 +58,9 @@
     </a-card>
 
     <a-modal v-model:open="modalOpen" :title="editItem ? '출고 요청 수정' : '출고 요청 등록'"
-             width="920px" wrap-class-name="release-request-modal"
+             :width="760" wrap-class-name="release-request-modal"
              @ok="handleSave" :confirm-loading="saving" ok-text="저장" cancel-text="취소">
-      <a-form :model="form" layout="vertical" ref="formRef" style="margin-top:8px">
+      <a-form :model="form" layout="vertical" ref="formRef" class="release-request-form">
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="요청번호" name="request_no">
@@ -73,7 +74,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="프로젝트" name="project_id">
               <a-select v-model:value="form.project_id" allow-clear placeholder="프로젝트 선택"
                         :options="projectOptions" option-filter-prop="label" show-search />
@@ -113,17 +114,13 @@
               </a-button>
             </div>
             <a-table :columns="materialColumns" :data-source="form.release_items"
-                     row-key="uid" size="small" :pagination="false" class="material-table">
+                     row-key="uid" size="small" :pagination="{ pageSize: 20, showSizeChanger: true }" class="material-table"
+        :sticky="{ offsetHeader: 56 }">
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'no'">{{ index + 1 }}</template>
                 <template v-else-if="column.key === 'quantity'">{{ Number(record.quantity || 0).toLocaleString() }}</template>
               </template>
             </a-table>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="form.notes" :rows="2" />
-            </a-form-item>
           </a-col>
         </a-row>
       </a-form>
@@ -344,6 +341,9 @@ onMounted(load)
 .item-count { margin-left:6px; color:#8c8c8c; font-size:12px; }
 .material-add-row { display:flex; justify-content:flex-end; margin:-4px 0 8px; }
 .material-table { margin-bottom:8px; }
+.release-request-form :deep(.ant-col-24 > .ant-form-item) {
+  max-width: calc(50% - 8px);
+}
 .material-table :deep(.ant-table-thead > tr > th) { text-align:center !important; background:#fafafa; }
 :deep(.ant-table-thead > tr > th) { text-align:center !important; background:#fafafa; }
 :deep(.ant-card-head) { border-bottom:1px solid #f0f0f0; min-height:52px; }

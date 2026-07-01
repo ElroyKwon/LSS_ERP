@@ -43,7 +43,8 @@
         size="middle"
         :scroll="{ x: 3300 }"
         :row-class-name="record => record.overdue ? 'row-overdue' : ''"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="TEXT_FIELDS.includes(column.key)">
             <a-input
@@ -119,6 +120,7 @@ const TEXT_FIELDS = [
   'vendor_name',
   'payment_terms',
   'collection_terms',
+  'related_revenue_no',
   'related_revenue_collection_method',
 ]
 const DATE_FIELDS = [
@@ -132,7 +134,6 @@ const AMOUNT_INPUT_FIELDS = [
   'debt_amount',
   'contract_amount_ex_vat',
   'contract_amount',
-  'related_revenue',
   'cash_paid_amount',
   'note_issued_amount',
 ]
@@ -159,6 +160,7 @@ const emptyForm = {
   subcontract_type: null,
   payment_terms: '',
   collection_terms: '',
+  related_revenue_no: '',
   related_revenue: null,
   related_revenue_collection_date: null,
   related_revenue_collection_method: '',
@@ -184,7 +186,7 @@ const columns = [
   { title: '하도급/비하도급', key: 'subcontract_type', dataIndex: 'subcontract_type', width: 140, align: 'center' },
   { title: '지불조건', key: 'payment_terms', dataIndex: 'payment_terms', width: 170, align: 'center', ellipsis: true },
   { title: '수금조건', key: 'collection_terms', dataIndex: 'collection_terms', width: 170, align: 'center', ellipsis: true },
-  { title: '관련매출', key: 'related_revenue', dataIndex: 'related_revenue', width: 140, align: 'right' },
+  { title: '관련매출', key: 'related_revenue_no', dataIndex: 'related_revenue_no', width: 140, align: 'center', ellipsis: true },
   { title: '관련매출 수금일', key: 'related_revenue_collection_date', dataIndex: 'related_revenue_collection_date', width: 150, align: 'center' },
   { title: '관련매출 수금방법', key: 'related_revenue_collection_method', dataIndex: 'related_revenue_collection_method', width: 160, align: 'center' },
   { title: '지급예정일', key: 'payment_due_date', dataIndex: 'payment_due_date', width: 145, align: 'center' },
@@ -193,7 +195,7 @@ const columns = [
   { title: '현금지급액', key: 'cash_paid_amount', dataIndex: 'cash_paid_amount', width: 140, align: 'right' },
   { title: '어음발행금액', key: 'note_issued_amount', dataIndex: 'note_issued_amount', width: 145, align: 'right' },
   { title: '어음만기일', key: 'note_maturity_date', dataIndex: 'note_maturity_date', width: 145, align: 'center' },
-  { title: '지급액', key: 'payment_amount', dataIndex: 'payment_amount', width: 130, align: 'right' },
+  { title: '지급액', key: 'payment_amount', dataIndex: 'payment_amount', width: 135, align: 'right' },
   { title: '채무잔액', key: 'payable_balance', dataIndex: 'payable_balance', width: 140, align: 'right' },
 ]
 
@@ -240,35 +242,46 @@ function clearZero(row, key) {
 function normalizeRow(row) {
   const normalized = { ...emptyForm, ...row }
   normalized.payment_amount = Number(normalized.cash_paid_amount || 0) + Number(normalized.note_issued_amount || 0)
+  if (normalized.actual_payment_date && normalized.payment_type === '현금') {
+    normalized.cash_paid_amount = Number(normalized.debt_amount || 0)
+    normalized.note_issued_amount = 0
+    normalized.payment_amount = Number(normalized.debt_amount || 0)
+  } else if (normalized.actual_payment_date && normalized.payment_type === '어음') {
+    normalized.cash_paid_amount = 0
+    normalized.note_issued_amount = Number(normalized.debt_amount || 0)
+    normalized.payment_amount = Number(normalized.debt_amount || 0)
+  }
   normalized.payable_balance = Math.max(Number(normalized.debt_amount || 0) - normalized.payment_amount, 0)
   return normalized
 }
 
 function toPayload(row) {
-  const paymentAmount = Number(row.cash_paid_amount || 0) + Number(row.note_issued_amount || 0)
+  const normalized = normalizeRow(row)
+  const paymentAmount = Number(normalized.cash_paid_amount || 0) + Number(normalized.note_issued_amount || 0)
   return {
-    job_no: row.job_no || '',
-    contract_name: row.contract_name || '',
-    vendor_name: row.vendor_name || '',
-    debt_date: row.debt_date || null,
-    debt_amount: Number(row.debt_amount || 0),
-    contract_amount_ex_vat: Number(row.contract_amount_ex_vat || 0),
-    contract_amount: Number(row.contract_amount || 0),
-    purchase_type: row.purchase_type || null,
-    subcontract_type: row.subcontract_type || null,
-    payment_terms: row.payment_terms || '',
-    collection_terms: row.collection_terms || '',
-    related_revenue: Number(row.related_revenue || 0),
-    related_revenue_collection_date: row.related_revenue_collection_date || null,
-    related_revenue_collection_method: row.related_revenue_collection_method || '',
-    payment_due_date: row.payment_due_date || null,
-    actual_payment_date: row.actual_payment_date || null,
-    payment_type: row.payment_type || null,
-    cash_paid_amount: Number(row.cash_paid_amount || 0),
-    note_issued_amount: Number(row.note_issued_amount || 0),
-    note_maturity_date: row.note_maturity_date || null,
+    job_no: normalized.job_no || '',
+    contract_name: normalized.contract_name || '',
+    vendor_name: normalized.vendor_name || '',
+    debt_date: normalized.debt_date || null,
+    debt_amount: Number(normalized.debt_amount || 0),
+    contract_amount_ex_vat: Number(normalized.contract_amount_ex_vat || 0),
+    contract_amount: Number(normalized.contract_amount || 0),
+    purchase_type: normalized.purchase_type || null,
+    subcontract_type: normalized.subcontract_type || null,
+    payment_terms: normalized.payment_terms || '',
+    collection_terms: normalized.collection_terms || '',
+    related_revenue_no: normalized.related_revenue_no || '',
+    related_revenue: Number(normalized.related_revenue || 0),
+    related_revenue_collection_date: normalized.related_revenue_collection_date || null,
+    related_revenue_collection_method: normalized.related_revenue_collection_method || '',
+    payment_due_date: normalized.payment_due_date || null,
+    actual_payment_date: normalized.actual_payment_date || null,
+    payment_type: normalized.payment_type || null,
+    cash_paid_amount: Number(normalized.cash_paid_amount || 0),
+    note_issued_amount: Number(normalized.note_issued_amount || 0),
+    note_maturity_date: normalized.note_maturity_date || null,
     payment_amount: paymentAmount,
-    notes: row.notes || '',
+    notes: normalized.notes || '',
   }
 }
 

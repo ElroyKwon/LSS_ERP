@@ -1,0 +1,48 @@
+name: lss-erp
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: lss-erp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lss_erp}
+      POSTGRES_USER: ${POSTGRES_USER:-lss_erp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      TZ: Asia/Seoul
+    volumes:
+      - ${DB_DATA_DIR:-/data/lss-erp/postgres}:/var/lib/postgresql/data
+    networks:
+      - lss-erp-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lss-erp-app:latest
+    container_name: lss-erp-app
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env
+    environment:
+      DATABASE_URL: postgresql+pg8000://${POSTGRES_USER:-lss_erp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lss_erp}
+      TZ: Asia/Seoul
+    volumes:
+      - ${UPLOAD_DATA_DIR:-/data/lss-erp/uploads}:/app/backend/uploads
+    ports:
+      - "${APP_HOST_BIND:-0.0.0.0}:${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - lss-erp-net
+
+networks:
+  lss-erp-net:
+    name: lss-erp-net
+    driver: bridge

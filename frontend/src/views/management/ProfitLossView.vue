@@ -74,9 +74,10 @@
     <!-- 월별 P&L 상세 테이블 -->
     <a-card :bordered="false" class="dash-card" title="월별 손익 상세">
       <template #extra><span class="card-extra">단위: 백만원</span></template>
-      <a-table :columns="detailCols" :data-source="detailRows" :pagination="false"
+      <a-table :columns="detailCols" :data-source="detailRows" :pagination="{ pageSize: 20, showSizeChanger: true }"
                size="small" row-key="month" :scroll="{ x: 1000 }"
-               :row-class-name="r => r.month === month ? 'row-current' : ''">
+               :row-class-name="r => r.month === month ? 'row-current' : ''"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['revenue','cost','gross_profit'].includes(column.key)">
             <span :class="record.month === month ? 'num-bold' : ''">
@@ -150,9 +151,9 @@ const trendOption = computed(() => ({
 
 const detailCols = [
   { title: '월', key: 'month', width: 60, align: 'center', customRender: ({ record }) => record.month + '월' },
-  { title: '매출',     key: 'revenue',      width: 120, align: 'right' },
-  { title: '원가',     key: 'cost',         width: 120, align: 'right' },
-  { title: '매출총이익', key: 'gross_profit', width: 120, align: 'right' },
+  { title: '매출',     key: 'revenue',      width: 135, align: 'right' },
+  { title: '원가',     key: 'cost',         width: 135, align: 'right' },
+  { title: '매출총이익', key: 'gross_profit', width: 135, align: 'right' },
   { title: '이익률',   key: 'margin',       width: 90,  align: 'center' },
 ]
 

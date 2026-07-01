@@ -69,7 +69,8 @@
         row-key="id"
         size="middle"
         :scroll="{ x: 2180 }"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'is_active'">
             <a-tag :color="record.is_active ? 'green' : 'red'">
@@ -101,12 +102,13 @@
       </a-table>
     </a-card>
 
-    <a-drawer
+    <a-modal
       v-model:open="drawerOpen"
       :title="editItem ? '직원 수정' : '직원 등록'"
       width="560"
       :body-style="{ paddingBottom: '72px' }"
-    >
+    
+      centered>
       <a-form ref="formRef" :model="form" layout="vertical">
         <a-divider orientation="left">기본 정보</a-divider>
         <a-row :gutter="16">
@@ -211,7 +213,7 @@
           <a-button type="primary" :loading="saving" @click="saveEmployee">저장</a-button>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 

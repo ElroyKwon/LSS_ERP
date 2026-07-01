@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func as sqlfunc
 from typing import Optional, List
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
+from urllib.parse import quote
 import json
 import os
 import shutil
@@ -13,10 +15,27 @@ from ..database import get_db
 from ..models.sales import Estimate, EstimateItem, EstimateAttachment, DesignRequest, SalesManagementWeeklyRow
 from ..utils.auth import get_current_user
 from ..utils import to_kst, to_kst_date
+from ..utils.excel_import import (
+    SALES_HEADERS,
+    make_source_header_template_response,
+    make_template_response,
+    read_upload_rows,
+    read_upload_rows_with_raw_headers,
+    to_date_value,
+    to_decimal_value,
+)
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["영업·수주"])
 UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "estimates")
+
+
+def _excel_response(content: bytes, filename: str):
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 # ── 견적 ──────────────────────────────────────────
@@ -35,6 +54,29 @@ def _sales_management_row_key(row: dict) -> str:
     return f"manual:{len(json.dumps(row, ensure_ascii=False, sort_keys=True))}"
 
 
+def _sales_management_entry_round(week_start: date) -> str:
+    first_day = week_start.replace(day=1)
+    monday_offset = first_day.weekday()
+    week_no = ((week_start.day + monday_offset - 1) // 7) + 1
+    return f"{week_start.year % 100:02d}-{week_start.month:02d}-{week_no}"
+
+
+def _json_safe(value):
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _sales_management_json(row_data: dict) -> str:
+    return json.dumps(_json_safe(row_data), ensure_ascii=False)
+
+
 def _sales_management_dict(row: SalesManagementWeeklyRow) -> dict:
     try:
         data = json.loads(row.data_json or "{}")
@@ -45,6 +87,7 @@ def _sales_management_dict(row: SalesManagementWeeklyRow) -> dict:
     data["db_id"] = row.id
     data["id"] = data.get("id") or row.row_key
     data["week_start"] = to_kst_date(row.week_start)
+    data["entry_round"] = data.get("entry_round") or _sales_management_entry_round(row.week_start)
     return data
 
 
@@ -118,6 +161,7 @@ def save_sales_management_rows(
     seen = set()
     for item in data.rows:
         row_data = dict(item)
+        row_data["entry_round"] = _sales_management_entry_round(data.week_start)
         if not row_data.get("sales_no"):
             row_data["sales_no"] = _next_sales_management_no(db, year, reserved_sales_numbers)
         row_key = _sales_management_row_key(row_data)
@@ -140,15 +184,17 @@ def save_sales_management_rows(
     keep_keys = set()
     for row_key, row_data in incoming:
         keep_keys.add(row_key)
+        row_json = _sales_management_json(row_data)
         row = existing.get(row_key)
         if not row:
             row = SalesManagementWeeklyRow(
                 week_start=data.week_start,
                 row_key=row_key,
+                data_json=row_json,
                 created_by=current.id,
             )
             db.add(row)
-        row.data_json = json.dumps(row_data, ensure_ascii=False)
+        row.data_json = row_json
 
     for row_key, row in existing.items():
         if row_key not in keep_keys:
@@ -159,6 +205,125 @@ def save_sales_management_rows(
         SalesManagementWeeklyRow.week_start == data.week_start
     ).order_by(SalesManagementWeeklyRow.id.asc()).all()
     return [_sales_management_dict(row) for row in rows]
+
+
+@router.get("/sales-management/template")
+def download_sales_management_template(_=Depends(get_current_user)):
+    filename = "\uc601\uc5c5\uad00\ub9ac_\uc591\uc2dd.xlsx"
+    headers = SALES_HEADERS + [
+        (f"{month}\uc6d4", f"order_current_{month}\uc6d4") for month in range(1, 13)
+    ] + [
+        (f"{month}\uc6d4", f"order_next_{month}\uc6d4") for month in range(1, 13)
+    ] + [
+        (f"{month}\uc6d4\ub9e4\ucd9c", f"revenue_current_{month}\uc6d4") for month in range(1, 13)
+    ] + [
+        (f"{month}\uc6d4\ub9e4\ucd9c", f"revenue_next_{month}\uc6d4") for month in range(1, 13)
+    ]
+    content, filename = make_source_header_template_response(
+        "\uc601\uc5c5\uad00\ub9ac.xlsx",
+        filename,
+        1,
+        make_template_response("\uc601\uc5c5\uad00\ub9ac", headers, filename),
+    )
+    return _excel_response(content, filename)
+
+
+@router.post("/sales-management/import-excel")
+def import_sales_management_excel(
+    week_start: date,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    fields = [field for _, field in SALES_HEADERS]
+    rows = read_upload_rows_with_raw_headers(file, fields)
+    imported = 0
+    updated = 0
+    skipped = 0
+    errors = []
+    month_keys = []
+    for prefix in ["order_current", "order_next", "revenue_current", "revenue_next"]:
+        month_keys.extend([f"{prefix}_{month}\uc6d4" for month in range(1, 13)])
+
+    existing = {
+        row.row_key: row
+        for row in db.query(SalesManagementWeeklyRow).filter(
+            SalesManagementWeeklyRow.week_start == week_start
+        ).all()
+    }
+    keep_keys = set()
+    reserved_sales_numbers = set()
+    for index, row_packet in enumerate(rows, start=1):
+        try:
+            item = row_packet["mapped"]
+            raw_excel = row_packet["raw"]
+            if not item.get("project_name"):
+                skipped += 1
+                errors.append({"row": index, "detail": "프로젝트명이 없습니다."})
+                continue
+            row_data = {
+                "id": item.get("id"),
+                "entry_round": _sales_management_entry_round(week_start),
+                "sales_no": item.get("sales_no"),
+                "project_name": item.get("project_name"),
+                "client_name": item.get("client_name"),
+                "probability": item.get("probability") or "C",
+                "sales_status": item.get("sales_status") or "\uc0ac\uc5c5\ubc1c\uad74",
+                "project_no": item.get("project_no"),
+                "business_division": item.get("business_division"),
+                "sales_team": item.get("sales_team"),
+                "business_category": item.get("business_category"),
+                "manager": item.get("manager"),
+                "revenue_type": item.get("revenue_type"),
+                "contract_expected_date": to_kst_date(to_date_value(item.get("contract_expected_date"))),
+                "completion_expected_date": to_kst_date(to_date_value(item.get("completion_expected_date"))),
+                "domestic_overseas": item.get("domestic_overseas"),
+                "special_relation": item.get("special_relation"),
+                "material_ratio": float(to_decimal_value(item.get("material_ratio"), Decimal(0)) or 0),
+                "expected_order_amount": float(to_decimal_value(item.get("expected_order_amount"), Decimal(0)) or 0),
+                "_excel_raw": raw_excel,
+            }
+            for key in month_keys:
+                if key in item:
+                    row_data[key] = float(to_decimal_value(item.get(key), Decimal(0)) or 0)
+            if not row_data.get("sales_no"):
+                row_data["sales_no"] = _next_sales_management_no(db, week_start.year, reserved_sales_numbers)
+            row_key = _sales_management_row_key(row_data)
+            unique_key = row_key
+            suffix = 1
+            while unique_key in keep_keys:
+                suffix += 1
+                unique_key = f"{row_key}:{suffix}"
+            keep_keys.add(unique_key)
+            row_data["id"] = row_data.get("id") or unique_key
+            row_json = _sales_management_json(row_data)
+            row = existing.get(unique_key)
+            if row:
+                updated += 1
+            else:
+                row = SalesManagementWeeklyRow(
+                    week_start=week_start,
+                    row_key=unique_key,
+                    data_json=row_json,
+                    created_by=current.id,
+                )
+                db.add(row)
+                imported += 1
+            row.data_json = row_json
+        except Exception as exc:
+            skipped += 1
+            errors.append({"row": index, "detail": str(exc)})
+    db.commit()
+    saved = db.query(SalesManagementWeeklyRow).filter(
+        SalesManagementWeeklyRow.week_start == week_start
+    ).order_by(SalesManagementWeeklyRow.id.asc()).all()
+    return {
+        "imported": imported,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors[:20],
+        "rows": [_sales_management_dict(row) for row in saved],
+    }
 
 
 class EstimateItemIn(BaseModel):
@@ -309,7 +474,11 @@ def download_estimate_attachment(attachment_id: int, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
     if not os.path.isfile(row.file_path):
         raise HTTPException(status_code=404, detail="파일이 서버에 존재하지 않습니다.")
-    return FileResponse(row.file_path, filename=row.original_name, media_type=row.content_type or "application/octet-stream")
+    return FileResponse(
+        row.file_path,
+        media_type=row.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(row.original_name)}"},
+    )
 
 
 @router.delete("/estimate-attachments/{attachment_id}")

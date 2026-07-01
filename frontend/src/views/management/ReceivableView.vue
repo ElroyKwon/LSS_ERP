@@ -36,7 +36,8 @@
         row-key="id"
         size="middle"
         :scroll="{ x: 2740 }"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'receivable_type'">
             <a-select v-model:value="record.receivable_type" class="cell-control" @change="saveInline(record)">

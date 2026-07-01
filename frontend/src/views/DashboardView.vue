@@ -1,405 +1,405 @@
 <template>
   <div class="dashboard">
-
-    <!-- ── 페이지 헤더 ── -->
     <div class="dash-header">
       <div>
         <div class="dash-title">경영 대시보드</div>
-        <div class="dash-sub">{{ today }} 기준 · {{ currentYM }} 누계</div>
+        <div class="dash-sub">
+          {{ period.year }}년 {{ String(period.month).padStart(2, '0') }}월 기준 수주, 매출, 매입, 채권, 채무 통합 현황
+        </div>
       </div>
-      <a-button :loading="loading" @click="load" size="small">
-        <template #icon><ReloadOutlined /></template>새로고침
-      </a-button>
+      <a-space>
+        <a-button @click="moveMonth(-1)">&lt;</a-button>
+        <a-date-picker
+          v-model:value="selectedMonth"
+          picker="month"
+          value-format="YYYY-MM"
+          :allow-clear="false"
+          @change="load"
+        />
+        <a-button @click="moveMonth(1)">&gt;</a-button>
+        <a-button :loading="loading" @click="load">
+          <template #icon><ReloadOutlined /></template>
+          새로고침
+        </a-button>
+      </a-space>
     </div>
 
     <a-spin :spinning="loading">
+      <a-alert
+        class="data-note"
+        type="info"
+        show-icon
+        message="승인된 매출청구, 매입청구, 채권/채무, 프로젝트리스트 및 영업관리 최신 주차 데이터를 기준으로 집계합니다."
+      />
 
-      <!-- ══ Row 1: KPI 카드 ══ -->
-      <a-row :gutter="[14, 14]" class="section">
-        <a-col v-for="c in kpiCards" :key="c.key" :xs="12" :sm="8" :xl="4">
-          <a-card :bordered="false" class="kpi-card" :style="`--accent:${c.color}`">
-            <div class="kpi-icon" :style="`background:${c.bg}`">
-              <component :is="c.icon" :style="`color:${c.color};font-size:18px`" />
+      <a-row :gutter="[16, 16]" class="section">
+        <a-col v-for="card in executiveCards" :key="card.key" :xs="24" :lg="8">
+          <a-card :bordered="false" class="kpi-card executive-card" :style="{ '--accent': card.color }">
+            <div class="executive-card-inner">
+              <div class="kpi-primary">
+                <div class="kpi-label">{{ card.label }}</div>
+                <div class="kpi-value" :style="{ color: card.color }">{{ formatAmount(card.value) }}</div>
+              </div>
+              <div class="kpi-metrics">
+                <div v-for="metric in card.metrics" :key="metric.label" class="kpi-metric">
+                  <span>{{ metric.label }}</span>
+                  <strong>{{ metric.format === 'percent' ? formatPercent(metric.value) : formatAmount(metric.value) }}</strong>
+                </div>
+              </div>
             </div>
-            <div class="kpi-label">{{ c.title }}</div>
-            <div class="kpi-val" :style="`color:${c.color}`">
-              {{ c.fmt ? c.fmt(c.value) : fmt(c.value) }}
-              <span class="kpi-unit">{{ c.unit }}</span>
-            </div>
-            <div v-if="c.sub" class="kpi-sub">{{ c.sub }}</div>
           </a-card>
         </a-col>
       </a-row>
 
-      <!-- ══ Row 2: 수주/매출 현황 + 수주잔 ══ -->
-      <a-row :gutter="[14, 14]" class="section">
-
-        <!-- 수주/매출 현황 테이블 -->
-        <a-col :xs="24" :lg="14">
-          <a-card :bordered="false" class="dash-card" title="수주 / 매출 현황">
-            <template #extra><span class="card-extra">단위: 백만원</span></template>
-            <a-table
-              :columns="omCols"
-              :data-source="omRows"
-              :pagination="false"
-              size="small"
-              row-key="key"
-              :row-class-name="r => r.isHeader ? 'row-header' : 'row-sub'"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'label'">
-                  <span :class="record.isHeader ? 'label-bold' : 'label-sub'">
-                    {{ record.isHeader ? '' : '└ ' }}{{ record.label }}
-                  </span>
-                </template>
-                <template v-if="['plan','monthActual','ytdActual'].includes(column.key)">
-                  <span :class="record.isHeader ? 'num-bold' : ''">
-                    {{ record[column.key] != null ? fmt(record[column.key]) : '-' }}
-                  </span>
-                </template>
-                <template v-if="column.key === 'ytdRate'">
-                  <span v-if="record[column.key] != null"
-                        :class="record[column.key] >= 100 ? 'rate-good' : record[column.key] >= 70 ? 'rate-mid' : 'rate-low'">
-                    {{ record[column.key] }}%
-                  </span>
-                  <span v-else class="rate-na">-</span>
-                </template>
-              </template>
-            </a-table>
+      <div class="section chart-grid">
+        <div class="chart-main">
+          <a-card :bordered="false" class="dash-card chart-card">
+            <template #title>
+              <span class="card-title">계획 대비 매출 실적</span>
+            </template>
+            <template #extra>
+              <a-tag :color="achievementColor">{{ formatPercent(kpi.achievement_rate) }}</a-tag>
+            </template>
+            <v-chart :option="achievementOption" class="chart chart-large" autoresize />
           </a-card>
-        </a-col>
+        </div>
 
-        <!-- 수주잔 현황 -->
-        <a-col :xs="24" :lg="10">
-          <a-card :bordered="false" class="dash-card" title="수주잔 현황">
-            <template #extra><span class="card-extra">단위: 백만원</span></template>
-            <a-table
-              :columns="backlogCols"
-              :data-source="backlogRows"
-              :pagination="false"
-              size="small"
-              row-key="key"
-              :row-class-name="r => r.isTotal ? 'row-header' : ''"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'label'">
-                  <span :class="record.isTotal ? 'label-bold' : ''">{{ record.label }}</span>
-                </template>
-                <template v-if="['prevBacklog','ytdOrders','ytdRevenue','curBacklog','annualPlan'].includes(column.key)">
-                  <span :class="record.isTotal ? 'num-bold' : ''">
-                    {{ record[column.key] != null ? fmt(record[column.key]) : '-' }}
-                  </span>
-                </template>
-                <template v-if="column.key === 'progress'">
-                  <a-progress
-                    v-if="record.annualPlan > 0"
-                    :percent="Math.min(100, Math.round(record.ytdRevenue / record.annualPlan * 100))"
-                    size="small"
-                    :stroke-color="record.isTotal ? '#1677ff' : '#69b1ff'"
-                  />
-                </template>
-              </template>
-            </a-table>
-          </a-card>
-        </a-col>
-      </a-row>
-
-      <!-- ══ Row 3: 월별 추이 차트 + 손익 현황 ══ -->
-      <a-row :gutter="[14, 14]" class="section">
-
-        <!-- 월별 수주/매출 추이 -->
-        <a-col :xs="24" :lg="14">
-          <a-card :bordered="false" class="dash-card" title="월별 수주 · 매출 추이 (최근 12개월)">
-            <template #extra><span class="card-extra">단위: 백만원</span></template>
-            <div v-if="hasChartData">
-              <v-chart :option="trendOption" style="height:280px" autoresize />
+        <div class="chart-side">
+          <a-card :bordered="false" class="dash-card chart-card">
+            <template #title>
+              <span class="card-title">수주 파이프라인</span>
+            </template>
+            <div class="pipeline-summary">
+              <div>
+                <span>진행 금액</span>
+                <strong>{{ formatAmount(pipeline.total) }}</strong>
+              </div>
+              <div>
+                <span>확도 가중</span>
+                <strong>{{ formatAmount(pipeline.weighted) }}</strong>
+              </div>
             </div>
-            <a-empty v-else description="매출·수주 데이터가 없습니다." style="padding:60px 0" />
-          </a-card>
-        </a-col>
-
-        <!-- 손익 현황 -->
-        <a-col :xs="24" :lg="10">
-          <a-card :bordered="false" class="dash-card" title="손익 현황">
-            <template #extra><span class="card-extra">단위: 백만원</span></template>
-
-            <!-- 당월 vs 누계 탭 -->
-            <a-tabs v-model:activeKey="plTab" size="small" style="margin-bottom:8px">
-              <a-tab-pane key="ytd" tab="누계" />
-              <a-tab-pane key="month" tab="당월" />
-            </a-tabs>
-
-            <div class="pl-rows">
-              <div v-for="row in plRows" :key="row.key"
-                   :class="['pl-row', row.bold ? 'pl-bold' : '', row.indent ? 'pl-indent' : '']">
-                <span class="pl-label">{{ row.label }}</span>
-                <span class="pl-value" :style="row.negative ? 'color:#f5222d' : ''">
-                  {{ plTab === 'ytd' ? fmt(row.ytd) : fmt(row.month) }}
-                </span>
-                <span v-if="row.rate != null" class="pl-rate"
-                      :style="row.rate < 0 ? 'color:#f5222d' : 'color:#52c41a'">
-                  {{ row.rate > 0 ? '+' : '' }}{{ row.rate }}%
+            <v-chart :option="pipelineOption" class="chart chart-small" autoresize />
+            <div class="pipeline-legend-wrap">
+              <span class="pipeline-legend-title">수주확도</span>
+              <div class="pipeline-legend">
+                <span v-for="item in pipelineProbabilityData" :key="item.name" class="pipeline-legend-item">
+                  <i :style="{ backgroundColor: item.itemStyle.color }"></i>
+                  {{ item.name }}
                 </span>
               </div>
             </div>
+          </a-card>
+        </div>
+      </div>
 
-            <!-- 원가 구조 도넛 차트 -->
-            <div v-if="hasCostData" style="margin-top:12px">
-              <v-chart :option="costOption" style="height:180px" autoresize />
+      <div class="section chart-grid">
+        <div class="chart-main">
+          <a-card :bordered="false" class="dash-card chart-card">
+            <template #title>
+              <span class="card-title">월별 매출 · 매입 · 이익 흐름</span>
+            </template>
+            <v-chart :option="profitFlowOption" class="chart" autoresize />
+          </a-card>
+        </div>
+
+        <div class="chart-side">
+          <a-card :bordered="false" class="dash-card chart-card">
+            <template #title>
+              <span class="card-title">채권 · 채무 리스크</span>
+            </template>
+            <div class="risk-grid">
+              <div class="risk-box risk-red">
+                <span>미수채권</span>
+                <strong>{{ formatAmount(risk.ar_total) }}</strong>
+                <em>연체 {{ formatAmount(risk.ar_overdue) }}</em>
+              </div>
+              <div class="risk-box risk-orange">
+                <span>미지급채무</span>
+                <strong>{{ formatAmount(risk.ap_total) }}</strong>
+                <em>30일 내 지급 {{ formatAmount(risk.ap_due_30) }}</em>
+              </div>
             </div>
+            <v-chart :option="riskOption" class="chart chart-risk" autoresize />
           </a-card>
-        </a-col>
-      </a-row>
+        </div>
+      </div>
 
-      <!-- ══ Row 4: 진행 현장별 원가율 ══ -->
-      <a-row :gutter="[14, 14]" class="section" v-if="siteRates.length">
+      <a-row :gutter="[16, 16]" class="section">
         <a-col :span="24">
-          <a-card :bordered="false" class="dash-card" title="진행 현장별 매출 · 원가율">
-            <a-table
-              :columns="siteCols"
-              :data-source="siteRates"
-              :pagination="false"
-              size="small"
-              row-key="site_name"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'revenue'">{{ fmt(record.revenue) }}</template>
-                <template v-if="column.key === 'cost'">{{ fmt(record.cost) }}</template>
-                <template v-if="column.key === 'cost_rate'">
-                  <a-tag :color="record.cost_rate > 90 ? 'red' : record.cost_rate > 80 ? 'orange' : 'green'">
-                    {{ record.cost_rate }}%
-                  </a-tag>
-                </template>
-                <template v-if="column.key === 'bar'">
-                  <a-progress :percent="Math.min(100, record.cost_rate)" size="small"
-                    :stroke-color="record.cost_rate > 90 ? '#f5222d' : record.cost_rate > 80 ? '#fa8c16' : '#52c41a'"
-                    :show-info="false" />
-                </template>
-              </template>
-            </a-table>
+          <a-card :bordered="false" class="dash-card summary-card">
+            <template #title>
+              <span class="card-title">조직별 경영 요약</span>
+            </template>
+            <a-tabs v-model:activeKey="summaryTab">
+              <a-tab-pane key="division" tab="사업부별">
+                <a-table
+                  row-key="name"
+                  size="middle"
+                  :columns="summaryColumns"
+                  :data-source="summary.division"
+                  :pagination="{ pageSize: 20, showSizeChanger: true }"
+                  :scroll="{ x: 1120 }"
+        :sticky="{ offsetHeader: 56 }"
+        />
+              </a-tab-pane>
+              <a-tab-pane key="business_group" tab="사업군별">
+                <a-table
+                  row-key="name"
+                  size="middle"
+                  :columns="summaryColumns"
+                  :data-source="summary.business_group"
+                  :pagination="{ pageSize: 20, showSizeChanger: true }"
+                  :scroll="{ x: 1120 }"
+        :sticky="{ offsetHeader: 56 }"
+        />
+              </a-tab-pane>
+            </a-tabs>
           </a-card>
         </a-col>
       </a-row>
-
     </a-spin>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { forecastApi } from '@/api'
+import { computed, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { ReloadOutlined } from '@ant-design/icons-vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, DataZoomComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import {
-  RiseOutlined, FallOutlined, DollarOutlined, BankOutlined,
-  HomeOutlined, ReloadOutlined, LineChartOutlined, WalletOutlined,
-} from '@ant-design/icons-vue'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { forecastApi } from '@/api'
 
-use([BarChart, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer])
+use([BarChart, LineChart, PieChart, CanvasRenderer, GridComponent, LegendComponent, TooltipComponent])
 
-// ── 날짜 ──
 const now = new Date()
-const today = now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
-const currentYM = `${now.getFullYear()}년 ${now.getMonth() + 1}월`
-
+const selectedMonth = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
 const loading = ref(false)
-const data = ref(null)
-const plTab = ref('ytd')
+const summaryTab = ref('division')
+const dashboard = ref({})
 
-const kpi = computed(() => data.value?.kpi || {})
-const pl  = computed(() => data.value?.pl_summary || {})
-const trend = computed(() => data.value?.monthly_trend || [])
-const siteRates = computed(() => data.value?.site_cost_rates || [])
+const period = computed(() => dashboard.value.period || {
+  year: Number(selectedMonth.value.slice(0, 4)),
+  month: Number(selectedMonth.value.slice(5, 7)),
+})
+const kpi = computed(() => dashboard.value.kpi || {})
+const monthly = computed(() => dashboard.value.monthly || [])
+const pipeline = computed(() => dashboard.value.pipeline || { total: 0, weighted: 0, by_probability: [] })
+const risk = computed(() => dashboard.value.risk || { ar_buckets: [] })
+const summary = computed(() => dashboard.value.summary || { division: [], business_group: [] })
 
-// ── 숫자 포맷 (백만원 단위) ──
-function fmt(v) {
-  if (v == null || v === '') return '-'
-  const n = Math.round(Number(v) / 1_000_000)  // 원 → 백만원
-  if (n === 0 && v !== 0) return '< 1'
-  return n.toLocaleString()
+const formatAmount = (value) => Math.round(Number(value || 0)).toLocaleString('ko-KR')
+const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`
+const formatMillionAxis = (value) => Math.round(Number(value || 0) / 1_000_000).toLocaleString('ko-KR')
+const probabilityLabels = {
+  A: 'A',
+  B: 'B',
+  C: 'C',
+  D: 'D',
+  E: 'E',
 }
-function pct(v) { return v != null ? `${v}%` : '-' }
+const formatProbabilityLabel = (value) => probabilityLabels[String(value || '').toUpperCase()] || value || '미정'
 
-// ── KPI 카드 ──
-const kpiCards = computed(() => [
+const probabilityOrder = ['A', 'B', 'C', 'D', 'E']
+const probabilityColors = {
+  A: '#1677ff',
+  B: '#52c41a',
+  C: '#722ed1',
+  D: '#fa8c16',
+  E: '#bfbfbf',
+}
+const pipelineProbabilityData = computed(() => {
+  const amounts = new Map()
+  const counts = new Map()
+  ;(pipeline.value.by_probability || []).forEach((item) => {
+    const key = String(item.name || '').trim().charAt(0).toUpperCase()
+    amounts.set(key, (amounts.get(key) || 0) + Number(item.value || 0))
+    counts.set(key, (counts.get(key) || 0) + Number(item.count || 0))
+  })
+  return probabilityOrder.map((key) => ({
+    name: probabilityLabels[key],
+    probability: key,
+    value: counts.get(key) || 0,
+    amount: amounts.get(key) || 0,
+    itemStyle: { color: probabilityColors[key] },
+  }))
+})
+const executiveCards = computed(() => [
   {
-    key: 'backlog', title: '수주잔', color: '#1677ff', bg: '#e6f4ff',
-    icon: WalletOutlined, value: kpi.value.order_backlog, unit: '백만원',
-    sub: '진행중 계약 잔액',
+    key: 'orders',
+    label: '수주 현황',
+    value: kpi.value.ytd_orders,
+    color: '#1677ff',
+    metrics: [
+      { label: '수주잔', value: kpi.value.order_backlog },
+      { label: '확도 가중', value: kpi.value.pipeline_weighted },
+    ],
   },
   {
-    key: 'ytd_orders', title: '누계 수주', color: '#722ed1', bg: '#f9f0ff',
-    icon: RiseOutlined, value: kpi.value.ytd_orders, unit: '백만원',
-    sub: `${now.getMonth() + 1}월 누계`,
+    key: 'revenue',
+    label: '매출 / 손익',
+    value: kpi.value.ytd_actual_revenue,
+    color: '#52c41a',
+    metrics: [
+      { label: '계획 대비', value: kpi.value.achievement_rate, format: 'percent' },
+      { label: '매출이익', value: kpi.value.ytd_profit },
+    ],
   },
   {
-    key: 'ytd_rev', title: '누계 매출', color: '#0958d9', bg: '#e6f4ff',
-    icon: DollarOutlined, value: kpi.value.ytd_revenue, unit: '백만원',
-    sub: `${now.getMonth() + 1}월 누계`,
-  },
-  {
-    key: 'month_rev', title: '당월 매출', color: '#08979c', bg: '#e6fffb',
-    icon: LineChartOutlined, value: kpi.value.monthly_billing, unit: '백만원',
-    sub: `${now.getMonth() + 1}월`,
-  },
-  {
-    key: 'margin', title: '누계 매출총이익률', color: '#52c41a', bg: '#f6ffed',
-    icon: RiseOutlined, value: kpi.value.gross_margin, unit: '%',
-    fmt: v => v != null ? v.toFixed(1) : '-',
-    sub: '(매출 - 원가) / 매출',
-  },
-  {
-    key: 'ar', title: '미수금', color: '#cf1322', bg: '#fff1f0',
-    icon: FallOutlined, value: kpi.value.outstanding_ar, unit: '백만원',
-    sub: '미회수 채권',
+    key: 'cash',
+    label: '채권 / 채무',
+    value: kpi.value.ar_total,
+    color: '#f5222d',
+    metrics: [
+      { label: '연체채권', value: kpi.value.ar_overdue },
+      { label: '30일 내 지급', value: kpi.value.ap_due_30 },
+    ],
   },
 ])
 
-// ── 수주/매출 현황 테이블 ──
-const omCols = [
-  { title: '구분',     key: 'label',       width: 120 },
-  { title: '연간계획', key: 'plan',        width: 95,  align: 'right' },
-  { title: '당월 실적', key: 'monthActual', width: 95,  align: 'right' },
-  { title: '누계 실적', key: 'ytdActual',   width: 95,  align: 'right' },
-  { title: '달성률',   key: 'ytdRate',      width: 80,  align: 'center' },
-]
-
-const omRows = computed(() => {
-  const k = kpi.value
-  const rate = (act, plan) => plan > 0 ? Math.round(act / plan * 100) : null
-  return [
-    {
-      key: 'rev', label: '매출액', isHeader: true,
-      plan: null, monthActual: k.monthly_billing, ytdActual: k.ytd_revenue,
-      ytdRate: null,
-    },
-    {
-      key: 'ord', label: '수주액', isHeader: true,
-      plan: null, monthActual: null, ytdActual: k.ytd_orders,
-      ytdRate: null,
-    },
-    {
-      key: 'backlog_row', label: '수주잔 (기말)', isHeader: true,
-      plan: null, monthActual: null, ytdActual: k.order_backlog,
-      ytdRate: null,
-    },
-  ]
+const achievementColor = computed(() => {
+  const rate = Number(kpi.value.achievement_rate || 0)
+  if (rate >= 100) return 'green'
+  if (rate >= 90) return 'blue'
+  if (rate >= 70) return 'orange'
+  return 'red'
 })
 
-// ── 수주잔 테이블 ──
-const backlogCols = [
-  { title: '구분',           key: 'label',       width: 100 },
-  { title: '전기말 수주잔',  key: 'prevBacklog',  width: 100, align: 'right' },
-  { title: '누계 수주',      key: 'ytdOrders',    width: 90,  align: 'right' },
-  { title: '누계 매출',      key: 'ytdRevenue',   width: 90,  align: 'right' },
-  { title: '현재 수주잔',    key: 'curBacklog',   width: 100, align: 'right' },
-  { title: '연간계획',       key: 'annualPlan',   width: 90,  align: 'right' },
-  { title: '진행률',         key: 'progress',     width: 90,  align: 'center' },
-]
+const axisMonths = computed(() => monthly.value.map((row) => row.label))
+const achievementMonthData = (field) =>
+  monthly.value.map((row, index) => ({
+    value: [index + 1.5, row[field]],
+    monthLabel: row.label,
+  }))
 
-const backlogRows = computed(() => {
-  const k = kpi.value
-  const ytdRev = k.ytd_revenue || 0
-  const ytdOrd = k.ytd_orders  || 0
-  const curBacklog = k.order_backlog || 0
-  // 전기말 수주잔 = 현재 수주잔 - 누계수주 + 누계매출
-  const prevBacklog = curBacklog - ytdOrd + ytdRev
+const moneyTooltip = {
+  valueFormatter: (value) => formatAmount(value),
+}
 
-  return [
-    {
-      key: 'total', label: '합계', isTotal: true,
-      prevBacklog, ytdOrders: ytdOrd, ytdRevenue: ytdRev,
-      curBacklog, annualPlan: null,
+const achievementTooltipFormatter = (params) => {
+  const items = Array.isArray(params) ? params : [params]
+  const monthLabel = items[0]?.data?.monthLabel || ''
+  const rows = items.map((item) => {
+    const amount = Array.isArray(item.value) ? item.value[1] : item.value
+    return `${item.marker}${item.seriesName}: ${formatAmount(amount)}`
+  })
+  return [`<b>${monthLabel}</b>`, ...rows].join('<br/>')
+}
+
+const achievementOption = computed(() => ({
+  tooltip: { trigger: 'axis', formatter: achievementTooltipFormatter },
+  legend: { top: 0 },
+  grid: { top: 56, left: 64, right: 24, bottom: 36 },
+  xAxis: {
+    type: 'value',
+    min: 1,
+    max: 13,
+    interval: 1,
+    axisLabel: {
+      formatter: (value) => (value >= 1 && value <= 12 ? `${value}월` : ''),
     },
-  ]
-})
-
-// ── 손익 ──
-const plRows = computed(() => {
-  const p = pl.value
-  return [
-    { key: 'rev',   label: '매출액',      bold: true,  ytd: p.revenue,   month: p.monthly_revenue, rate: null },
-    { key: 'cost',  label: '매출원가',    bold: false, indent: true,  ytd: p.cost,      month: p.monthly_cost,
-      negative: false, rate: p.revenue > 0 ? -Math.round(p.cost / p.revenue * 100) : null },
-    { key: 'gp',    label: '매출총이익',  bold: true,  ytd: p.gross_profit, month: p.monthly_gross,
-      rate: p.gross_margin },
-    { key: 'sga',   label: '판매관리비',  bold: false, indent: true,  ytd: p.sga,       month: 0,
-      negative: false, rate: p.revenue > 0 ? -Math.round(p.sga / p.revenue * 100) : null },
-    { key: 'oi',    label: '영업이익',    bold: true,  ytd: p.operating_income, month: p.monthly_gross - (p.sga || 0),
-      rate: p.operating_margin },
-  ]
-})
-
-// ── 월별 추이 차트 ──
-const hasChartData = computed(() => trend.value.some(t => t.revenue > 0 || t.orders > 0))
-const hasCostData  = computed(() => (pl.value.cost || 0) > 0)
-
-const trendOption = computed(() => ({
-  tooltip: { trigger: 'axis', formatter: (params) => {
-    let s = `<b>${params[0].axisValue}</b><br/>`
-    params.forEach(p => { s += `${p.marker}${p.seriesName}: ${Math.round(p.value / 1_000_000).toLocaleString()} 백만<br/>` })
-    return s
-  }},
-  legend: { data: ['수주', '매출', '원가'], bottom: 0, itemHeight: 10, textStyle: { fontSize: 11 } },
-  grid: { top: 20, bottom: 36, left: 48, right: 12 },
-  xAxis: { type: 'category', data: trend.value.map(t => t.short), axisLabel: { fontSize: 11 } },
-  yAxis: { type: 'value', axisLabel: { formatter: v => `${Math.round(v / 1_000_000)}M`, fontSize: 10 } },
+  },
+  yAxis: {
+    type: 'value',
+    name: '단위 : 백만',
+    nameLocation: 'end',
+    nameGap: 14,
+    axisLabel: {
+      formatter: (value) => formatMillionAxis(value),
+      margin: 10,
+    },
+  },
   series: [
-    { name: '수주', type: 'bar', data: trend.value.map(t => t.orders),  itemStyle: { color: '#722ed1' }, barMaxWidth: 20 },
-    { name: '매출', type: 'bar', data: trend.value.map(t => t.revenue), itemStyle: { color: '#1677ff' }, barMaxWidth: 20 },
-    { name: '원가', type: 'line', data: trend.value.map(t => t.cost),
-      lineStyle: { color: '#f5222d', type: 'dashed' }, symbol: 'circle', symbolSize: 4, itemStyle: { color: '#f5222d' } },
+    { name: '계획 매출', type: 'bar', data: achievementMonthData('planned_revenue'), barWidth: 18, itemStyle: { color: '#91caff' } },
+    { name: '실제 매출', type: 'bar', data: achievementMonthData('actual_revenue'), barWidth: 18, itemStyle: { color: '#52c41a' } },
+    { name: '계획 누계', type: 'line', smooth: true, data: achievementMonthData('cumulative_plan'), itemStyle: { color: '#1677ff' } },
+    { name: '실적 누계', type: 'line', smooth: true, data: achievementMonthData('cumulative_actual'), itemStyle: { color: '#fa541c' } },
   ],
 }))
 
-const costOption = computed(() => {
-  const p = pl.value
-  const mat  = 0   // 재료비 별도 집계 시 연동
-  const lab  = 0   // 노무비
-  const exp  = 0   // 경비
-  const costTotal = p.cost || 0
-  const hasDetail = mat + lab + exp > 0
-  const pieData = hasDetail
-    ? [
-        { value: mat,  name: '재료비' },
-        { value: lab,  name: '노무비' },
-        { value: exp,  name: '경비' },
-      ]
-    : [
-        { value: costTotal,              name: '원가',      itemStyle: { color: '#f5222d' } },
-        { value: Math.max(0, p.gross_profit), name: '이익', itemStyle: { color: '#52c41a' } },
-      ]
-  return {
-    tooltip: { trigger: 'item', formatter: p => `${p.name}: ${Math.round(p.value / 1_000_000).toLocaleString()}백만 (${p.percent}%)` },
-    legend: { bottom: 0, itemHeight: 8, textStyle: { fontSize: 10 } },
-    series: [{
-      type: 'pie', radius: ['45%', '70%'], center: ['50%', '45%'],
-      label: { show: false },
-      data: pieData,
-    }],
-  }
-})
+const pipelineTooltipFormatter = ({ name, data }) => (
+  `${name}<br/>${formatAmount(data?.value || 0)}건<br/>${formatAmount(data?.amount || 0)}`
+)
 
-// ── 진행 현장 테이블 ──
-const siteCols = [
-  { title: '현장명',  dataIndex: 'site_name', ellipsis: true },
-  { title: '매출(기성)', key: 'revenue', width: 130, align: 'right' },
-  { title: '원가투입', key: 'cost',    width: 130, align: 'right' },
-  { title: '원가율',  key: 'cost_rate', width: 80,  align: 'center' },
-  { title: '원가율 바', key: 'bar',    width: 140 },
+const pipelineOption = computed(() => ({
+  tooltip: { trigger: 'item', formatter: pipelineTooltipFormatter },
+  series: [
+    {
+      name: '수주확도',
+      type: 'pie',
+      radius: ['46%', '70%'],
+      center: ['50%', '50%'],
+      stillShowZeroSum: false,
+      label: {
+        show: true,
+        position: 'inside',
+        formatter: ({ data, value }) => (Number(value || 0) > 0 ? data?.probability : ''),
+        color: '#fff',
+        fontWeight: 700,
+      },
+      labelLine: { show: false },
+      data: pipelineProbabilityData.value,
+    },
+  ],
+}))
+
+const profitFlowOption = computed(() => ({
+  tooltip: { trigger: 'axis', ...moneyTooltip },
+  legend: { top: 0 },
+  grid: { top: 48, left: 56, right: 24, bottom: 36 },
+  xAxis: { type: 'category', data: axisMonths.value },
+  yAxis: { type: 'value', axisLabel: { formatter: (value) => formatAmount(value) } },
+  series: [
+    { name: '매출', type: 'bar', data: monthly.value.map((row) => row.actual_revenue), itemStyle: { color: '#52c41a' } },
+    { name: '매입', type: 'bar', data: monthly.value.map((row) => row.actual_purchase), itemStyle: { color: '#fa8c16' } },
+    { name: '이익', type: 'line', smooth: true, data: monthly.value.map((row) => row.profit), itemStyle: { color: '#722ed1' } },
+  ],
+}))
+
+const riskOption = computed(() => ({
+  tooltip: { trigger: 'item', formatter: ({ name, value, percent }) => `${name}<br/>${formatAmount(value)} (${percent}%)` },
+  legend: { bottom: 0 },
+  series: [
+    {
+      name: '채권 월령',
+      type: 'pie',
+      radius: ['45%', '68%'],
+      center: ['50%', '42%'],
+      data: risk.value.ar_buckets || [],
+    },
+  ],
+}))
+
+const summaryColumns = [
+  { title: '구분', dataIndex: 'name', width: 180, align: 'center', fixed: 'left' },
+  { title: '수주', dataIndex: 'orders', width: 140, align: 'right', customRender: ({ text }) => formatAmount(text) },
+  { title: '매출', dataIndex: 'revenue', width: 140, align: 'right', customRender: ({ text }) => formatAmount(text) },
+  { title: '매입', dataIndex: 'purchase', width: 140, align: 'right', customRender: ({ text }) => formatAmount(text) },
+  { title: '이익', dataIndex: 'profit', width: 140, align: 'right', customRender: ({ text }) => formatAmount(text) },
+  { title: '이익률', dataIndex: 'profit_rate', width: 110, align: 'center', customRender: ({ text }) => formatPercent(text) },
+  { title: '채권', dataIndex: 'receivable', width: 140, align: 'right', customRender: ({ text }) => formatAmount(text) },
+  { title: '채무', dataIndex: 'payable', width: 140, align: 'right', customRender: ({ text }) => formatAmount(text) },
 ]
 
-// ── 데이터 로드 ──
+const moveMonth = (offset) => {
+  const [year, month] = selectedMonth.value.split('-').map(Number)
+  const next = new Date(year, month - 1 + offset, 1)
+  selectedMonth.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const res = await forecastApi.getDashboard()
-    data.value = res.data
-  } catch (e) {
-    console.error(e)
+    const [year, month] = selectedMonth.value.split('-').map(Number)
+    const res = await forecastApi.getDashboard({ year, month })
+    dashboard.value = res.data || {}
+  } catch (error) {
+    console.error(error)
+    message.error('대시보드 데이터를 불러오지 못했습니다.')
   } finally {
     loading.value = false
   }
@@ -409,63 +409,305 @@ onMounted(load)
 </script>
 
 <style scoped>
-.dashboard { display: flex; flex-direction: column; gap: 0; }
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
 .dash-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+}
+
+.dash-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a2535;
+}
+
+.dash-sub {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.data-note {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.section {
   margin-bottom: 16px;
 }
-.dash-title { font-size: 18px; font-weight: 700; color: #1a2535; }
-.dash-sub   { font-size: 12px; color: #8c8c8c; margin-top: 2px; }
 
-.section { margin-bottom: 14px; }
+.chart-grid {
+  --chart-gap: 16px;
+  display: grid !important;
+  grid-template-columns: calc((100% - var(--chart-gap)) * 0.62) calc((100% - var(--chart-gap)) * 0.38);
+  grid-auto-rows: 420px;
+  width: 100%;
+  gap: 16px;
+  align-items: stretch;
+}
 
-/* ── KPI 카드 ── */
-.kpi-card {
+.chart-main,
+.chart-side {
+  min-width: 0;
+  display: flex;
+  width: 100%;
+}
+
+.kpi-card,
+.dash-card {
   border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-  border-top: 3px solid var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+}
+
+.chart-card {
+  width: 100%;
+  height: 420px;
+  overflow: hidden;
+}
+
+.chart-card :deep(.ant-card-body) {
+  display: flex;
+  flex-direction: column;
+  height: calc(420px - 53px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kpi-card {
+  border-left: 4px solid var(--accent);
+}
+
+.executive-card {
+  height: 112px;
+}
+
+.executive-card :deep(.ant-card-body) {
+  height: 100%;
+  padding: 16px 24px;
+}
+
+.executive-card-inner {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(180px, 1.1fr);
+  gap: 18px;
+  align-items: center;
   height: 100%;
 }
-.kpi-icon {
-  width: 36px; height: 36px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
+
+.kpi-primary {
+  min-width: 0;
+}
+
+.kpi-label {
+  color: #8c8c8c;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kpi-sub {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.kpi-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.kpi-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.kpi-metric span {
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.kpi-metric strong {
+  color: #1a2535;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a2535;
+}
+
+.chart {
+  width: 100%;
+  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.chart-large,
+.chart-small,
+.chart-risk {
+  height: 100%;
+  min-height: 0;
+}
+
+.pipeline-legend-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin-top: 4px;
+  padding-bottom: 2px;
+}
+
+.pipeline-legend-title {
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pipeline-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 16px;
+  border: 1px solid #1f2937;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.pipeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #1f2937;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pipeline-legend-item i {
+  display: inline-block;
+  width: 22px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.pipeline-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 10px;
+  flex: 0 0 auto;
 }
-.kpi-label { font-size: 11px; color: #8c8c8c; margin-bottom: 4px; }
-.kpi-val   { font-size: 22px; font-weight: 700; line-height: 1.1; }
-.kpi-unit  { font-size: 12px; font-weight: 400; margin-left: 2px; color: #8c8c8c; }
-.kpi-sub   { font-size: 10px; color: #bfbfbf; margin-top: 4px; }
 
-/* ── 공통 카드 ── */
-.dash-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); height: 100%; }
-.card-extra { font-size: 11px; color: #8c8c8c; }
-
-/* ── 수주/매출 테이블 ── */
-:deep(.row-header) { background: #fafafa; }
-:deep(.row-sub td)  { padding-top: 4px !important; padding-bottom: 4px !important; }
-.label-bold { font-weight: 600; color: #1a2535; }
-.label-sub  { color: #595959; font-size: 12px; padding-left: 8px; }
-.num-bold   { font-weight: 600; }
-.rate-good  { color: #52c41a; font-weight: 600; }
-.rate-mid   { color: #fa8c16; font-weight: 600; }
-.rate-low   { color: #f5222d; font-weight: 600; }
-.rate-na    { color: #bfbfbf; }
-
-/* ── 손익 ── */
-.pl-rows { display: flex; flex-direction: column; gap: 0; }
-.pl-row  {
-  display: flex; align-items: center; padding: 7px 4px;
-  border-bottom: 1px solid #f5f5f5;
+.pipeline-summary > div,
+.risk-box {
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
 }
-.pl-bold { background: #fafafa; }
-.pl-indent { padding-left: 16px; }
-.pl-label { flex: 1; font-size: 13px; color: #3d4f6a; }
-.pl-bold .pl-label { font-weight: 600; color: #1a2535; }
-.pl-value { font-size: 13px; font-weight: 600; min-width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
-.pl-rate  { font-size: 11px; min-width: 48px; text-align: right; margin-left: 8px; }
 
-:deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; font-size: 12px; }
-:deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 48px; }
-:deep(.ant-card-head-title) { font-size: 14px; font-weight: 600; }
+.pipeline-summary span,
+.risk-box span {
+  display: block;
+  color: #8c8c8c;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.pipeline-summary strong,
+.risk-box strong {
+  display: block;
+  color: #1a2535;
+  font-size: 18px;
+}
+
+.risk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+  flex: 0 0 auto;
+}
+
+.risk-box em {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.risk-red {
+  border-left: 3px solid #f5222d;
+}
+
+.risk-orange {
+  border-left: 3px solid #fa8c16;
+}
+
+.summary-card :deep(.ant-tabs-nav) {
+  margin-bottom: 12px;
+}
+
+@media (max-width: 1199px) {
+  .chart-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+
+  .chart-card {
+    height: 420px;
+  }
+
+  .chart-card :deep(.ant-card-body) {
+    height: calc(420px - 53px);
+  }
+}
+
+:deep(.ant-table-thead > tr > th) {
+  text-align: center !important;
+  background: #fafafa;
+}
+
+:deep(.ant-card-head) {
+  border-bottom: 1px solid #f0f0f0;
+  min-height: 52px;
+}
 </style>

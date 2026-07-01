@@ -30,21 +30,21 @@ const routes = [
       { path: 'execution/ap-billing', component: () => import('@/views/execution/PurchaseBillingView.vue') },
 
       // 경영
-      { path: 'management/budget',      component: () => import('@/views/management/BudgetView.vue') },
-      { path: 'management/analysis',    component: () => import('@/views/management/AnalysisView.vue') },
-      { path: 'management/receivable',  component: () => import('@/views/management/ReceivableView.vue') },
-      { path: 'management/payable',     component: () => import('@/views/management/PayableView.vue') },
-      { path: 'management/profit-loss', component: () => import('@/views/management/ProfitLossView.vue') },
+      { path: 'management/budget', component: () => import('@/views/management/BudgetView.vue') },
+      { path: 'management/analysis', component: () => import('@/views/management/AnalysisView.vue') },
+      { path: 'management/receivable', component: () => import('@/views/management/ReceivableView.vue') },
+      { path: 'management/payable', component: () => import('@/views/management/PayableView.vue') },
 
       // 단독 메뉴
-      { path: 'timesheet',   component: () => import('@/views/TimesheetView.vue') },
+      { path: 'timesheet', component: () => import('@/views/TimesheetView.vue') },
       { path: 'vehicle-log', component: () => import('@/views/VehicleLogView.vue') },
+      { path: 'opinion-listening', component: () => import('@/views/OpinionListeningView.vue') },
 
       // 시스템
       { path: 'system/users', component: () => import('@/views/system/UsersView.vue') },
-      { path: 'system/employees', component: () => import('@/views/system/EmployeeSettingsView.vue') },
       { path: 'system/departments', component: () => import('@/views/system/DepartmentSettingsView.vue') },
-
+      { path: 'system/notices', component: () => import('@/views/system/NoticeSettingsView.vue') },
+      { path: 'system/opinion-notifications', component: () => import('@/views/system/OpinionNotificationSettingsView.vue') },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },

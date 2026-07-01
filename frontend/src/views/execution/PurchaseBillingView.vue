@@ -32,7 +32,8 @@
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="{ pageSize: 20, showSizeChanger: true }"
-               row-key="id" size="middle" :scroll="{ x: 1240 }">
+               row-key="id" size="middle" :scroll="{ x: 1240 }"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['bill_amount','vat_amount','total_amount'].includes(column.key)">
             {{ record[column.key] > 0 ? Number(record[column.key]).toLocaleString() : '—' }}
@@ -44,6 +45,8 @@
             <a-space size="small">
               <a @click="openDrawer(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
+              <a v-if="record.status !== '승인'" @click="handleApprove(record.id)">승인</a>
+              <a-divider v-if="record.status !== '승인'" type="vertical" style="margin:0" />
               <a-popconfirm title="삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소"
                             @confirm="handleDelete(record.id)">
                 <a class="del-link">삭제</a>
@@ -54,8 +57,9 @@
       </a-table>
     </a-card>
 
-    <a-drawer v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
-              width="540" :body-style="{ paddingBottom:'72px' }">
+    <a-modal v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
+              width="840" wrap-class-name="purchase-billing-modal" :body-style="{ paddingBottom:'72px' }"
+      centered>
       <a-form :model="form" layout="vertical" ref="formRef">
         <a-divider orientation="left" orientation-margin="0"><span class="sec-label">기본 정보</span></a-divider>
         <a-row :gutter="16">
@@ -71,26 +75,26 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="프로젝트" name="project_id">
               <a-select v-model:value="form.project_id" allow-clear show-search
                         placeholder="프로젝트 선택" :options="projectOptions" option-filter-prop="label"
                         @change="onProjectChange" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="원계약처" name="original_client_name">
               <a-input v-model:value="form.original_client_name" placeholder="프로젝트 선택 시 자동 입력" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="하도계약처" name="purchase_contract_id">
               <a-select v-model:value="form.purchase_contract_id" allow-clear show-search
                         placeholder="구매/계약에서 선택" :options="purchaseContractOptions"
                         option-filter-prop="label" @change="onContractChange" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="하도급사" name="vendor_name"
               :rules="[{ required: true, message: '하도급사명을 입력하세요.' }]"
               extra="직접 입력하거나 등록된 거래처를 검색하세요.">
@@ -157,11 +161,6 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="form.notes" :rows="2" />
-            </a-form-item>
-          </a-col>
         </a-row>
       </a-form>
       <template #footer>
@@ -172,7 +171,7 @@
           </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 
@@ -229,9 +228,9 @@ const columns = [
   { title: '원계약처', dataIndex: 'original_client_name', width: 150, align: 'center', ellipsis: true },
   { title: '하도급사', dataIndex: 'vendor_name',  width: 160, align: 'center', ellipsis: true },
   { title: '지급구분', dataIndex: 'payment_method', width: 105, align: 'center' },
-  { title: '청구금액', key: 'bill_amount',        width: 130, align: 'right' },
-  { title: '부가세',  key: 'vat_amount',          width: 110, align: 'right' },
-  { title: '합계',    key: 'total_amount',        width: 130, align: 'right' },
+  { title: '청구금액', key: 'bill_amount',        width: 135, align: 'right' },
+  { title: '부가세',  key: 'vat_amount',          width: 135, align: 'right' },
+  { title: '합계',    key: 'total_amount',        width: 135, align: 'right' },
   { title: '청구일',  dataIndex: 'bill_date',     width: 110, align: 'center' },
   { title: '지급예정일', dataIndex: 'due_date',   width: 110, align: 'center' },
   { title: '상태',    key: 'status',              width: 90,  align: 'center' },
@@ -353,6 +352,16 @@ async function handleSave() {
 async function handleDelete(id) {
   try { await executionApi.deleteAPBill(id); message.success('삭제되었습니다.'); load() }
   catch (e) { message.error(e.response?.data?.detail || '삭제 오류') }
+}
+
+async function handleApprove(id) {
+  try {
+    await executionApi.approveAPBill(id)
+    message.success('승인되었고 채무관리 행이 생성되었습니다.')
+    load()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '승인 오류')
+  }
 }
 
 onMounted(load)

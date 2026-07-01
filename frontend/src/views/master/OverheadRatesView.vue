@@ -51,7 +51,8 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="false" row-key="id" size="middle">
+               :pagination="{ pageSize: 20, showSizeChanger: true }" row-key="id" size="middle"
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['labor_rate','overhead_rate','profit_rate'].includes(column.key)">
             <span class="rate-cell">{{ record[column.key] }}<span class="pct-small">%</span></span>
@@ -98,11 +99,6 @@
               <a-input-number v-model:value="form.profit_rate" style="width:100%" :step="0.01" :min="0" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="form.notes" :rows="2" />
-            </a-form-item>
-          </a-col>
         </a-row>
       </a-form>
     </a-modal>
@@ -138,7 +134,7 @@ const columns = [
   { title: '임율',     key: 'labor_rate',         width: 110, align: 'center' },
   { title: '판관비율', key: 'overhead_rate',      width: 120, align: 'center' },
   { title: '이익률',   key: 'profit_rate',        width: 110, align: 'center' },
-  { title: '비고',     dataIndex: 'notes',        width: 200, align: 'center', ellipsis: true },
+  { title: '비고',     dataIndex: 'notes',        width: 100, align: 'center', ellipsis: true },
   { title: '관리',     key: 'action',             width: 70,  align: 'center', fixed: 'right' },
 ]
 

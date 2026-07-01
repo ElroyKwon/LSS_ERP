@@ -59,14 +59,13 @@
         </a-sub-menu>
 
         <!-- 경영 -->
-        <a-sub-menu key="management" v-if="canReadAny(['/management/budget', '/management/analysis', '/management/receivable', '/management/payable', '/management/profit-loss'])">
+        <a-sub-menu key="management" v-if="canReadAny(['/management/budget', '/management/analysis', '/management/receivable', '/management/payable'])">
           <template #icon><FundOutlined /></template>
           <template #title>경영</template>
           <a-menu-item v-if="canRead('/management/budget')" key="/management/budget">예산관리</a-menu-item>
           <a-menu-item v-if="canRead('/management/analysis')" key="/management/analysis">경영 분석</a-menu-item>
           <a-menu-item v-if="canRead('/management/receivable')" key="/management/receivable">채권관리</a-menu-item>
           <a-menu-item v-if="canRead('/management/payable')" key="/management/payable">채무관리</a-menu-item>
-          <a-menu-item v-if="canRead('/management/profit-loss')" key="/management/profit-loss">손익계산서</a-menu-item>
         </a-sub-menu>
 
         <!-- 타임시트 (단독) -->
@@ -80,9 +79,13 @@
           <template #icon><CarOutlined /></template>
           차량일지
         </a-menu-item>
+        <a-menu-item v-if="canRead('/opinion-listening')" key="/opinion-listening">
+          <template #icon><MessageOutlined /></template>
+          의견 청취
+        </a-menu-item>
 
         <!-- 설정 (관리자) -->
-        <a-sub-menu key="system" v-if="canReadAny(['/system/users', '/system/employees', '/system/departments'])">
+        <a-sub-menu key="system" v-if="canReadAny(['/system/users', '/system/departments', '/system/notices', '/system/opinion-notifications'])">
           <template #icon>
             <!-- ① 접혔을 때: 아이콘에 뱃지 -->
             <a-badge v-if="collapsed && pendingCount > 0"
@@ -103,11 +106,14 @@
             <a-badge v-if="pendingCount > 0" :count="pendingCount"
                      style="margin-left:8px; vertical-align:middle" />
           </a-menu-item>
-          <a-menu-item v-if="canRead('/system/employees')" key="/system/employees">
-            <span>사원관리</span>
-          </a-menu-item>
           <a-menu-item v-if="canRead('/system/departments')" key="/system/departments">
             <span>부서관리</span>
+          </a-menu-item>
+          <a-menu-item v-if="canRead('/system/notices')" key="/system/notices">
+            <span>공지사항</span>
+          </a-menu-item>
+          <a-menu-item v-if="canRead('/system/opinion-notifications')" key="/system/opinion-notifications">
+            <span>알림 설정</span>
           </a-menu-item>
         </a-sub-menu>
       </a-menu>
@@ -129,7 +135,10 @@
         </div>
         <div class="header-right">
           <a-space :size="12">
-            <span class="user-name">{{ auth.user?.name }}</span>
+            <span class="user-name">
+              {{ auth.user?.name }}
+              <span class="user-role">{{ getRoleLabel(auth.user?.role) }}</span>
+            </span>
             <a-dropdown placement="bottomRight">
               <a-avatar :style="{ cursor: 'pointer', background: '#1a4b8c', fontSize: '14px' }">
                 {{ auth.user?.name?.charAt(0) }}
@@ -156,6 +165,29 @@
       </a-layout-content>
     </a-layout>
   </a-layout>
+
+  <a-modal
+    v-model:open="noticePopupOpen"
+    title="공지사항 안내"
+    width="640px"
+    :footer="null"
+    centered
+    class="notice-modal"
+    wrap-class-name="notice-center-modal"
+    @cancel="closeNoticePopup"
+  >
+    <div class="notice-popup-list">
+      <div v-for="notice in visibleNotices" :key="notice.id" class="notice-popup-item">
+        <div class="notice-popup-title">{{ notice.title }}</div>
+        <div class="notice-popup-period">{{ notice.start_date }} ~ {{ notice.end_date }}</div>
+        <div class="notice-popup-content">{{ notice.content }}</div>
+      </div>
+    </div>
+    <div class="notice-popup-footer">
+      <a-checkbox v-model:checked="hideNoticesToday">오늘은 그만보기</a-checkbox>
+      <a-button type="primary" @click="closeNoticePopup">확인</a-button>
+    </div>
+  </a-modal>
 </template>
 
 <script setup>
@@ -164,11 +196,11 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   DatabaseOutlined, ShopOutlined, AppstoreOutlined,
   FundOutlined, ClockCircleOutlined, CarOutlined, SettingOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, MessageOutlined,
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/store/auth'
-import { authApi } from '@/api'
-import { canAccess } from '@/utils/permissions'
+import { authApi, masterApi } from '@/api'
+import { canAccess, getRoleLabel } from '@/utils/permissions'
 
 const router = useRouter()
 const route = useRoute()
@@ -177,6 +209,9 @@ const collapsed = ref(false)
 const selectedKeys = ref([])
 const openKeys = ref([])
 const pendingCount = ref(0)
+const visibleNotices = ref([])
+const noticePopupOpen = ref(false)
+const hideNoticesToday = ref(false)
 
 const canRead = (path) => canAccess(auth.user?.role, path, 'R')
 const canReadAny = (paths) => paths.some(path => canRead(path))
@@ -189,7 +224,42 @@ async function loadPendingCount() {
   } catch { /* silent */ }
 }
 
-onMounted(loadPendingCount)
+function getLocalDateKey() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getNoticeDismissKey(noticeId) {
+  return `lss_notice_hidden_${noticeId}_${getLocalDateKey()}`
+}
+
+async function loadActiveNotices() {
+  try {
+    const res = await masterApi.getActiveNotices()
+    visibleNotices.value = (res.data || []).filter((notice) => (
+      localStorage.getItem(getNoticeDismissKey(notice.id)) !== '1'
+    ))
+    noticePopupOpen.value = visibleNotices.value.length > 0
+  } catch { /* silent */ }
+}
+
+function closeNoticePopup() {
+  if (hideNoticesToday.value) {
+    visibleNotices.value.forEach((notice) => {
+      localStorage.setItem(getNoticeDismissKey(notice.id), '1')
+    })
+  }
+  noticePopupOpen.value = false
+  hideNoticesToday.value = false
+}
+
+onMounted(() => {
+  loadPendingCount()
+  loadActiveNotices()
+})
 
 // 시스템 메뉴 이동 시 뱃지 갱신
 watch(() => route.path, (p) => {
@@ -214,12 +284,13 @@ const pageNames = {
   '/management/analysis': '경영 분석',
   '/management/receivable': '채권관리',
   '/management/payable': '채무관리',
-  '/management/profit-loss': '손익계산서',
   '/timesheet':   '타임시트',
   '/vehicle-log': '차량일지',
+  '/opinion-listening': '의견 청취',
   '/system/users': '사용자 관리',
-  '/system/employees': '사원관리',
   '/system/departments': '부서관리',
+  '/system/notices': '공지사항',
+  '/system/opinion-notifications': '알림 설정',
 }
 
 const sectionMap = {
@@ -229,6 +300,7 @@ const sectionMap = {
   '/management': '경영',
   '/timesheet':   '타임시트',
   '/vehicle-log': '차량일지',
+  '/opinion-listening': '의견 청취',
   '/system':      '설정',
   '/dashboard': '홈',
 }
@@ -335,9 +407,56 @@ function handleLogout() {
   color: #1a2535;
 }
 .user-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 600;
   color: #7f8c8d;
+}
+.user-role {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a4b8c;
+}
+
+.notice-popup-list {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.notice-popup-item {
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+  padding: 18px 20px;
+  background: #ffffff;
+  box-shadow: inset 4px 0 0 #1677ff;
+}
+.notice-popup-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a2535;
+  margin-bottom: 4px;
+}
+.notice-popup-period {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 10px;
+}
+.notice-popup-content {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  color: #2c3e50;
+}
+.notice-popup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }

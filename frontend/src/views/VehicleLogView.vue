@@ -57,7 +57,8 @@
 
           <a-table :columns="logCols" :data-source="logs" :loading="logsLoading"
                    :pagination="{ pageSize: 20, showSizeChanger: true }"
-                   row-key="id" size="middle" :scroll="{ x: 1100 }">
+                   row-key="id" size="middle" :scroll="{ x: 1100 }"
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'route'">
                 <span class="route-text">
@@ -107,7 +108,8 @@
             <a-card :bordered="false" class="dash-card" title="차량별 현황">
               <template #extra><span class="card-extra">{{ month }}월 기준</span></template>
               <a-table :columns="vehicleStatCols" :data-source="stats?.by_vehicle || []"
-                       :pagination="false" size="small" row-key="plate_no">
+                       :pagination="{ pageSize: 20, showSizeChanger: true }" size="small" row-key="plate_no"
+        :sticky="{ offsetHeader: 56 }">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'distance'">
                     {{ record.distance > 0 ? record.distance.toLocaleString() + ' km' : '—' }}
@@ -138,7 +140,8 @@
           </template>
 
           <a-table :columns="vehicleCols" :data-source="vehicles" :loading="vehiclesLoading"
-                   :pagination="false" row-key="id" size="middle" :scroll="{ x: 1000 }">
+                   :pagination="{ pageSize: 20, showSizeChanger: true }" row-key="id" size="middle" :scroll="{ x: 1000 }"
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'insurance_exp'">
                 <a-tooltip v-if="record.insurance_warning" title="30일 이내 만료">
@@ -174,9 +177,10 @@
     </a-tabs>
 
     <!-- ══════════ 운행 일지 등록/수정 Drawer ══════════ -->
-    <a-drawer v-model:open="logDrawerOpen"
+    <a-modal v-model:open="logDrawerOpen"
               :title="editLog ? '운행 일지 수정' : '운행 등록'"
-              width="580" :body-style="{ paddingBottom:'72px' }">
+              width="580" :body-style="{ paddingBottom:'72px' }"
+      centered>
       <a-form :model="logForm" layout="vertical" ref="logFormRef">
 
         <a-divider orientation="left" orientation-margin="0"><span class="sec-label">기본 정보</span></a-divider>
@@ -300,11 +304,6 @@
                               :min="0" :formatter="fmtNum" :parser="parseNum" />
             </a-form-item>
           </a-col>
-          <a-col :span="16">
-            <a-form-item label="비고" name="notes">
-              <a-input v-model:value="logForm.notes" placeholder="특이사항 입력" />
-            </a-form-item>
-          </a-col>
         </a-row>
       </a-form>
 
@@ -316,12 +315,13 @@
           </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
 
     <!-- ══════════ 차량 등록/수정 Drawer ══════════ -->
-    <a-drawer v-model:open="vehicleDrawerOpen"
+    <a-modal v-model:open="vehicleDrawerOpen"
               :title="editVehicle ? '차량 수정' : '차량 등록'"
-              width="520" :body-style="{ paddingBottom:'72px' }">
+              width="520" :body-style="{ paddingBottom:'72px' }"
+      centered>
       <a-form :model="vehicleForm" layout="vertical" ref="vehicleFormRef">
         <a-row :gutter="16">
           <a-col :span="12">
@@ -399,11 +399,6 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="vehicleForm.notes" :rows="2" />
-            </a-form-item>
-          </a-col>
         </a-row>
       </a-form>
       <template #footer>
@@ -414,7 +409,7 @@
           </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
   </div>
 </template>
 
@@ -501,8 +496,8 @@ const logCols = [
   { title: '운전자',   dataIndex: 'driver_name', width: 90,  align: 'center' },
   { title: '목적',     dataIndex: 'purpose',     width: 90,  align: 'center' },
   { title: '경로',     key: 'route',             width: 220, align: 'center', ellipsis: true },
-  { title: '주행(km)', key: 'distance',          width: 90,  align: 'right' },
-  { title: '비용(원)', key: 'extra_total',       width: 100, align: 'right' },
+  { title: '주행(km)', key: 'distance',          width: 135,  align: 'right' },
+  { title: '비용(원)', key: 'extra_total',       width: 135, align: 'right' },
   { title: '프로젝트', dataIndex: 'project_name', width: 150, align: 'center', ellipsis: true },
   { title: '관리',     key: 'action',            width: 100, align: 'center', fixed: 'right' },
 ]
@@ -514,7 +509,7 @@ const vehicleCols = [
   { title: '모델',     dataIndex: 'model_name',    width: 110, align: 'center' },
   { title: '연식',     dataIndex: 'model_year',    width: 70,  align: 'center' },
   { title: '용도',     dataIndex: 'purpose',       width: 80,  align: 'center' },
-  { title: '누적 km',  dataIndex: 'current_km',    width: 100, align: 'right', customRender: ({ text }) => text ? text.toLocaleString() + ' km' : '—' },
+  { title: '누적 km',  dataIndex: 'current_km',    width: 135, align: 'right', customRender: ({ text }) => text ? text.toLocaleString() + ' km' : '—' },
   { title: '보험만료', key: 'insurance_exp',       width: 110, align: 'center' },
   { title: '검사만료', key: 'inspect_exp',         width: 110, align: 'center' },
   { title: '상태',     key: 'is_active',           width: 80,  align: 'center' },
@@ -525,8 +520,8 @@ const vehicleCols = [
 const vehicleStatCols = [
   { title: '차량번호', dataIndex: 'plate_no',  width: 110, align: 'center' },
   { title: '운행 건',  dataIndex: 'count',     width: 70,  align: 'center' },
-  { title: '주행거리', key: 'distance',        width: 100, align: 'right' },
-  { title: '주유비',   key: 'fuel_cost',       width: 100, align: 'right' },
+  { title: '주행거리', key: 'distance',        width: 135, align: 'right' },
+  { title: '주유비',   key: 'fuel_cost',       width: 135, align: 'right' },
   { title: '비율',     key: 'bar',             width: 80 },
 ]
 

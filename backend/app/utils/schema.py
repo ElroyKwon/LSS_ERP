@@ -2,6 +2,7 @@ from sqlalchemy import inspect, text
 
 
 COMPANY_COLUMNS = {
+    "company_group_code": "VARCHAR(20)",
     "short_name": "VARCHAR(40)",
     "resident_type": "VARCHAR(20)",
     "resident_no": "VARCHAR(20)",
@@ -69,11 +70,15 @@ COMPANY_COLUMNS = {
     "receiver_phone": "VARCHAR(20)",
     "receiver_fax": "VARCHAR(20)",
     "receiver_notes": "TEXT",
+    "bank_name": "VARCHAR(50)",
+    "bank_account": "VARCHAR(50)",
+    "bank_holder": "VARCHAR(50)",
     "receivables_note": "TEXT",
 }
 
 
 MATERIAL_COLUMNS = {
+    "material_company_group_code": "VARCHAR(20)",
     "management_unit": "VARCHAR(20)",
     "conversion_factor": "NUMERIC(18, 6)",
     "procurement_type": "VARCHAR(20)",
@@ -115,6 +120,16 @@ EMPLOYEE_COLUMNS = {
     "wedding_anniversary": "DATE",
     "home_address": "VARCHAR(200)",
     "corporate_card_no": "VARCHAR(50)",
+}
+
+
+USER_COLUMNS = {
+    "employee_code": "VARCHAR(20)",
+}
+
+
+USER_REGISTRATION_COLUMNS = {
+    "employee_code": "VARCHAR(20)",
 }
 
 
@@ -163,6 +178,7 @@ ACCOUNTS_PAYABLE_COLUMNS = {
     "subcontract_type": "VARCHAR(30)",
     "payment_terms": "VARCHAR(200)",
     "collection_terms": "VARCHAR(200)",
+    "related_revenue_no": "VARCHAR(50)",
     "related_revenue": "NUMERIC(18, 2) DEFAULT 0",
     "related_revenue_collection_date": "DATE",
     "related_revenue_collection_method": "VARCHAR(50)",
@@ -175,6 +191,23 @@ ACCOUNTS_PAYABLE_COLUMNS = {
 
 PROJECT_PLAN_COLUMNS = {
     "invoice_plan": "NUMERIC(18, 2) DEFAULT 0",
+}
+
+PROJECT_COLUMNS = {
+    "excel_data_json": "TEXT",
+}
+
+MASTER_INDEXES = {
+    "companies": [
+        ("idx_companies_active_name", "is_active, company_name"),
+        ("idx_companies_active_code", "is_active, company_code"),
+        ("idx_companies_business_no", "business_no"),
+    ],
+    "materials": [
+        ("idx_materials_active_code", "is_active, material_code"),
+        ("idx_materials_active_name", "is_active, material_name"),
+        ("idx_materials_active_type_code", "is_active, material_type, material_code"),
+    ],
 }
 
 
@@ -193,12 +226,29 @@ def _ensure_columns(engine, table_name, columns):
             conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {name} {ddl_type}"))
 
 
+def _ensure_indexes(engine, index_map):
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table_name, indexes in index_map.items():
+            if table_name not in table_names:
+                continue
+            existing = {idx["name"] for idx in inspector.get_indexes(table_name)}
+            for index_name, columns in indexes:
+                if index_name in existing:
+                    continue
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns})"))
+
+
 def ensure_master_columns(engine):
+    _ensure_columns(engine, "users", USER_COLUMNS)
+    _ensure_columns(engine, "user_registrations", USER_REGISTRATION_COLUMNS)
     _ensure_columns(engine, "departments", DEPARTMENT_COLUMNS)
     _ensure_columns(engine, "companies", COMPANY_COLUMNS)
     _ensure_columns(engine, "materials", MATERIAL_COLUMNS)
     _ensure_columns(engine, "employees", EMPLOYEE_COLUMNS)
     _ensure_columns(engine, "timesheet_entries", TIMESHEET_ENTRY_COLUMNS)
+    _ensure_indexes(engine, MASTER_INDEXES)
 
 
 def ensure_accounting_columns(engine):
@@ -207,4 +257,5 @@ def ensure_accounting_columns(engine):
 
 
 def ensure_execution_columns(engine):
+    _ensure_columns(engine, "projects", PROJECT_COLUMNS)
     _ensure_columns(engine, "project_plans", PROJECT_PLAN_COLUMNS)

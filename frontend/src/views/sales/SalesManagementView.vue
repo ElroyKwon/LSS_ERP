@@ -24,6 +24,13 @@
             <template #icon><PlusOutlined /></template>
             행 추가
           </a-button>
+          <input ref="excelInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="handleExcelFile" />
+          <a-button :loading="importing" @click="excelInput?.click()">
+            <template #icon><UploadOutlined /></template>엑셀 업로드
+          </a-button>
+          <a-button @click="downloadTemplate">
+            <template #icon><DownloadOutlined /></template>양식 다운로드
+          </a-button>
           <a-button type="primary" :loading="saving" @click="saveRows">저장</a-button>
         </a-space>
       </template>
@@ -46,7 +53,8 @@
         size="small"
         bordered
         class="sales-management-table"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'project_name'">
             <a-input
@@ -74,7 +82,7 @@
             />
           </template>
 
-          <template v-else-if="column.key === 'sales_no' || column.key === 'project_no'">
+          <template v-else-if="column.key === 'entry_round' || column.key === 'sales_no' || column.key === 'project_no'">
             <span class="readonly-text-cell">{{ record[column.key] || '-' }}</span>
           </template>
 
@@ -145,7 +153,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { DownloadOutlined, LeftOutlined, PlusOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { executionApi, salesApi } from '@/api'
 
 const now = new Date()
@@ -155,7 +163,7 @@ const carryoverYear = currentYear + 2
 const monthLabels = Array.from({ length: 12 }, (_, index) => `${index + 1}월`)
 
 const probabilityOptions = ['A', 'B', 'C', 'D', 'E'].map(value => ({ value, label: value }))
-const salesStatusOptions = ['수주확정', '사업발굴', '수주기회개발', '입찰', '견적', '낙찰', '계약진행', '수주실패']
+const salesStatusOptions = ['수주확정', '사업발굴', '수주기회개발', '입찰', '견적', '협상', '계약진행', '수주실패']
   .map(value => ({ value, label: value }))
 const textKeys = new Set([
   'client_name',
@@ -192,11 +200,13 @@ const calculatedKeys = new Set([
 
 const loading = ref(false)
 const saving = ref(false)
+const importing = ref(false)
 const dirty = ref(false)
 const rows = ref([])
 const projects = ref([])
 const sourceWeek = ref(null)
 const weekStart = ref(formatDate(startOfWeek(new Date())))
+const excelInput = ref()
 
 const tableScrollX = computed(() => sumColumnWidths(columns.value))
 const weekEnd = computed(() => {
@@ -207,6 +217,7 @@ const weekEnd = computed(() => {
 const weekRangeLabel = computed(() => `${formatWeekDate(new Date(weekStart.value))} ~ ${formatWeekDate(weekEnd.value)}`)
 
 const columns = computed(() => [
+  leaf('작성차수', 'entry_round', 100, 'center', false, 'left'),
   leaf('영업번호', 'sales_no', 110, 'center', false, 'left'),
   leaf('프로젝트명', 'project_name', 220, 'center', true),
   leaf('발주처', 'client_name', 180),
@@ -223,27 +234,27 @@ const columns = computed(() => [
   leaf('내수/해외', 'domestic_overseas', 100),
   leaf('특수관계', 'special_relation', 100),
   leaf('재료비', 'material_cost', 135, 'right'),
-  leaf('재료비율(%)', 'material_ratio', 115, 'right'),
+  leaf('재료비율(%)', 'material_ratio', 135, 'right'),
   leaf('발주예상금액', 'expected_order_amount', 145, 'right'),
-  group(`${currentYear}년`, [
+  group(`${currentYear}년 발주`, [
     leaf(`${currentYear}년도 발주합계`, 'order_current_total', 150, 'right'),
-    ...monthLabels.map(month => leaf(month, `order_current_${month}`, 115, 'right')),
+    ...monthLabels.map(month => leaf(month, `order_current_${month}`, 135, 'right')),
   ]),
-  group(`${nextYear}년`, [
+  group(`${nextYear}년 발주`, [
     leaf(`${nextYear}년도 발주합계`, 'order_next_total', 150, 'right'),
-    ...monthLabels.map(month => leaf(month, `order_next_${month}`, 115, 'right')),
+    ...monthLabels.map(month => leaf(month, `order_next_${month}`, 135, 'right')),
   ]),
   group('매출 계획', [
     leaf(`${currentYear}년도 매출합계`, 'revenue_current_total', 150, 'right'),
-    ...monthLabels.map(month => leaf(`${month}매출`, `revenue_current_${month}`, 120, 'right')),
+    ...monthLabels.map(month => leaf(`${month}매출`, `revenue_current_${month}`, 135, 'right')),
     leaf(`${currentYear}년 수주잔`, 'order_current_backlog', 145, 'right'),
     leaf(`${nextYear}년도 매출합계`, 'revenue_next_total', 150, 'right'),
-    ...monthLabels.map(month => leaf(`${month}매출`, `revenue_next_${month}`, 120, 'right')),
+    ...monthLabels.map(month => leaf(`${month}매출`, `revenue_next_${month}`, 135, 'right')),
     leaf(`${nextYear}년 수주잔`, 'order_next_backlog', 145, 'right'),
   ]),
   leaf(`${carryoverYear}년 이월 매출`, 'carryover_revenue', 155, 'right'),
   leaf('매출이익', 'gross_profit', 140, 'right'),
-  leaf('매출이익율(%)', 'profit_rate', 120, 'right'),
+  leaf('매출이익률(%)', 'profit_rate', 135, 'right'),
   leaf('관리', 'action', 85, 'center', false, 'right'),
 ])
 
@@ -268,6 +279,14 @@ function formatDate(date) {
 
 function formatWeekDate(date) {
   return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`
+}
+
+function formatEntryRound(value) {
+  const date = new Date(value)
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1)
+  const mondayOffset = (firstDay.getDay() + 6) % 7
+  const weekNo = Math.floor((date.getDate() + mondayOffset - 1) / 7) + 1
+  return `${String(date.getFullYear()).slice(2)}-${String(date.getMonth() + 1).padStart(2, '0')}-${weekNo}`
 }
 
 function startOfWeek(date) {
@@ -385,6 +404,7 @@ function handleTextChange(record) {
 function normalizeRow(source = {}) {
   const row = {
     id: source.id || `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    entry_round: source.entry_round || formatEntryRound(weekStart.value),
     sales_no: source.sales_no || '',
     project_name: source.project_name || '',
     client_name: source.client_name || '',
@@ -426,6 +446,41 @@ function markDirty() {
   dirty.value = true
 }
 
+function saveBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.URL.revokeObjectURL(url)
+}
+
+async function downloadTemplate() {
+  const res = await salesApi.downloadSalesManagementTemplate()
+  saveBlob(res.data, '영업관리_양식.xlsx')
+}
+
+async function handleExcelFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await salesApi.importSalesManagementExcel(weekStart.value, formData)
+    const { imported = 0, updated = 0, skipped = 0, rows: importedRows = [] } = res.data || {}
+    rows.value = importedRows.map(normalizeRow)
+    sourceWeek.value = weekStart.value
+    dirty.value = false
+    message.success(`엑셀 업로드 완료: 신규 ${imported}건, 수정 ${updated}건, 제외 ${skipped}건`)
+  } catch (e) {
+    message.error(e.response?.data?.detail || '엑셀 업로드 중 오류가 발생했습니다.')
+  } finally {
+    importing.value = false
+  }
+}
+
 function serializeRow(row) {
   const payload = { ...row }
   calculatedKeys.forEach(key => { payload[key] = calculatedValue(row, key) })
@@ -450,6 +505,7 @@ async function loadRows() {
         ...row,
         db_id: undefined,
         week_start: weekStart.value,
+        entry_round: undefined,
         id: `copy-${row.id}`,
       }))
       sourceWeek.value = latest.data.week_start

@@ -34,17 +34,6 @@
           </div>
         </a-card>
       </a-col>
-      <a-col :flex="1">
-        <a-card :bordered="false" class="stat-card stat-purple">
-          <div class="stat-inner">
-            <div class="stat-icon icon-purple"><FileTextOutlined /></div>
-            <div>
-              <div class="stat-label">외담대 정보</div>
-              <div class="stat-value" style="color:#722ed1">{{ stats.withReceivables }}<span class="stat-unit">건</span></div>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
     </a-row>
 
     <a-card :bordered="false" class="table-card">
@@ -56,8 +45,15 @@
             placeholder="거래처명 / 약칭 / 사업자번호 검색"
             style="width:280px"
             allow-clear
-            @search="load"
+            @search="resetAndLoad"
           />
+          <input ref="excelInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="handleExcelFile" />
+          <a-button :loading="importing" @click="excelInput?.click()">
+            <template #icon><UploadOutlined /></template>엑셀 업로드
+          </a-button>
+          <a-button @click="downloadTemplate">
+            <template #icon><DownloadOutlined /></template>양식 다운로드
+          </a-button>
           <a-button type="primary" @click="openEditor(null)">
             <template #icon><PlusOutlined /></template>신규 등록
           </a-button>
@@ -68,11 +64,13 @@
         :columns="columns"
         :data-source="companies"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="tablePagination"
         row-key="id"
         size="middle"
-        :scroll="{ x: 2210 }"
-      >
+        :scroll="{ x: 3260 }"
+        @change="handleTableChange"
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
             <a-space size="small">
@@ -96,7 +94,7 @@
     <a-modal
       v-model:open="editorOpen"
       :title="editItem ? '거래처 수정' : '거래처 신규 등록'"
-      width="1180px"
+      width="720px"
       wrap-class-name="company-editor-modal"
       :confirm-loading="saving"
       ok-text="저장"
@@ -112,8 +110,19 @@
             <div>구분</div>
           </div>
           <div class="legacy-grid-body">
-            <div v-for="company in companies" :key="company.id" class="legacy-grid-row" @click="openEditor(company)">
-              <div></div>
+            <div
+              v-for="company in companies"
+              :key="company.id"
+              :class="['legacy-grid-row', editItem?.id === company.id ? 'selected' : '']"
+              @click="selectCompanyFromList(company)"
+            >
+              <div class="check-cell-body">
+                <a-checkbox
+                  :checked="editItem?.id === company.id"
+                  @click.stop
+                  @change="selectCompanyFromList(company)"
+                />
+              </div>
               <div>{{ company.company_code }}</div>
               <div>{{ company.company_name }}</div>
               <div>{{ company.company_type || '거래처' }}</div>
@@ -361,9 +370,6 @@
                   <a-input v-model:value="form.manager_email" />
                   <a-button class="icon-button" @click="openMail(form.manager_email)"><MailOutlined /></a-button>
                 </FormLine>
-                <FormLine label="비고" name="manager_notes" wide>
-                  <a-input v-model:value="form.manager_notes" />
-                </FormLine>
               </div>
 
               <div class="section-box extra-section receive-section">
@@ -383,9 +389,6 @@
                 </FormLine>
                 <FormLine label="팩스번호" name="receiver_fax">
                   <a-input v-model:value="form.receiver_fax" />
-                </FormLine>
-                <FormLine label="비고" name="receiver_notes" wide>
-                  <a-input v-model:value="form.receiver_notes" />
                 </FormLine>
               </div>
             </a-tab-pane>
@@ -413,11 +416,12 @@
         :columns="lookupColumns"
         :data-source="lookupRows"
         :loading="lookupLoading"
-        :pagination="false"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
         row-key="code"
         size="small"
         :custom-row="record => ({ onDblclick: () => selectLookup(record) })"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
             <a-button type="link" size="small" @click="selectLookup(record)">선택</a-button>
@@ -490,13 +494,14 @@ import {
   BankOutlined,
   CaretRightOutlined,
   CheckSquareOutlined,
-  FileTextOutlined,
+  DownloadOutlined,
   HomeOutlined,
   IdcardOutlined,
   MailOutlined,
   PlusOutlined,
   SearchOutlined,
   TeamOutlined,
+  UploadOutlined,
 } from '@ant-design/icons-vue'
 
 const authStore = useAuthStore()
@@ -526,14 +531,18 @@ const FormLine = defineComponent({
 })
 
 const companies = ref([])
+const statsData = ref({ total: 0, withBusinessNo: 0, withBank: 0 })
 const loading = ref(false)
 const saving = ref(false)
+const importing = ref(false)
 const editorOpen = ref(false)
 const lookupOpen = ref(false)
 const editItem = ref(null)
 const activeTab = ref('basic')
 const search = ref('')
 const formRef = ref()
+const excelInput = ref()
+const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 const lookupConfig = ref({ type: '', codeField: '', nameField: '' })
 const lookupRows = ref([])
 const lookupLoading = ref(false)
@@ -551,6 +560,7 @@ const businessStatusModal = reactive({
 })
 
 const emptyForm = {
+  company_group_code: '',
   company_code: '',
   short_name: '',
   company_name: '',
@@ -635,27 +645,37 @@ const emptyForm = {
 const form = reactive({ ...emptyForm })
 
 const stats = computed(() => ({
-  total: companies.value.length,
-  withBusinessNo: companies.value.filter(c => c.business_no).length,
-  withBank: companies.value.filter(c => c.bank_name || c.bank_account || c.payment_bank_name).length,
-  withReceivables: companies.value.filter(c => c.receivables_note || c.credit_limit).length,
+  total: statsData.value.total,
+  withBusinessNo: statsData.value.withBusinessNo,
+  withBank: statsData.value.withBank,
+}))
+
+const tablePagination = computed(() => ({
+  current: pagination.current,
+  pageSize: pagination.pageSize,
+  total: pagination.total,
+  showSizeChanger: true,
+  showTotal: total => `총 ${total.toLocaleString()}건`,
 }))
 
 const columns = [
-  { title: '거래처 약칭', dataIndex: 'short_name', width: 150, align: 'center', ellipsis: true },
-  { title: '거래처명', dataIndex: 'company_name', width: 210, align: 'center', ellipsis: true },
-  { title: '사업자등록번호', dataIndex: 'business_no', width: 150, align: 'center' },
-  { title: '대표자명', dataIndex: 'ceo_name', width: 110, align: 'center' },
-  { title: '업태', dataIndex: 'business_type', width: 130, align: 'center', ellipsis: true },
-  { title: '종목', dataIndex: 'business_item', width: 130, align: 'center', ellipsis: true },
-  { title: '우편번호', dataIndex: 'postal_code', width: 100, align: 'center' },
-  { title: '주소 상세1', dataIndex: 'address_detail1', width: 220, align: 'center', ellipsis: true },
-  { title: '전화번호', dataIndex: 'phone', width: 140, align: 'center' },
-  { title: '이메일', dataIndex: 'email', width: 180, align: 'center', ellipsis: true },
-  { title: '금융기관', dataIndex: 'bank_name', width: 120, align: 'center' },
-  { title: '예금 계좌 번호', dataIndex: 'bank_account', width: 170, align: 'center' },
-  { title: '예금주명', dataIndex: 'bank_holder', width: 120, align: 'center' },
-  { title: '외담대', dataIndex: 'receivables_note', width: 180, align: 'center', ellipsis: true },
+  { title: '회사코드', dataIndex: 'company_group_code', width: 110, align: 'center' },
+  { title: '거래처코드', dataIndex: 'company_code', width: 130, align: 'center' },
+  { title: '거래처 구분', dataIndex: 'company_type', width: 120, align: 'center' },
+  { title: '거래처명', dataIndex: 'company_name', width: 300, align: 'center', ellipsis: true },
+  { title: '거래처명 약칭', dataIndex: 'short_name', width: 240, align: 'center', ellipsis: true },
+  { title: '사업자등록번호', dataIndex: 'business_no', width: 170, align: 'center' },
+  { title: '대표자명', dataIndex: 'ceo_name', width: 140, align: 'center' },
+  { title: '업태', dataIndex: 'business_type', width: 180, align: 'center', ellipsis: true },
+  { title: '종목', dataIndex: 'business_item', width: 180, align: 'center', ellipsis: true },
+  { title: '주소 상세1', dataIndex: 'address_detail1', width: 360, align: 'center', ellipsis: true },
+  { title: '전화번호', dataIndex: 'phone', width: 170, align: 'center' },
+  { title: '팩스번호', dataIndex: 'fax', width: 170, align: 'center' },
+  { title: '이메일', dataIndex: 'email', width: 260, align: 'center', ellipsis: true },
+  { title: '금융기관코드', dataIndex: 'payment_bank_code', width: 150, align: 'center' },
+  { title: '금융기관', dataIndex: 'bank_name', width: 180, align: 'center', ellipsis: true },
+  { title: '예금 계좌번호', dataIndex: 'bank_account', width: 220, align: 'center' },
+  { title: '예금주', dataIndex: 'bank_holder', width: 220, align: 'center' },
   { title: '관리', key: 'action', width: 100, align: 'center', fixed: 'right' },
 ]
 
@@ -743,21 +763,84 @@ const businessStatusColor = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const res = await masterApi.getCompanies({ search: search.value || undefined })
-    companies.value = res.data
+    const res = await masterApi.getCompanies({
+      search: search.value || undefined,
+      page: pagination.current,
+      page_size: pagination.pageSize,
+    })
+    companies.value = res.data.items || res.data
+    pagination.total = res.data.total ?? companies.value.length
+    statsData.value = res.data.stats || {
+      total: companies.value.length,
+      withBusinessNo: companies.value.filter(c => c.business_no).length,
+      withBank: companies.value.filter(c => c.bank_name || c.bank_account || c.payment_bank_name).length,
+    }
   } finally {
     loading.value = false
   }
 }
 
-function openEditor(item) {
+function resetAndLoad() {
+  pagination.current = 1
+  load()
+}
+
+function handleTableChange(nextPagination) {
+  pagination.current = nextPagination.current || 1
+  pagination.pageSize = nextPagination.pageSize || 20
+  load()
+}
+
+function saveBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.URL.revokeObjectURL(url)
+}
+
+async function downloadTemplate() {
+  const res = await masterApi.downloadCompaniesTemplate()
+  saveBlob(res.data, '거래처_관리_양식.xlsx')
+}
+
+async function handleExcelFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await masterApi.importCompaniesExcel(formData)
+    const { imported = 0, updated = 0, skipped = 0 } = res.data || {}
+    message.success(`엑셀 업로드 완료: 신규 ${imported}건, 수정 ${updated}건, 제외 ${skipped}건`)
+    await load()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '엑셀 업로드 중 오류가 발생했습니다.')
+  } finally {
+    importing.value = false
+  }
+}
+
+async function openEditor(item) {
   editItem.value = item
   activeTab.value = 'basic'
-  Object.assign(form, emptyForm, item || {})
+  let detail = item
+  if (item?.id) {
+    const res = await masterApi.getCompany(item.id)
+    detail = res.data
+  }
+  Object.assign(form, emptyForm, detail || {})
   if (form.payment_bank_name && !form.bank_name) form.bank_name = form.payment_bank_name
   if (form.payment_account_no && !form.bank_account) form.bank_account = form.payment_account_no
   if (form.payment_account_holder && !form.bank_holder) form.bank_holder = form.payment_account_holder
   editorOpen.value = true
+}
+
+async function selectCompanyFromList(company) {
+  await openEditor(company)
 }
 
 function openLookup(type, codeField, nameField) {
@@ -954,13 +1037,11 @@ onMounted(load)
 .stat-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }
 .stat-blue { border-left-color: #1677ff; }
 .stat-green { border-left-color: #52c41a; }
-.stat-purple { border-left-color: #722ed1; }
 .stat-inner { display: flex; align-items: center; gap: 14px; }
 .stat-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
 .icon-gray { background: #f0f2f5; color: #595959; }
 .icon-blue { background: #e6f4ff; color: #1677ff; }
 .icon-green { background: #f6ffed; color: #52c41a; }
-.icon-purple { background: #f9f0ff; color: #722ed1; }
 .stat-label { font-size: 12px; color: #8c8c8c; margin-bottom: 2px; }
 .stat-value { font-size: 24px; font-weight: 700; color: #1a2535; line-height: 1.2; }
 .stat-unit { font-size: 13px; font-weight: 400; margin-left: 3px; color: #8c8c8c; }
@@ -969,18 +1050,20 @@ onMounted(load)
 .sub-text { color: #8c8c8c; font-size: 12px; line-height: 1.4; }
 .del-link { color: #e74c3c; }
 .del-link:hover { color: #c0392b; }
-.legacy-editor { display: grid; grid-template-columns: 300px 1fr; gap: 10px; height: 720px; background: #f7fbff; overflow: hidden; }
+.legacy-editor { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 10px; height: 100%; min-height: 0; background: #f7fbff; overflow: hidden; }
 .legacy-list { border: 1px solid #b9d3ef; background: #fff; display: flex; flex-direction: column; min-width: 0; }
 .legacy-grid-head { display: grid; grid-template-columns: 34px 76px 1fr 46px; background: #2f76a7; color: #fff; font-weight: 700; font-size: 14px; height: 30px; line-height: 30px; text-align: center; }
 .legacy-grid-head > div { border-right: 1px solid rgba(255,255,255,0.35); }
 .check-cell { font-size: 16px; color: #ffcf4d; }
+.check-cell-body { display: flex; align-items: center; justify-content: center; padding: 0 !important; }
 .legacy-grid-body { flex: 1; overflow: auto; background: #fff; }
 .legacy-grid-row { display: grid; grid-template-columns: 34px 76px 1fr 46px; min-height: 28px; border-bottom: 1px solid #e6f0fb; cursor: pointer; font-size: 12px; }
 .legacy-grid-row:hover { background: #eef6ff; }
+.legacy-grid-row.selected { background: #dceeff; }
 .legacy-grid-row > div { padding: 5px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid #eef2f7; }
 .legacy-grid-foot { height: 26px; border-top: 1px solid #f4c06d; background: linear-gradient(90deg, #fff0c4 0 36px, #f38b00 36px 140px, #fff0c4 140px); }
-.legacy-form { min-width: 0; overflow: hidden; }
-.legacy-tabs.tab-basic { height: 100%; }
+.legacy-form { min-width: 0; min-height: 0; overflow: hidden; }
+.legacy-tabs { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .section-box { border: 1px solid #8fbbe8; border-radius: 4px; background: #eaf4fb; padding: 10px 14px; margin-bottom: 7px; }
 .basic-main { min-height: 379px; }
 .basic-extra { min-height: 286px; }
@@ -1002,16 +1085,13 @@ onMounted(load)
 .day-input { width: 90px; }
 .lookup-wide { width: 150px; color: #fff; background: #aeb5bb; border-color: #9da5ad; }
 .icon-button { width: 24px; padding: 0; flex: 0 0 24px; color: #557ca5; }
-:deep(.legacy-tabs > .ant-tabs-nav) { margin: 0; }
-:deep(.legacy-tabs .ant-tabs-tab) { min-width: 150px; justify-content: center; border-color: #8aa9cf !important; background: linear-gradient(#f7f7f7, #d7d7d7) !important; font-weight: 700; }
+:deep(.legacy-tabs > .ant-tabs-nav) { flex: 0 0 auto; margin: 0; }
+:deep(.legacy-tabs .ant-tabs-tab) { min-width: 126px; justify-content: center; border-color: #8aa9cf !important; background: linear-gradient(#f7f7f7, #d7d7d7) !important; font-weight: 700; }
+:deep(.legacy-tabs .ant-tabs-tab-btn) { overflow: visible; text-overflow: clip; white-space: nowrap; }
 :deep(.legacy-tabs .ant-tabs-tab-active) { background: #eaf4fb !important; border-bottom-color: #eaf4fb !important; }
-:deep(.legacy-tabs .ant-tabs-content-holder) { border: 1px solid #8fbbe8; border-top: none; padding: 0; background: #eaf4fb; height: calc(100% - 32px); overflow: auto; }
+:deep(.legacy-tabs .ant-tabs-content-holder) { flex: 1 1 auto; border: 1px solid #8fbbe8; border-top: none; padding: 0; background: #eaf4fb; height: auto; overflow: hidden; min-height: 0; }
 :deep(.legacy-tabs .ant-tabs-content) { height: 100%; }
-:deep(.legacy-tabs .ant-tabs-tabpane) { padding: 0; }
-:deep(.legacy-tabs.tab-trade .ant-tabs-content-holder),
-:deep(.legacy-tabs.tab-extra .ant-tabs-content-holder) { height: auto; overflow: visible; }
-:deep(.legacy-tabs.tab-trade .ant-tabs-content),
-:deep(.legacy-tabs.tab-extra .ant-tabs-content) { height: auto; }
+:deep(.legacy-tabs .ant-tabs-tabpane) { height: 100%; padding: 0 0 18px; overflow: auto; box-sizing: border-box; }
 :deep(.form-line .ant-form-item) { margin: 0; min-width: 0; }
 :deep(.form-line .ant-form-item-control-input) { min-height: 28px; }
 :deep(.form-line .ant-form-item-control-input-content) { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -1022,5 +1102,16 @@ onMounted(load)
 :deep(.wide .ant-form-item-control-input-content > .ant-input),
 :deep(.wide .ant-form-item-control-input-content > .ant-select) { max-width: 535px; }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
+:deep(.ant-table-thead > tr > th),
+:deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+:deep(.ant-table-tbody > tr > td) {
+  height: 44px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
 </style>

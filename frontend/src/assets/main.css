@@ -15,31 +15,60 @@ html, body, #app {
 ::-webkit-scrollbar-thumb { background: #c8d6e5; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #a0b4c8; }
 
-/* Modal screens are presented as right-side panels to keep popup behavior consistent with drawers. */
-.ant-modal-root .ant-modal-wrap {
-  display: flex;
-  justify-content: flex-end;
-  align-items: stretch;
-  overflow: hidden;
+/* Table header sticky behavior is enabled through Ant Table's sticky prop. */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: #fafafa;
 }
 
-.ant-modal-root .ant-modal {
-  top: 0;
-  margin: 0;
+.ant-table-wrapper .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.ant-table-wrapper .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  z-index: 6;
+}
+
+.ant-table-wrapper .ant-table-sticky-holder {
+  z-index: 5;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  white-space: nowrap;
+}
+
+.ant-table-wrapper .num-cell,
+.ant-table-wrapper .num-text,
+.ant-table-wrapper .amount-cell,
+.ant-table-wrapper .readonly-cell {
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.ant-table-wrapper .ant-input-number-input {
+  white-space: nowrap;
+}
+
+.ant-modal-root .notice-center-modal {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+}
+
+.ant-modal-root .notice-center-modal .ant-modal {
+  top: auto;
+  margin: 0 auto;
   padding-bottom: 0;
-  max-width: min(760px, 100vw);
+  max-width: calc(100vw - 32px);
 }
 
-.ant-modal-root .ant-modal-content {
-  height: 100vh;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.12);
+.ant-modal-root .notice-center-modal .ant-modal-content {
+  height: auto;
+  max-height: calc(100vh - 64px);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
 
-.ant-modal-root .ant-modal-body {
-  flex: 1;
+.ant-modal-root .notice-center-modal .ant-modal-body {
+  flex: initial;
   overflow: auto;
 }
 
@@ -47,27 +76,121 @@ html, body, #app {
   max-width: min(520px, 100vw);
 }
 
-.ant-modal-root .company-editor-modal .ant-modal {
-  width: min(1180px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px);
+.ant-modal-root .ant-modal-confirm .ant-modal-content {
+  border-radius: 8px;
 }
 
-.ant-modal-root .company-editor-modal .ant-modal-body {
+.ant-modal-root .ant-modal:not(.ant-modal-confirm) {
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .ant-modal:not(.ant-modal-confirm) .ant-modal-body {
+  max-height: calc(100vh - 220px);
   overflow: auto;
 }
 
+.ant-modal-root .project-editor-modal .ant-modal {
+  width: min(840px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .project-editor-modal .ant-modal-body {
+  overflow: auto;
+}
+
+.ant-modal-root .sales-billing-modal .ant-modal {
+  width: min(960px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .estimate-editor-modal .ant-modal {
+  width: min(840px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .estimate-editor-modal .ant-modal-body {
+  overflow: auto;
+}
+
+.ant-modal-root .purchase-billing-modal .ant-modal {
+  width: min(840px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .purchase-contract-modal .ant-modal {
+  width: min(945px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .material-editor-modal .ant-modal {
+  width: min(900px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+  top: 24px;
+  padding-bottom: 24px;
+}
+
+.ant-modal-root .material-editor-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
+}
+
+.ant-modal-root .material-editor-modal .ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ant-modal-root .material-editor-modal .ant-modal-footer {
+  flex: 0 0 auto;
+}
+
+.ant-modal-root .opinion-editor-modal .ant-modal,
+.ant-modal-root .opinion-detail-modal .ant-modal {
+  width: min(760px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+}
+
+.ant-modal-root .company-editor-modal .ant-modal {
+  width: min(720px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+  top: 24px;
+  padding-bottom: 24px;
+}
+
+.ant-modal-root .company-editor-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
+}
+
+.ant-modal-root .company-editor-modal .ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ant-modal-root .company-editor-modal .ant-modal-footer {
+  flex: 0 0 auto;
+}
+
 .ant-modal-root .design-request-modal .ant-modal {
-  width: min(1180px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px);
+  width: min(1120px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
+  top: 24px;
+  padding-bottom: 24px;
 }
 
 .ant-modal-root .design-request-modal .ant-modal-body {
   overflow: auto;
 }
 
+.ant-modal-root .release-request-modal.ant-modal-wrap .ant-modal,
 .ant-modal-root .release-request-modal .ant-modal {
-  width: min(920px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px);
+  width: min(760px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px);
 }
 
 .ant-modal-root .release-request-modal .ant-modal-body {

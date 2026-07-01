@@ -1,12 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import Optional, List
+from io import BytesIO
+from urllib.parse import quote
 from ..database import get_db
 from ..models.master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
-from ..models.common import User, Department
+from ..models.common import User, Department, Notice
 from ..utils.auth import get_current_user, hash_password
 from ..utils.permissions import is_system_admin, normalize_role, validate_role
+from ..services.user_employee_sync import deactivate_employee_for_user, effective_employee_code, sync_employee_for_user
+from ..utils.excel_import import (
+    COMPANY_HEADERS,
+    MATERIAL_HEADERS,
+    make_company_template_response,
+    make_source_header_template_response,
+    make_template_response,
+    read_upload_rows,
+    to_date_value,
+    to_decimal_value,
+)
 from ..services import external_api
 from pydantic import BaseModel
 from datetime import date, datetime
@@ -15,9 +29,53 @@ from decimal import Decimal
 router = APIRouter(prefix="/api", tags=["기준정보"])
 
 
+def _excel_response(content: bytes, filename: str):
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
 class ExternalApiKeyUpdate(BaseModel):
     service: str
     key: str
+
+
+class NoticeCreate(BaseModel):
+    title: str
+    content: str
+    start_date: date
+    end_date: date
+    is_active: bool = True
+
+
+class NoticeUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+def _notice_dict(notice: Notice):
+    return {
+        "id": notice.id,
+        "title": notice.title,
+        "content": notice.content,
+        "start_date": notice.start_date.isoformat() if notice.start_date else None,
+        "end_date": notice.end_date.isoformat() if notice.end_date else None,
+        "is_active": notice.is_active,
+        "created_by": notice.created_by,
+        "creator_name": notice.creator.name if notice.creator else None,
+        "created_at": notice.created_at,
+        "updated_at": notice.updated_at,
+    }
+
+
+def _validate_notice_period(start_date: date, end_date: date):
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="게시 종료일은 시작일보다 빠를 수 없습니다.")
 
 
 @router.get("/external/business-status")
@@ -44,6 +102,72 @@ def update_external_api_key(data: ExternalApiKeyUpdate, current=Depends(get_curr
 
 
 # ── 부서 ──────────────────────────────────────────
+@router.get("/notices")
+def list_notices(db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    rows = db.query(Notice).order_by(Notice.created_at.desc(), Notice.id.desc()).all()
+    return [_notice_dict(row) for row in rows]
+
+
+@router.get("/notices/active")
+def list_active_notices(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    today = date.today()
+    rows = (
+        db.query(Notice)
+        .filter(
+            Notice.is_active == True,
+            Notice.start_date <= today,
+            Notice.end_date >= today,
+        )
+        .order_by(Notice.start_date.desc(), Notice.id.desc())
+        .all()
+    )
+    return [_notice_dict(row) for row in rows]
+
+
+@router.post("/notices")
+def create_notice(data: NoticeCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    _validate_notice_period(data.start_date, data.end_date)
+    notice = Notice(**data.dict(), created_by=current.id)
+    db.add(notice)
+    db.commit()
+    db.refresh(notice)
+    return _notice_dict(notice)
+
+
+@router.put("/notices/{notice_id}")
+def update_notice(notice_id: int, data: NoticeUpdate, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    notice = db.query(Notice).filter(Notice.id == notice_id).first()
+    if not notice:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    payload = data.dict(exclude_unset=True)
+    start_date = payload.get("start_date", notice.start_date)
+    end_date = payload.get("end_date", notice.end_date)
+    _validate_notice_period(start_date, end_date)
+    for field, value in payload.items():
+        setattr(notice, field, value)
+    db.commit()
+    db.refresh(notice)
+    return _notice_dict(notice)
+
+
+@router.delete("/notices/{notice_id}")
+def delete_notice(notice_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    notice = db.query(Notice).filter(Notice.id == notice_id).first()
+    if not notice:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    db.delete(notice)
+    db.commit()
+    return {"ok": True}
+
+
 class DepartmentCreate(BaseModel):
     code: Optional[str] = None
     name: str
@@ -237,6 +361,7 @@ def delete_department(dept_id: int, db: Session = Depends(get_db), current=Depen
 # ── 사용자 ──────────────────────────────────────────
 class UserCreate(BaseModel):
     username: str
+    employee_code: Optional[str] = None
     password: str
     name: str
     email: Optional[str] = None
@@ -247,6 +372,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    employee_code: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -261,8 +387,10 @@ class UserUpdate(BaseModel):
 def list_users(db: Session = Depends(get_db), _=Depends(get_current_user)):
     users = db.query(User).all()
     return [{"id": u.id, "username": u.username, "name": u.name, "email": u.email,
+             "employee_code": u.employee_code,
              "role": normalize_role(u.role), "position": u.position, "is_active": u.is_active,
-             "department_id": u.department_id} for u in users]
+             "department_id": u.department_id,
+             "department_name": u.department.name if u.department else None} for u in users]
 
 
 @router.post("/users")
@@ -271,17 +399,23 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), current=Depends
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="이미 존재하는 아이디입니다.")
+    employee_code = (data.employee_code or "").strip() or None
+    if employee_code and db.query(User).filter(User.employee_code == employee_code).first():
+        raise HTTPException(status_code=400, detail="이미 사용 중인 사원번호입니다.")
     try:
         role = validate_role(data.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     user = User(
         username=data.username,
+        employee_code=employee_code,
         password_hash=hash_password(data.password),
         name=data.name, email=data.email, phone=data.phone,
         department_id=data.department_id, position=data.position, role=role,
     )
     db.add(user)
+    db.flush()
+    sync_employee_for_user(db, user)
     db.commit()
     db.refresh(user)
     return {"id": user.id, "username": user.username, "name": user.name}
@@ -294,12 +428,27 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    old_employee_code = effective_employee_code(user)
+    if data.employee_code is not None:
+        employee_code = data.employee_code.strip() or None
+        if employee_code and db.query(User).filter(User.employee_code == employee_code, User.id != user_id).first():
+            raise HTTPException(status_code=400, detail="이미 사용 중인 사원번호입니다.")
+        data.employee_code = employee_code
     for field, val in data.dict(exclude_none=True).items():
         if field == "new_password":
             if val:
                 user.password_hash = hash_password(val)
         else:
             setattr(user, field, val)
+    new_employee_code = effective_employee_code(user)
+    if old_employee_code != new_employee_code:
+        old_employee = db.query(Employee).filter(Employee.emp_code == old_employee_code).first()
+        new_employee = db.query(Employee).filter(Employee.emp_code == new_employee_code).first()
+        if old_employee and not new_employee:
+            old_employee.emp_code = new_employee_code
+        elif old_employee and new_employee and old_employee.id != new_employee.id:
+            old_employee.is_active = False
+    sync_employee_for_user(db, user)
     db.commit()
     return {"message": "수정되었습니다."}
 
@@ -313,6 +462,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current=Depends(get
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    deactivate_employee_for_user(db, user)
     db.delete(user)
     db.commit()
     return {"message": "삭제되었습니다."}
@@ -320,6 +470,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current=Depends(get
 
 # ── 거래처 ──────────────────────────────────────────
 class CompanyCreate(BaseModel):
+    company_group_code: Optional[str] = None
     company_code: Optional[str] = None
     short_name: str
     company_name: str
@@ -408,8 +559,80 @@ def _next_company_code(db: Session) -> str:
     return f"C{max_id + 1:05d}"
 
 
+def _model_string_limits(model) -> dict:
+    return {
+        column.name: column.type.length
+        for column in model.__table__.columns
+        if getattr(column.type, "length", None)
+    }
+
+
+def _truncate_model_strings(payload: dict, model) -> dict:
+    limits = _model_string_limits(model)
+    for key, limit in limits.items():
+        value = payload.get(key)
+        if value is not None:
+            payload[key] = str(value).strip()[:limit]
+    return payload
+
+
+def _is_company_metadata_row(payload: dict) -> bool:
+    marker_values = {"CO_CD", "TR_CD", "TR_FG", "TR_NM", "ATTR_NM", "REG_NB"}
+    code = str(payload.get("company_code") or "").strip()
+    name = str(payload.get("company_name") or "").strip()
+    company_type = str(payload.get("company_type") or "").strip()
+    return (
+        code in marker_values
+        or name in marker_values
+        or company_type in marker_values
+        or code.startswith("타입")
+        or name.startswith("타입")
+        or company_type.startswith("타입")
+    )
+
+
+def _is_material_metadata_row(payload: dict) -> bool:
+    marker_values = {
+        "CO_CD",
+        "ITEM_CD",
+        "ITEM_NM",
+        "ITEM_DC",
+        "ACCT_FG",
+        "ODR_FG",
+        "UNIT_DC",
+        "UNITMANG_DC",
+        "UNITCHNG_NB",
+        "USE_YN",
+        "LOT_FG",
+        "SETITEM_FG",
+        "QC_FG",
+    }
+    code = str(payload.get("material_code") or "").strip()
+    name = str(payload.get("material_name") or "").strip()
+    return code in marker_values or name in marker_values or code.startswith("타입") or name.startswith("타입")
+
+
+def _normalize_material_unit(value, fallback: str = "EA") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    if any(char.isdigit() for char in text):
+        return "EA"
+    return text
+
+
+def _normalize_material_payload(payload: dict) -> dict:
+    payload["unit"] = _normalize_material_unit(payload.get("unit"), "EA")
+    payload["management_unit"] = _normalize_material_unit(payload.get("management_unit"), payload["unit"])
+    return payload
+
+
 @router.get("/companies")
-def list_companies(company_type: Optional[str] = None, search: Optional[str] = None,
+def list_companies(
+                   company_type: Optional[str] = None,
+                   search: Optional[str] = None,
+                   page: Optional[int] = Query(None, ge=1),
+                   page_size: int = Query(20, ge=1, le=200),
                    db: Session = Depends(get_db), _=Depends(get_current_user)):
     q = db.query(Company).filter(Company.is_active == True)
     if company_type:
@@ -422,7 +645,57 @@ def list_companies(company_type: Optional[str] = None, search: Optional[str] = N
             Company.company_code.ilike(like),
             Company.business_no.ilike(like),
         ))
+    if page:
+        total = q.count()
+        stats = {
+            "total": total,
+            "withBusinessNo": q.filter(Company.business_no.isnot(None), Company.business_no != "").count(),
+            "withBank": q.filter(or_(
+                Company.bank_name.isnot(None),
+                Company.bank_account.isnot(None),
+                Company.payment_bank_name.isnot(None),
+            )).count(),
+        }
+        rows = (
+            q.with_entities(
+                Company.id,
+                Company.company_group_code,
+                Company.company_code,
+                Company.company_type,
+                Company.company_name,
+                Company.short_name,
+                Company.business_no,
+                Company.ceo_name,
+                Company.business_type,
+                Company.business_item,
+                Company.address_detail1,
+                Company.phone,
+                Company.fax,
+                Company.email,
+                Company.payment_bank_code,
+                Company.bank_name,
+                Company.bank_account,
+                Company.bank_holder,
+            )
+            .order_by(Company.company_name)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return {"items": [dict(row._mapping) for row in rows], "total": total, "page": page, "page_size": page_size, "stats": stats}
     return q.order_by(Company.company_name).all()
+
+
+@router.get("/companies/template")
+def download_company_template_route(_=Depends(get_current_user)):
+    filename = "\uac70\ub798\ucc98_\uad00\ub9ac_\uc591\uc2dd.xlsx"
+    content, filename = make_source_header_template_response(
+        "\uac70\ub798\ucc98 \uad00\ub9ac.xls",
+        filename,
+        3,
+        make_company_template_response(filename),
+    )
+    return _excel_response(content, filename)
 
 
 @router.get("/companies/{cid}")
@@ -447,6 +720,98 @@ def create_company(data: CompanyCreate, db: Session = Depends(get_db), current=D
     db.commit()
     db.refresh(c)
     return c
+
+
+@router.post("/companies/import-excel")
+def import_companies_excel(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    fields = [field for _, field in COMPANY_HEADERS]
+    rows = read_upload_rows(file, fields)
+    imported = 0
+    updated = 0
+    skipped = 0
+    errors = []
+    existing_companies = db.query(Company).all()
+    existing_by_code = {
+        str(company.company_code): company
+        for company in existing_companies
+        if company.company_code
+    }
+    existing_by_business_no = {
+        str(company.business_no): company
+        for company in existing_companies
+        if company.business_no
+    }
+    last_company_group_code = None
+    for index, row in enumerate(rows, start=1):
+        try:
+            payload = {key: row.get(key) for key in fields if key in row}
+            if _is_company_metadata_row(payload):
+                continue
+            if payload.get("company_group_code"):
+                last_company_group_code = payload["company_group_code"]
+            elif last_company_group_code:
+                payload["company_group_code"] = last_company_group_code
+            if not payload.get("company_name") and payload.get("short_name"):
+                payload["company_name"] = payload["short_name"]
+            if not payload.get("short_name") and payload.get("company_name"):
+                payload["short_name"] = payload["company_name"]
+            if payload.get("bank_name") and not payload.get("payment_bank_name"):
+                payload["payment_bank_name"] = payload["bank_name"]
+            if payload.get("bank_account") and not payload.get("payment_account_no"):
+                payload["payment_account_no"] = payload["bank_account"]
+            if payload.get("bank_holder") and not payload.get("payment_account_holder"):
+                payload["payment_account_holder"] = payload["bank_holder"]
+            if not payload.get("company_name"):
+                skipped += 1
+                errors.append({"row": index, "detail": "거래처명이 없습니다."})
+                continue
+            payload["company_type"] = payload.get("company_type") or "both"
+            payload["use_yn"] = payload.get("use_yn") or "Y"
+            for key in ["transaction_start_date", "contract_start_date", "contract_end_date"]:
+                if key in payload:
+                    payload[key] = to_date_value(payload[key])
+            for key in ["discount_rate", "contract_amount", "use_expense_amount", "credit_limit"]:
+                if key in payload:
+                    payload[key] = to_decimal_value(payload[key])
+            for key in ["limit_recovery_days", "payment_due_day"]:
+                if payload.get(key) not in (None, ""):
+                    payload[key] = int(to_decimal_value(payload[key], Decimal(0)) or 0)
+            if not payload.get("address") and payload.get("address_detail1"):
+                payload["address"] = " ".join(filter(None, [payload.get("address_detail1"), payload.get("address_detail2")]))
+            payload = _truncate_model_strings(payload, Company)
+
+            company = None
+            if payload.get("company_code"):
+                company = existing_by_code.get(str(payload["company_code"]))
+            if not company and payload.get("business_no"):
+                company = existing_by_business_no.get(str(payload["business_no"]))
+            if not payload.get("company_code"):
+                payload["company_code"] = _next_company_code(db)
+
+            if company:
+                for field, value in payload.items():
+                    setattr(company, field, value)
+                updated += 1
+            else:
+                company = Company(**payload, created_by=current.id)
+                db.add(company)
+                existing_by_code[str(company.company_code)] = company
+                if company.business_no:
+                    existing_by_business_no[str(company.business_no)] = company
+                imported += 1
+        except Exception as exc:
+            skipped += 1
+            errors.append({"row": index, "detail": str(exc)})
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"거래처 엑셀 저장 중 오류가 발생했습니다: {exc}") from exc
+    return {"imported": imported, "updated": updated, "skipped": skipped, "errors": errors[:20]}
 
 
 @router.put("/companies/{cid}")
@@ -572,6 +937,7 @@ def list_account_codes(db: Session = Depends(get_db), _=Depends(get_current_user
 
 # ── 자재 ──────────────────────────────────────────
 class MaterialCreate(BaseModel):
+    material_company_group_code: Optional[str] = None
     material_code: str
     material_name: str
     spec: Optional[str] = None
@@ -615,12 +981,45 @@ class MaterialCreate(BaseModel):
 
 @router.get("/materials")
 def list_materials(search: Optional[str] = None, material_type: Optional[str] = None,
+                   page: Optional[int] = Query(None, ge=1),
+                   page_size: int = Query(20, ge=1, le=200),
                    db: Session = Depends(get_db), _=Depends(get_current_user)):
     q = db.query(Material).filter(Material.is_active == True)
     if search:
         q = q.filter(or_(Material.material_name.ilike(f"%{search}%"), Material.material_code.ilike(f"%{search}%")))
     if material_type:
         q = q.filter(Material.material_type == material_type)
+    if page:
+        total = q.count()
+        stats = {
+            "total": total,
+            "raw": q.filter(Material.material_type.in_(["0", "raw"])).count(),
+            "sub": q.filter(Material.material_type.in_(["1", "sub"])).count(),
+            "goods": q.filter(Material.material_type.in_(["5", "goods"])).count(),
+        }
+        rows = (
+            q.with_entities(
+                Material.id,
+                Material.material_company_group_code,
+                Material.material_code,
+                Material.material_name,
+                Material.spec,
+                Material.material_type,
+                Material.procurement_type,
+                Material.unit,
+                Material.management_unit,
+                Material.conversion_factor,
+                Material.use_yn,
+                Material.lot_use_yn,
+                Material.set_item_yn,
+                Material.inspection_type,
+            )
+            .order_by(Material.material_code)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return {"items": [dict(row._mapping) for row in rows], "total": total, "page": page, "page_size": page_size, "stats": stats}
     return q.order_by(Material.material_code).all()
 
 
@@ -628,11 +1027,107 @@ def list_materials(search: Optional[str] = None, material_type: Optional[str] = 
 def create_material(data: MaterialCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
     if db.query(Material).filter(Material.material_code == data.material_code).first():
         raise HTTPException(status_code=400, detail="이미 존재하는 품번입니다.")
-    m = Material(**data.dict())
+    m = Material(**_normalize_material_payload(data.dict()))
     db.add(m)
     db.commit()
     db.refresh(m)
     return m
+
+
+@router.get("/materials/template")
+def download_material_template(_=Depends(get_current_user)):
+    filename = "자재_관리_양식.xlsx"
+    content, filename = make_source_header_template_response(
+        "자재 관리.xls",
+        filename,
+        3,
+        make_template_response("자재 관리", MATERIAL_HEADERS, filename),
+    )
+    return _excel_response(content, filename)
+
+
+@router.get("/materials/{mid}")
+def get_material(mid: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    m = db.query(Material).filter(Material.id == mid).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+    return m
+
+
+@router.post("/materials/import-excel")
+def import_materials_excel(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    fields = [field for _, field in MATERIAL_HEADERS]
+    rows = read_upload_rows(file, fields)
+    decimal_fields = {
+        "conversion_factor",
+        "lot_quantity",
+        "width_value",
+        "height_value",
+        "depth_value",
+        "weight_value",
+        "area_value",
+        "batch_quantity",
+        "length_value",
+        "density_value",
+        "standard_price",
+    }
+    imported = 0
+    updated = 0
+    skipped = 0
+    errors = []
+    existing_by_code = {
+        str(material.material_code): material
+        for material in db.query(Material).filter(Material.material_code.isnot(None)).all()
+    }
+    last_company_group_code = None
+    for index, row in enumerate(rows, start=1):
+        try:
+            payload = {key: row.get(key) for key in fields if key in row}
+            if _is_material_metadata_row(payload):
+                continue
+            if payload.get("material_company_group_code"):
+                last_company_group_code = payload["material_company_group_code"]
+            elif last_company_group_code:
+                payload["material_company_group_code"] = last_company_group_code
+            if not payload.get("material_code") or not payload.get("material_name"):
+                skipped += 1
+                errors.append({"row": index, "detail": "품번과 품명이 필요합니다."})
+                continue
+            for key in decimal_fields:
+                if key in payload:
+                    payload[key] = to_decimal_value(payload[key], Decimal(0))
+            payload = _normalize_material_payload(payload)
+            payload["conversion_factor"] = payload.get("conversion_factor") or Decimal(1)
+            payload["use_yn"] = payload.get("use_yn") or "Y"
+            payload["lot_use_yn"] = payload.get("lot_use_yn") or "N"
+            payload["set_item_yn"] = payload.get("set_item_yn") or "N"
+            payload["material_type"] = payload.get("material_type") or "5"
+            payload["procurement_type"] = payload.get("procurement_type") or "purchase"
+            payload = _truncate_model_strings(payload, Material)
+
+            material = existing_by_code.get(str(payload["material_code"]))
+            if material:
+                for field, value in payload.items():
+                    setattr(material, field, value)
+                updated += 1
+            else:
+                material = Material(**payload)
+                db.add(material)
+                existing_by_code[str(material.material_code)] = material
+                imported += 1
+        except Exception as exc:
+            skipped += 1
+            errors.append({"row": index, "detail": str(exc)})
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"자재 엑셀 저장 중 오류가 발생했습니다: {exc}") from exc
+    return {"imported": imported, "updated": updated, "skipped": skipped, "errors": errors[:20]}
 
 
 @router.put("/materials/{mid}")
@@ -640,7 +1135,8 @@ def update_material(mid: int, data: MaterialCreate, db: Session = Depends(get_db
     m = db.query(Material).filter(Material.id == mid).first()
     if not m:
         raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
-    for field, val in data.dict(exclude_none=True).items():
+    payload = _normalize_material_payload(data.dict(exclude_none=True))
+    for field, val in payload.items():
         setattr(m, field, val)
     db.commit()
     return m

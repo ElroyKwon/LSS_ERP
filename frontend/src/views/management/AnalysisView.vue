@@ -51,7 +51,8 @@
         size="small"
         bordered
         class="analysis-table"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="tab.key === 'orders' && column.groupKey === 'business_plan' && column.month">
             <a-input-number
@@ -96,13 +97,14 @@
         :columns="summaryColumns"
         :data-source="businessDivisionSummaryRows"
         :loading="loading"
-        :pagination="false"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
         :scroll="{ x: summaryTableScrollX }"
         row-key="business_division"
         size="small"
         bordered
         class="analysis-table"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key !== 'business_division'">
             <span class="num-cell readonly-cell">{{ formatAmount(record[column.key]) }}</span>
@@ -119,13 +121,14 @@
         :columns="businessGroupSummaryColumns"
         :data-source="businessGroupSummaryRows"
         :loading="loading"
-        :pagination="false"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
         :scroll="{ x: businessGroupSummaryTableScrollX }"
         row-key="business_category"
         size="small"
         bordered
         class="analysis-table"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key !== 'business_category'">
             <span class="num-cell readonly-cell">{{ formatAmount(record[column.key]) }}</span>
@@ -224,26 +227,26 @@ const revenueColumns = computed(() => [
 const summaryColumns = computed(() => [
   leaf('사업부', 'business_division', 150, 'center', true, 'left'),
   group('기준월 실적', [
-    leaf('실적', 'base_actual', 120, 'right'),
-    leaf('이동', 'base_move', 120, 'right'),
-    leaf('이동비', 'base_move_rate', 100, 'right'),
+    leaf('실적', 'base_actual', 135, 'right'),
+    leaf('이동', 'base_move', 135, 'right'),
+    leaf('이동비', 'base_move_rate', 135, 'right'),
   ]),
   group('기준월 누계', [
-    leaf('실적', 'monthly_actual', 120, 'right'),
+    leaf('실적', 'monthly_actual', 135, 'right'),
     leaf('전년 사업부별 실적 누계', 'monthly_prev_actual', 170, 'right'),
-    leaf('계획', 'monthly_plan', 120, 'right'),
-    leaf('이동', 'monthly_move', 120, 'right'),
-    leaf('전년비', 'monthly_prev_rate', 100, 'right'),
-    leaf('계획비', 'monthly_plan_rate', 100, 'right'),
-    leaf('이동비', 'monthly_move_rate', 100, 'right'),
+    leaf('계획', 'monthly_plan', 135, 'right'),
+    leaf('이동', 'monthly_move', 135, 'right'),
+    leaf('전년비', 'monthly_prev_rate', 135, 'right'),
+    leaf('계획비', 'monthly_plan_rate', 135, 'right'),
+    leaf('이동비', 'monthly_move_rate', 135, 'right'),
   ]),
   group('연간 누계', [
-    leaf('실적', 'year_actual', 120, 'right'),
+    leaf('실적', 'year_actual', 135, 'right'),
     leaf('전년 사업부별 실적 누계', 'year_prev_plan', 170, 'right'),
-    leaf('이동', 'year_move', 120, 'right'),
-    leaf('전년비', 'year_prev_rate', 100, 'right'),
-    leaf('계획비', 'year_plan_rate', 100, 'right'),
-    leaf('이동비', 'year_move_rate', 100, 'right'),
+    leaf('이동', 'year_move', 135, 'right'),
+    leaf('전년비', 'year_prev_rate', 135, 'right'),
+    leaf('계획비', 'year_plan_rate', 135, 'right'),
+    leaf('이동비', 'year_move_rate', 135, 'right'),
   ]),
 ])
 
@@ -309,7 +312,7 @@ function amountGroup(title, groupKey, totalTitle, editable = false) {
       ...monthLabels.map((label, index) => ({
         title: label,
         key: `${groupKey}_${index + 1}`,
-        width: 105,
+        width: 135,
         align: 'right',
         groupKey,
         month: String(index + 1),

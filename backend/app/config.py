@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_DOCS_ENABLED: bool = True
     AUTO_CREATE_SCHEMA: bool = True
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    ALLOWED_ORIGINS: str = "https://erp.sauter.co.kr,http://localhost:5173,http://localhost:3000"
+    ALLOWED_HOSTS: str = "erp.sauter.co.kr,localhost,127.0.0.1"
     NTS_BUSINESS_STATUS_SERVICE_KEY: str = ""
     NTS_BUSINESS_STATUS_URL: str = "https://api.odcloud.kr/api/nts-businessman/v1/status"
     POSTAL_SERVICE_KEY: str = ""
@@ -34,7 +35,11 @@ class Settings(BaseSettings):
 
     @property
     def origins(self) -> List[str]:
-        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def hosts(self) -> List[str]:
+        return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
 
     @property
     def admin_emails(self) -> List[str]:

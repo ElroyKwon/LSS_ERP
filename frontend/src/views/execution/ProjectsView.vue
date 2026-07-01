@@ -123,6 +123,13 @@
       <template #extra>
         <a-space>
           <a-button @click="openBusinessCategoryModal">사업구분 관리</a-button>
+          <input ref="excelInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="handleExcelFile" />
+          <a-button :loading="importing" @click="excelInput?.click()">
+            <template #icon><UploadOutlined /></template>엑셀 업로드
+          </a-button>
+          <a-button @click="downloadTemplate">
+            <template #icon><DownloadOutlined /></template>양식 다운로드
+          </a-button>
           <a-button type="primary" @click="openDrawer(null)">
             <template #icon><PlusOutlined /></template>프로젝트 등록
           </a-button>
@@ -139,7 +146,8 @@
         :scroll="{ x: 3000 }"
         :row-class-name="rowClass"
         @row-click="(record) => handleRowClick(record)"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'project_name'">
             <div class="name-cell">
@@ -211,7 +219,8 @@
             :scroll="{ x: salesPlanScrollX }"
             bordered
             class="sales-plan-table"
-          >
+          
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'job_no'">
                 <a-auto-complete
@@ -299,7 +308,8 @@
             :scroll="{ x: purchasePlanScrollX }"
             bordered
             class="sales-plan-table"
-          >
+          
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'job_no'">
                 <a-auto-complete
@@ -360,10 +370,12 @@
     </a-tabs>
 
     <!-- ── 등록/수정 Drawer ── -->
-    <a-drawer v-model:open="drawerOpen"
+    <a-modal v-model:open="drawerOpen"
               :title="editItem ? '프로젝트 수정' : '프로젝트 등록'"
-              width="720"
-              :body-style="{ paddingBottom: '72px' }">
+              width="840"
+              wrap-class-name="project-editor-modal"
+              :body-style="{ paddingBottom: '72px' }"
+      centered>
       <a-form :model="form" layout="vertical" ref="formRef">
 
         <a-divider orientation="left" orientation-margin="0"><span class="sec-label">기본 정보</span></a-divider>
@@ -382,13 +394,13 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="프로젝트명" name="project_name"
               :rules="[{ required: true, message: '프로젝트명을 입력하세요.' }]">
               <a-input v-model:value="form.project_name" placeholder="프로젝트명 입력" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :span="12">
             <a-form-item label="발주처" name="client_name"
               extra="직접 입력하거나 등록된 거래처를 검색·선택하세요.">
               <a-auto-complete
@@ -556,7 +568,7 @@
               <th style="width:72px"></th>
               <th style="width:180px">항목</th>
               <th style="width:160px">금액 (원, 부가세 별도)</th>
-              <th>비고</th>
+              <th class="note-col">비고</th>
             </tr>
           </thead>
           <tbody>
@@ -566,19 +578,19 @@
               <td>
                 <a-input-number v-model:value="form.contract_material_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" />
               </td>
-              <td><a-input v-model:value="form.contract_material_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.contract_material_note" /></td>
             </tr>
             <tr>
               <td class="item-cell">노무비</td>
               <td>
                 <a-input-number v-model:value="form.contract_labor_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" />
               </td>
-              <td><a-input v-model:value="form.contract_labor_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.contract_labor_note" /></td>
             </tr>
             <tr class="summary-row">
               <td class="item-cell">합계</td>
               <td class="readonly-amount">{{ formatAmount(contractDetailTotal) }}</td>
-              <td><a-input v-model:value="form.contract_total_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.contract_total_note" /></td>
             </tr>
           </tbody>
         </table>
@@ -592,7 +604,7 @@
               <th style="width:110px">세목</th>
               <th style="width:150px">금액 (원, 부가세 별도)</th>
               <th style="width:110px">계약액 대비%</th>
-              <th>비고</th>
+              <th class="note-col">비고</th>
             </tr>
           </thead>
           <tbody>
@@ -602,56 +614,56 @@
               <td>국내재</td>
               <td><a-input-number v-model:value="form.sales_domestic_material_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" /></td>
               <td class="ratio-cell">{{ costRatio(form.sales_domestic_material_cost) }}</td>
-              <td><a-input v-model:value="form.sales_domestic_material_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_domestic_material_note" /></td>
             </tr>
             <tr>
               <td>외자재</td>
               <td><a-input-number v-model:value="form.sales_overseas_material_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" /></td>
               <td class="ratio-cell">{{ costRatio(form.sales_overseas_material_cost) }}</td>
-              <td><a-input v-model:value="form.sales_overseas_material_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_overseas_material_note" /></td>
             </tr>
             <tr>
               <td>외주비</td>
               <td><a-input-number v-model:value="form.sales_outsourcing_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" /></td>
               <td class="ratio-cell">{{ costRatio(form.sales_outsourcing_cost) }}</td>
-              <td><a-input v-model:value="form.sales_outsourcing_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_outsourcing_note" /></td>
             </tr>
             <tr>
               <td class="item-cell" colspan="2">노무비</td>
               <td><a-input-number v-model:value="form.sales_labor_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" /></td>
               <td class="ratio-cell">{{ costRatio(form.sales_labor_cost) }}</td>
-              <td><a-input v-model:value="form.sales_labor_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_labor_note" /></td>
             </tr>
             <tr>
               <td class="item-cell" colspan="2">경비</td>
               <td><a-input-number v-model:value="form.sales_expense_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" /></td>
               <td class="ratio-cell">{{ costRatio(form.sales_expense_cost) }}</td>
-              <td><a-input v-model:value="form.sales_expense_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_expense_note" /></td>
             </tr>
             <tr class="summary-row">
               <td class="item-cell" colspan="2">소계 (직접원가)</td>
               <td class="readonly-amount">{{ formatAmount(directCostSubtotal) }}</td>
               <td class="ratio-cell">{{ costRatio(directCostSubtotal) }}</td>
-              <td><a-input v-model:value="form.sales_direct_cost_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_direct_cost_note" /></td>
             </tr>
             <tr>
               <td class="item-cell">간접비</td>
               <td>일반관리비 등</td>
               <td><a-input-number v-model:value="form.sales_indirect_cost" :min="0" :formatter="amountFormatter" :parser="amountParser" /></td>
               <td class="ratio-cell">{{ costRatio(form.sales_indirect_cost) }}</td>
-              <td><a-input v-model:value="form.sales_indirect_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_indirect_note" /></td>
             </tr>
             <tr class="summary-row">
               <td class="item-cell" colspan="2">합계 (매출원가 합계)</td>
               <td class="readonly-amount">{{ formatAmount(salesCostTotal) }}</td>
               <td class="ratio-cell">{{ costRatio(salesCostTotal) }}</td>
-              <td><a-input v-model:value="form.sales_cost_total_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.sales_cost_total_note" /></td>
             </tr>
             <tr class="profit-row">
               <td class="item-cell" colspan="2">세전이익 / 매출이익율</td>
               <td class="readonly-amount">{{ formatAmount(preTaxProfit) }}</td>
               <td class="ratio-cell">{{ costRatio(preTaxProfit) }}</td>
-              <td><a-input v-model:value="form.pre_tax_profit_note" /></td>
+              <td class="note-cell"><a-input v-model:value="form.pre_tax_profit_note" /></td>
             </tr>
           </tbody>
         </table>
@@ -691,11 +703,6 @@
               <a-input v-model:value="form.collection_manager" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="비고" name="notes">
-              <a-textarea v-model:value="form.notes" :rows="3" placeholder="특이사항 입력" />
-            </a-form-item>
-          </a-col>
         </a-row>
       </a-form>
 
@@ -707,7 +714,7 @@
           </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
 
     <a-modal
       v-model:open="businessCategoryModalOpen"
@@ -744,6 +751,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ProjectOutlined, PlayCircleOutlined, CheckCircleOutlined, PauseCircleOutlined, PlusOutlined,
+  DownloadOutlined, UploadOutlined,
 } from '@ant-design/icons-vue'
 import { executionApi, masterApi, managementApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -892,11 +900,13 @@ const purchasePlanRows = ref([])
 const purchasePlanDirty = ref(false)
 const loading   = ref(false)
 const saving    = ref(false)
+const importing = ref(false)
 const drawerOpen = ref(false)
 const businessCategoryModalOpen = ref(false)
 const businessCategoryDraft = ref('')
 const editItem  = ref(null)
 const formRef   = ref()
+const excelInput = ref()
 const selectedId = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
@@ -1191,16 +1201,16 @@ const columns = [
   { title: '착공 시작', dataIndex: 'construct_start', width: 110, align: 'center' },
   { title: '착공 종료', dataIndex: 'construct_end',   width: 110, align: 'center' },
   { title: '계약금액',  key: 'contract_amount',   width: 140, align: 'right' },
-  { title: '계약 자재비', key: 'contract_material_cost', width: 130, align: 'right' },
-  { title: '계약 노무비', key: 'contract_labor_cost', width: 130, align: 'right' },
+  { title: '계약 자재비', key: 'contract_material_cost', width: 135, align: 'right' },
+  { title: '계약 노무비', key: 'contract_labor_cost', width: 135, align: 'right' },
   { title: '계약금액 합계', key: 'contract_detail_total', width: 140, align: 'right' },
-  { title: '재료비 합계', key: 'sales_material_cost_total', width: 130, align: 'right' },
-  { title: '노무비', key: 'sales_labor_cost', width: 130, align: 'right' },
-  { title: '경비', key: 'sales_expense_cost', width: 130, align: 'right' },
+  { title: '재료비 합계', key: 'sales_material_cost_total', width: 135, align: 'right' },
+  { title: '노무비', key: 'sales_labor_cost', width: 135, align: 'right' },
+  { title: '경비', key: 'sales_expense_cost', width: 135, align: 'right' },
   { title: '직접원가 소계', key: 'sales_direct_cost_subtotal', width: 140, align: 'right' },
-  { title: '간접비', key: 'sales_indirect_cost', width: 130, align: 'right' },
+  { title: '간접비', key: 'sales_indirect_cost', width: 135, align: 'right' },
   { title: '매출원가 합계', key: 'sales_cost_total', width: 140, align: 'right' },
-  { title: '세전이익', key: 'pre_tax_profit', width: 130, align: 'right' },
+  { title: '세전이익', key: 'pre_tax_profit', width: 135, align: 'right' },
   { title: '담당 PM',   dataIndex: 'pm_name',     width: 100, align: 'center' },
   { title: '진행상태',  key: 'status',            width: 110, align: 'center' },
   { title: '관리',      key: 'action',            width: 100, align: 'center', fixed: 'right' },
@@ -1217,7 +1227,7 @@ const salesColumns = [
   { title: '매출 유형', dataIndex: 'revenue_type', width: 120, align: 'center' },
   { title: '계약금액',  key: 'contract_amount', width: 140, align: 'right' },
   { title: '매출원가 합계', key: 'sales_cost_total', width: 140, align: 'right' },
-  { title: '세전이익', key: 'pre_tax_profit', width: 130, align: 'right' },
+  { title: '세전이익', key: 'pre_tax_profit', width: 135, align: 'right' },
   { title: '수금조건',  dataIndex: 'collection_terms', width: 170, align: 'center', ellipsis: true },
   { title: '영업담당자', dataIndex: 'sales_manager', width: 110, align: 'center' },
   { title: '수금담당자', dataIndex: 'collection_manager', width: 110, align: 'center' },
@@ -1237,9 +1247,9 @@ const purchaseColumns = [
   { title: '공종',      dataIndex: 'work_type', width: 110, align: 'center' },
   { title: '실행담당자', dataIndex: 'execution_manager', width: 110, align: 'center' },
   { title: '계약금액',  key: 'contract_amount', width: 140, align: 'right' },
-  { title: '재료비 합계', key: 'sales_material_cost_total', width: 130, align: 'right' },
-  { title: '노무비', key: 'sales_labor_cost', width: 130, align: 'right' },
-  { title: '경비', key: 'sales_expense_cost', width: 130, align: 'right' },
+  { title: '재료비 합계', key: 'sales_material_cost_total', width: 135, align: 'right' },
+  { title: '노무비', key: 'sales_labor_cost', width: 135, align: 'right' },
+  { title: '경비', key: 'sales_expense_cost', width: 135, align: 'right' },
   { title: '매출원가 합계', key: 'sales_cost_total', width: 140, align: 'right' },
   { title: '진행상태',  key: 'status', width: 110, align: 'center' },
 ]
@@ -1900,6 +1910,39 @@ function openBusinessCategoryModal() {
   businessCategoryModalOpen.value = true
 }
 
+function saveBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.URL.revokeObjectURL(url)
+}
+
+async function downloadTemplate() {
+  const res = await executionApi.downloadProjectsTemplate()
+  saveBlob(res.data, '프로젝트리스트_수주_양식.xlsx')
+}
+
+async function handleExcelFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await executionApi.importProjectsExcel(formData)
+    const { imported = 0, updated = 0, skipped = 0 } = res.data || {}
+    message.success(`엑셀 업로드 완료: 신규 ${imported}건, 수정 ${updated}건, 제외 ${skipped}건`)
+    await load()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '엑셀 업로드 중 오류가 발생했습니다.')
+  } finally {
+    importing.value = false
+  }
+}
+
 async function addBusinessCategory() {
   const value = businessCategoryDraft.value.trim()
   if (!value) return
@@ -2201,6 +2244,9 @@ onMounted(load)
 .detail-cost-table .summary-row td { background: #f3f3f3; font-weight: 700; }
 .detail-cost-table .profit-row td { background: #eef4ff; color: #163b73; font-weight: 700; }
 .detail-cost-table :deep(.ant-input-number) { width: 100%; }
+.detail-cost-table .note-col,
+.detail-cost-table .note-cell { width: 120px; }
+.detail-cost-table .note-cell :deep(.ant-input) { width: 100%; min-width: 0; }
 .readonly-amount,
 .ratio-cell { font-variant-numeric: tabular-nums; text-align: right !important; }
 

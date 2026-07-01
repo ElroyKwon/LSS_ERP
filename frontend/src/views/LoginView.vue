@@ -109,6 +109,11 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
+            <a-form-item label="사원번호" name="employee_code">
+              <a-input v-model:value="regForm.employee_code" placeholder="사원번호" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item label="부서" name="department">
               <a-input v-model:value="regForm.department" placeholder="소속 부서" />
             </a-form-item>
@@ -201,7 +206,7 @@ const checkingId = ref(false)
 const usernameChecked = ref(null)   // null=미확인, true=사용가능, false=중복
 const regFormRef = ref()
 const regForm = reactive({
-  username: '', name: '', department: '', position: '',
+  username: '', name: '', employee_code: '', department: '', position: '',
   phone: '', email: '', password: '', confirmPassword: '', reason: '',
 })
 
@@ -209,7 +214,7 @@ function resetRegForm() {
   registerDone.value = false
   usernameChecked.value = null
   Object.assign(regForm, {
-    username: '', name: '', department: '', position: '',
+    username: '', name: '', employee_code: '', department: '', position: '',
     phone: '', email: '', password: '', confirmPassword: '', reason: '',
   })
 }

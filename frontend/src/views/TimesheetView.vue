@@ -256,7 +256,8 @@
 
         <a-card :bordered="false" class="table-card">
           <a-table :columns="summaryCols" :data-source="summaryRows" :loading="summaryLoading"
-                   :pagination="false" size="middle" row-key="key" :scroll="{ x: 760 }">
+                   :pagination="{ pageSize: 20, showSizeChanger: true }" size="middle" row-key="key" :scroll="{ x: 760 }"
+        :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'total_hours'">
                 <span :class="record.total_hours > 0 ? 'num-active' : 'num-zero'">

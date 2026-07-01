@@ -47,13 +47,14 @@
         :columns="columns"
         :data-source="tableRows"
         :loading="loading"
-        :pagination="false"
+        :pagination="{ pageSize: 20, showSizeChanger: true }"
         size="middle"
         row-key="key"
         :scroll="{ x: 1720 }"
         :row-class-name="rowClassName"
         :custom-row="customRow"
-      >
+      
+        :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'department'">
             <b>{{ record.department }}</b>
@@ -234,8 +235,8 @@ const columns = [
   { title: '부서', key: 'department', width: 180, align: 'center', fixed: 'left', customCell: row => ({ rowSpan: row.deptRowSpan }) },
   { title: '구분', key: 'major', width: 100, align: 'center', fixed: 'left', customCell: row => ({ rowSpan: row.majorRowSpan }) },
   { title: '항목', key: 'item', width: 120, align: 'center', fixed: 'left' },
-  ...MONTH_INPUTS.map(month => ({ title: month.label, key: month.key, width: 105, align: 'right' })),
-  { title: '합계', key: 'total', width: 130, align: 'right' },
+  ...MONTH_INPUTS.map(month => ({ title: month.label, key: month.key, width: 135, align: 'right' })),
+  { title: '합계', key: 'total', width: 135, align: 'right' },
 ]
 
 function splitNotes(notes) {

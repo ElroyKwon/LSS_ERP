@@ -2,8 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime
+import logging
 from ..database import get_db
 from ..models.common import Department, User, UserRegistration
+from ..config import settings
+from ..services.email_service import EmailNotConfiguredError, send_email
 from ..services.user_employee_sync import sync_employee_for_user
 from ..utils.auth import verify_password, create_access_token, get_current_user, hash_password
 from ..utils.permissions import ROLE_OPTIONS, is_system_admin, normalize_role, validate_role
@@ -12,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 router = APIRouter(prefix="/api/auth", tags=["인증"])
+logger = logging.getLogger(__name__)
 
 
 class TokenResponse(BaseModel):
@@ -125,6 +129,42 @@ def _reg_dict(r):
     }
 
 
+def _registration_admin_recipients(db: Session) -> list[str]:
+    recipients = set(settings.admin_emails)
+    admins = db.query(User).filter(User.is_active == True, User.email.isnot(None)).all()
+    for user in admins:
+        if is_system_admin(user.role):
+            recipients.add(user.email.strip())
+    return sorted(email for email in recipients if email)
+
+
+def _send_registration_notice(db: Session, reg: UserRegistration) -> None:
+    recipients = _registration_admin_recipients(db)
+    if not recipients:
+        logger.info("No admin recipients configured for registration notice: %s", reg.username)
+        return
+    subject = "[LSS ERP] 회원가입 신청이 등록되었습니다"
+    body = "\n".join([
+        "회원가입 신청이 등록되었습니다.",
+        "",
+        f"신청자: {reg.name}",
+        f"아이디: {reg.username}",
+        f"사원번호: {reg.employee_code or '-'}",
+        f"부서: {reg.department or '-'}",
+        f"직위: {reg.position or '-'}",
+        f"전화번호: {reg.phone or '-'}",
+        f"이메일: {reg.email or '-'}",
+        "",
+        "ERP 시스템의 설정 > 사용자 관리에서 승인 또는 거절 처리해 주세요.",
+    ])
+    try:
+        send_email(recipients, subject, body)
+    except EmailNotConfiguredError:
+        logger.warning("SMTP is not configured; registration notice was not sent: %s", reg.username)
+    except Exception:
+        logger.exception("Failed to send registration notice: %s", reg.username)
+
+
 @router.post("/register")
 def register(data: RegistrationCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == data.username).first():
@@ -156,6 +196,7 @@ def register(data: RegistrationCreate, db: Session = Depends(get_db)):
     )
     db.add(reg)
     db.commit()
+    _send_registration_notice(db, reg)
     return {"message": "가입 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다."}
 
 

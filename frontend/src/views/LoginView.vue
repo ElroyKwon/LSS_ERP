@@ -109,12 +109,14 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="사원번호" name="employee_code">
+            <a-form-item label="사원번호" name="employee_code"
+              :rules="[{ required: true, message: '사원번호를 입력하세요.' }]">
               <a-input v-model:value="regForm.employee_code" placeholder="사원번호" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="부서" name="department">
+            <a-form-item label="부서" name="department"
+              :rules="[{ required: true, message: '부서를 입력하세요.' }]">
               <a-input v-model:value="regForm.department" placeholder="소속 부서" />
             </a-form-item>
           </a-col>
@@ -125,14 +127,18 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="전화번호" name="phone">
+            <a-form-item label="전화번호" name="phone"
+              :rules="[{ required: true, message: '전화번호를 입력하세요.' }]">
               <a-input v-model:value="regForm.phone" placeholder="010-0000-0000" />
             </a-form-item>
           </a-col>
 
           <a-col :span="24">
             <a-form-item label="이메일" name="email"
-              :rules="[{ type:'email', message:'올바른 이메일 형식을 입력하세요.', trigger:'blur' }]">
+              :rules="[
+                { required: true, message: '이메일을 입력하세요.' },
+                { type:'email', message:'올바른 이메일 형식을 입력하세요.', trigger:'blur' },
+              ]">
               <a-input v-model:value="regForm.email" placeholder="example@company.com" />
             </a-form-item>
           </a-col>
@@ -147,13 +153,6 @@
             <a-form-item label="비밀번호 확인" name="confirmPassword"
               :rules="[{ required: true, message: '비밀번호를 한 번 더 입력하세요.' }, { validator: confirmPwValidator }]">
               <a-input-password v-model:value="regForm.confirmPassword" autocomplete="new-password" />
-            </a-form-item>
-          </a-col>
-
-          <a-col :span="24">
-            <a-form-item label="신청 사유" name="reason">
-              <a-textarea v-model:value="regForm.reason" :rows="3"
-                          placeholder="시스템 사용 목적 또는 담당 업무를 간략히 입력해 주세요." />
             </a-form-item>
           </a-col>
         </a-row>
@@ -207,7 +206,7 @@ const usernameChecked = ref(null)   // null=미확인, true=사용가능, false=
 const regFormRef = ref()
 const regForm = reactive({
   username: '', name: '', employee_code: '', department: '', position: '',
-  phone: '', email: '', password: '', confirmPassword: '', reason: '',
+  phone: '', email: '', password: '', confirmPassword: '',
 })
 
 function resetRegForm() {
@@ -215,7 +214,7 @@ function resetRegForm() {
   usernameChecked.value = null
   Object.assign(regForm, {
     username: '', name: '', employee_code: '', department: '', position: '',
-    phone: '', email: '', password: '', confirmPassword: '', reason: '',
+    phone: '', email: '', password: '', confirmPassword: '',
   })
 }
 

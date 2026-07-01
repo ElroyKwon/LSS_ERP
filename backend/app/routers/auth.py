@@ -8,7 +8,7 @@ from ..services.user_employee_sync import sync_employee_for_user
 from ..utils.auth import verify_password, create_access_token, get_current_user, hash_password
 from ..utils.permissions import ROLE_OPTIONS, is_system_admin, normalize_role, validate_role
 from ..utils import to_kst
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 router = APIRouter(prefix="/api/auth", tags=["인증"])
@@ -73,15 +73,28 @@ def change_password(req: PasswordChangeRequest, current_user: User = Depends(get
 
 # ── 회원가입 신청 ──────────────────────────────────────────
 class RegistrationCreate(BaseModel):
-    username: str
-    password: str
-    name: str
-    employee_code: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    department: Optional[str] = None
+    username: str = Field(..., min_length=4)
+    password: str = Field(..., min_length=6)
+    name: str = Field(..., min_length=1)
+    employee_code: str = Field(..., min_length=1)
+    email: str = Field(..., min_length=1)
+    phone: str = Field(..., min_length=1)
+    department: str = Field(..., min_length=1)
     position: Optional[str] = None
-    reason: Optional[str] = None
+
+    @field_validator("username", "password", "name", "employee_code", "email", "phone", "department", "position")
+    @classmethod
+    def strip_text(cls, value):
+        if value is None:
+            return value
+        return value.strip()
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str):
+        if "@" not in value or "." not in value.split("@")[-1]:
+            raise ValueError("올바른 이메일 형식을 입력하세요.")
+        return value
 
 
 class RejectRequest(BaseModel):
@@ -139,7 +152,7 @@ def register(data: RegistrationCreate, db: Session = Depends(get_db)):
         phone=data.phone,
         department=data.department,
         position=data.position,
-        reason=data.reason,
+        reason=None,
     )
     db.add(reg)
     db.commit()

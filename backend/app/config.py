@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "LSS ERP"
     DEBUG: bool = False
     API_DOCS_ENABLED: bool = True
+    API_DOCS_USERNAME: str = ""
+    API_DOCS_PASSWORD: str = ""
     AUTO_CREATE_SCHEMA: bool = True
     ALLOWED_ORIGINS: str = "https://erp.sauter.co.kr,http://localhost:5173,http://localhost:3000"
     ALLOWED_HOSTS: str = "erp.sauter.co.kr,localhost,127.0.0.1"
@@ -61,8 +63,8 @@ class Settings(BaseSettings):
             if issues:
                 raise RuntimeError("Invalid runtime configuration: " + " ".join(issues))
             return
-        if self.API_DOCS_ENABLED:
-            issues.append("API_DOCS_ENABLED must be false for production/staging.")
+        if self.API_DOCS_ENABLED and (not self.API_DOCS_USERNAME or not self.API_DOCS_PASSWORD):
+            issues.append("API docs require API_DOCS_USERNAME and API_DOCS_PASSWORD for production/staging.")
         if self.AUTO_CREATE_SCHEMA:
             issues.append("AUTO_CREATE_SCHEMA must be false for production/staging; use Alembic migrations.")
         if issues:

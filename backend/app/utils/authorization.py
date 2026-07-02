@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
+import base64
+import hmac
 
 from ..config import settings
 from ..database import SessionLocal
@@ -12,6 +14,41 @@ from .permissions import can_access, is_public_api, resolve_api_permission
 
 def _error(status_code: int, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail})
+
+
+def _basic_auth_error() -> JSONResponse:
+    response = JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={"detail": "API 문서 접근 권한이 필요합니다."},
+    )
+    response.headers["WWW-Authenticate"] = 'Basic realm="LSS ERP API Docs"'
+    return response
+
+
+def _is_docs_path(path: str) -> bool:
+    return path in {"/api/docs", "/api/redoc", "/api/openapi.json", "/api/docs/oauth2-redirect"}
+
+
+def _has_valid_docs_basic_auth(request: Request) -> bool:
+    if not settings.API_DOCS_USERNAME and not settings.API_DOCS_PASSWORD:
+        return True
+
+    auth_header = request.headers.get("Authorization", "")
+    scheme, _, encoded = auth_header.partition(" ")
+    if scheme.lower() != "basic" or not encoded:
+        return False
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return False
+
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return False
+    return (
+        hmac.compare_digest(username, settings.API_DOCS_USERNAME)
+        and hmac.compare_digest(password, settings.API_DOCS_PASSWORD)
+    )
 
 
 def _current_user_from_request(request: Request) -> User | None:
@@ -37,6 +74,8 @@ def _current_user_from_request(request: Request) -> User | None:
 
 async def enforce_api_permissions(request: Request, call_next):
     path = request.url.path
+    if _is_docs_path(path) and not _has_valid_docs_basic_auth(request):
+        return _basic_auth_error()
     if request.method.upper() == "OPTIONS" or not path.startswith("/api/") or is_public_api(path):
         return await call_next(request)
 

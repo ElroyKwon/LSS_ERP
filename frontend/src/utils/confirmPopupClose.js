@@ -16,6 +16,11 @@ function isConfirmDialog(container) {
   return Boolean(container?.querySelector?.('.ant-modal-confirm'))
 }
 
+function shouldBypassConfirm(container) {
+  return container?.dataset?.confirmCloseBypass === '1'
+    || container?.classList?.contains('notice-popup-modal')
+}
+
 function hasEditableContent(container) {
   return Boolean(container?.querySelector?.(FORM_CONTROL_SELECTOR))
 }
@@ -50,7 +55,7 @@ function closePopup(container) {
 }
 
 function askBeforeClose(container) {
-  if (!container || container.dataset.confirmCloseBypass === '1' || isConfirmDialog(container) || !hasEditableContent(container)) {
+  if (!container || shouldBypassConfirm(container) || isConfirmDialog(container) || !hasEditableContent(container)) {
     return
   }
   if (confirming) return
@@ -78,7 +83,7 @@ function askBeforeClose(container) {
 export function installConfirmPopupClose() {
   document.addEventListener('click', event => {
     const container = popupContainerFromEvent(event.target)
-    if (!container || container.dataset.confirmCloseBypass === '1') return
+    if (!container || shouldBypassConfirm(container)) return
     if (isConfirmDialog(container) || !hasEditableContent(container)) return
 
     event.preventDefault()
@@ -90,7 +95,7 @@ export function installConfirmPopupClose() {
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return
     const container = topEditablePopup()
-    if (!container || container.dataset.confirmCloseBypass === '1') return
+    if (!container || shouldBypassConfirm(container)) return
 
     event.preventDefault()
     event.stopPropagation()

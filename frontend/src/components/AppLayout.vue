@@ -173,7 +173,7 @@
     :footer="null"
     centered
     class="notice-modal"
-    wrap-class-name="notice-center-modal"
+    wrap-class-name="notice-center-modal notice-popup-modal"
     @cancel="closeNoticePopup"
   >
     <div class="notice-popup-list">

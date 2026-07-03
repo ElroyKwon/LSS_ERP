@@ -137,9 +137,12 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
     ).first()
 
     if ts:
-        if ts.status in ("제출", "승인"):
-            raise HTTPException(400, "제출/승인된 타임시트는 수정할 수 없습니다.")
         ts.notes = data.notes
+        ts.status = "작성중"
+        ts.submitted_at = None
+        ts.approved_by = None
+        ts.approved_at = None
+        ts.reject_reason = None
         db.query(TimesheetEntry).filter(TimesheetEntry.timesheet_id == ts.id).delete()
     else:
         ts = Timesheet(employee_id=data.employee_id, week_start=monday, week_end=sunday,

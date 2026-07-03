@@ -44,6 +44,13 @@
             <span class="grid-toolbar-title">{{ timesheetMode === 'week' ? '주간 입력' : monthLabel }}</span>
             <a-segmented v-model:value="timesheetMode" :options="timesheetModeOptions" @change="handleModeChange" />
           </div>
+          <a-alert
+            v-if="timesheetMode === 'week'"
+            class="save-guide"
+            type="info"
+            show-icon
+            message="입력한 내용은 자동 저장되지 않습니다. 하루 입력 후 저장 버튼을 눌러야 반영됩니다."
+          />
 
           <a-spin :spinning="weekLoading || monthLoading">
             <div class="ts-grid-wrap">
@@ -207,22 +214,8 @@
               <div style="flex:1" />
               <a-space>
                 <a-button v-if="!isLocked" :loading="saving" @click="handleSave">
-                  임시 저장
+                  저장
                 </a-button>
-                <a-popconfirm v-if="tsStatus === '작성중' && tsId"
-                              title="타임시트를 제출하시겠습니까? 제출 후에는 수정할 수 없습니다."
-                              ok-text="제출" cancel-text="취소" @confirm="handleSubmit">
-                  <a-button type="primary" :loading="saving">
-                    <template #icon><SendOutlined /></template>제출
-                  </a-button>
-                </a-popconfirm>
-                <a-tag v-if="tsStatus === '제출'" color="orange" style="padding:6px 12px">검토 대기 중</a-tag>
-                <a-tag v-if="tsStatus === '승인'" color="green" style="padding:6px 12px">승인됨 ✓</a-tag>
-                <div v-if="tsStatus === '반려'" class="reject-bar">
-                  <a-tag color="red">반려됨</a-tag>
-                  <span v-if="rejectReason" style="margin-left:6px;font-size:12px;color:#f5222d">{{ rejectReason }}</span>
-                  <a-button size="small" @click="tsStatus='작성중'" style="margin-left:8px">재작성</a-button>
-                </div>
               </a-space>
             </div>
           </a-spin>
@@ -277,7 +270,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { message, Empty } from 'ant-design-vue'
 import {
-  LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined, SendOutlined,
+  LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined,
 } from '@ant-design/icons-vue'
 import { timesheetApi, masterApi, executionApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -398,7 +391,7 @@ const weekLabelDisplay = computed(() => {
   return `${fmt(s)}  ~  ${fmt(e)}`
 })
 
-const isLocked = computed(() => ['제출', '승인'].includes(tsStatus.value))
+const isLocked = computed(() => false)
 
 // 프로젝트 자동완성
 const projectSuggestions = computed(() =>
@@ -543,18 +536,6 @@ async function handleSave() {
     tsStatus.value = res.data.status
     message.success('저장되었습니다.')
   } catch (e) { message.error(e.response?.data?.detail || '저장 오류') }
-  finally { saving.value = false }
-}
-
-async function handleSubmit() {
-  if (!tsId.value) { await handleSave() }
-  if (!tsId.value) return
-  saving.value = true
-  try {
-    await timesheetApi.submit(tsId.value)
-    tsStatus.value = '제출'
-    message.success('타임시트가 제출되었습니다.')
-  } catch (e) { message.error(e.response?.data?.detail || '제출 오류') }
   finally { saving.value = false }
 }
 
@@ -707,6 +688,7 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 .grid-toolbar-title { font-size: 12px; color: #8c8c8c; }
+.save-guide { margin-bottom: 12px; }
 .ts-grid-wrap { overflow-x: auto; }
 
 /* ── 타임시트 그리드 테이블 ── */

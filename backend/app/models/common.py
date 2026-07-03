@@ -117,6 +117,7 @@ class OpinionNotificationSetting(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
     notify_on_new_post = Column(Boolean, default=True)
+    notify_on_registration = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     user = relationship("User", foreign_keys=[user_id])

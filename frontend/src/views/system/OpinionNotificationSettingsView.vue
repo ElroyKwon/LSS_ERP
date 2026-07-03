@@ -32,19 +32,19 @@
         :data-source="settings"
         :loading="loading"
         :pagination="{ pageSize: 20, showSizeChanger: true }"
-        :scroll="{ x: 820 }"
+        :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }"
         row-key="user_id"
         size="middle"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'notify_on_new_post'">
+          <template v-if="column.key === 'notify_on_new_post' || column.key === 'notify_on_registration'">
             <a-switch
-              v-model:checked="record.notify_on_new_post"
+              v-model:checked="record[column.key]"
               checked-children="수신"
               un-checked-children="미수신"
               :loading="savingIds.has(record.user_id)"
-              @change="value => updateSetting(record, value)"
+              @change="value => updateSetting(record, column.key, value)"
             />
           </template>
           <template v-else-if="column.key === 'email'">
@@ -71,9 +71,12 @@ const columns = [
   { title: '아이디', dataIndex: 'username', width: 160, align: 'center' },
   { title: '이메일', key: 'email', dataIndex: 'email', width: 300, align: 'center', ellipsis: true },
   { title: '신규 의견 알림', key: 'notify_on_new_post', width: 180, align: 'center' },
+  { title: '가입 신청 알림', key: 'notify_on_registration', width: 180, align: 'center' },
 ]
 
-const enabledCount = computed(() => settings.value.filter(row => row.notify_on_new_post).length)
+const enabledCount = computed(() =>
+  settings.value.filter(row => row.notify_on_new_post || row.notify_on_registration).length
+)
 
 async function load() {
   loading.value = true
@@ -87,13 +90,13 @@ async function load() {
   }
 }
 
-async function updateSetting(row, value) {
+async function updateSetting(row, key, value) {
   savingIds.value = new Set([...savingIds.value, row.user_id])
   try {
-    await opinionApi.updateNotificationSetting(row.user_id, { notify_on_new_post: value })
+    await opinionApi.updateNotificationSetting(row.user_id, { [key]: value })
     message.success('알림 설정이 저장되었습니다.')
   } catch (error) {
-    row.notify_on_new_post = !value
+    row[key] = !value
     message.error(error.response?.data?.detail || '알림 설정 저장에 실패했습니다.')
   } finally {
     const next = new Set(savingIds.value)

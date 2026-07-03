@@ -34,7 +34,8 @@ class OpinionAnswer(BaseModel):
 
 
 class OpinionNotificationSettingIn(BaseModel):
-    notify_on_new_post: bool
+    notify_on_new_post: Optional[bool] = None
+    notify_on_registration: Optional[bool] = None
 
 
 def _attachment_dict(row: OpinionAttachment) -> dict:
@@ -299,6 +300,9 @@ def list_opinion_notification_settings(db: Session = Depends(get_db), current=De
             "notify_on_new_post": settings_by_user.get(user.id).notify_on_new_post
             if user.id in settings_by_user
             else True,
+            "notify_on_registration": settings_by_user.get(user.id).notify_on_registration
+            if user.id in settings_by_user
+            else True,
         }
         for user in admins
         if is_system_admin(user.role)
@@ -322,6 +326,9 @@ def update_opinion_notification_setting(
     if not row:
         row = OpinionNotificationSetting(user_id=user_id)
         db.add(row)
-    row.notify_on_new_post = data.notify_on_new_post
+    if data.notify_on_new_post is not None:
+        row.notify_on_new_post = data.notify_on_new_post
+    if data.notify_on_registration is not None:
+        row.notify_on_registration = data.notify_on_registration
     db.commit()
     return {"ok": True}

@@ -434,9 +434,8 @@ async function handleApprove() {
     })
     await loadUsers()
     await loadRegistrations()
-    message.success(`${approveTarget.value.name} 님이 승인되었습니다. 사용자 목록에서 확인하세요.`)
+    message.success(`${approveTarget.value.name} 님이 승인되었습니다.`)
     approveOpen.value = false
-    activeTab.value = 'users'   // 사용자 목록 탭으로 이동
   } catch (e) {
     message.error(e.response?.data?.detail || '승인 중 오류가 발생했습니다.')
   } finally { approving.value = false }

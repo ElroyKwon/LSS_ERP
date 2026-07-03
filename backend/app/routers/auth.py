@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 from ..database import get_db
-from ..models.common import Department, User, UserRegistration
+from ..models.common import Department, OpinionNotificationSetting, User, UserRegistration
 from ..config import settings
 from ..services.email_service import EmailNotConfiguredError, send_email
 from ..services.user_employee_sync import sync_employee_for_user
@@ -130,11 +130,22 @@ def _reg_dict(r):
 
 
 def _registration_admin_recipients(db: Session) -> list[str]:
-    recipients = set(settings.admin_emails)
+    settings_by_user = {
+        item.user_id: item.notify_on_registration
+        for item in db.query(OpinionNotificationSetting).all()
+    }
+    recipients = set()
     admins = db.query(User).filter(User.is_active == True, User.email.isnot(None)).all()
+    admin_emails = set()
     for user in admins:
         if is_system_admin(user.role):
-            recipients.add(user.email.strip())
+            email = user.email.strip()
+            admin_emails.add(email.lower())
+            if settings_by_user.get(user.id, True):
+                recipients.add(email)
+    for email in settings.admin_emails:
+        if email.lower() not in admin_emails:
+            recipients.add(email)
     return sorted(email for email in recipients if email)
 
 

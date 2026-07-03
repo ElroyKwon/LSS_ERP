@@ -386,11 +386,22 @@ class UserUpdate(BaseModel):
 @router.get("/users")
 def list_users(db: Session = Depends(get_db), _=Depends(get_current_user)):
     users = db.query(User).all()
-    return [{"id": u.id, "username": u.username, "name": u.name, "email": u.email,
-             "employee_code": u.employee_code,
-             "role": normalize_role(u.role), "position": u.position, "is_active": u.is_active,
-             "department_id": u.department_id,
-             "department_name": u.department.name if u.department else None} for u in users]
+    employee_by_code = {
+        emp.emp_code: emp
+        for emp in db.query(Employee).filter(Employee.emp_code.isnot(None)).all()
+    }
+    result = []
+    for u in users:
+        employee = employee_by_code.get(effective_employee_code(u))
+        department_name = u.department.name if u.department else (employee.department_name if employee else None)
+        result.append({
+            "id": u.id, "username": u.username, "name": u.name, "email": u.email,
+            "employee_code": u.employee_code,
+            "role": normalize_role(u.role), "position": u.position, "is_active": u.is_active,
+            "department_id": u.department_id,
+            "department_name": department_name,
+        })
+    return result
 
 
 @router.post("/users")

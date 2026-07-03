@@ -115,6 +115,24 @@
         <a-form-item label="권한" required>
           <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
         </a-form-item>
+        <a-alert
+          v-if="approveTarget?.department"
+          class="approve-dept-alert"
+          :type="approveDepartmentId ? 'success' : 'warning'"
+          show-icon
+          :message="approveDepartmentId
+            ? `신청 부서 '${approveTarget.department}'와 일치하는 부서를 자동 선택했습니다.`
+            : `신청 부서 '${approveTarget.department}'와 일치하는 부서가 없습니다. 확정 부서를 직접 선택하세요.`"
+        />
+        <a-form-item label="확정 부서" required>
+          <a-select
+            v-model:value="approveDepartmentId"
+            :options="departmentOptions"
+            show-search
+            option-filter-prop="label"
+            placeholder="확정 부서 선택"
+          />
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
@@ -123,7 +141,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { authApi } from '@/api'
+import { authApi, masterApi } from '@/api'
 import { ROLE_OPTIONS } from '@/utils/permissions'
 import {
   TeamOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
@@ -140,7 +158,15 @@ const approveOpen = ref(false)
 const approving = ref(false)
 const approveTarget = ref(null)
 const approveRole = ref('sales_staff')
+const approveDepartmentId = ref(null)
+const departments = ref([])
 const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
+const departmentOptions = computed(() =>
+  departments.value.map(dept => ({
+    value: dept.id,
+    label: dept.path_name || dept.name,
+  }))
+)
 
 const statusColor = { pending: 'orange', approved: 'green', rejected: 'red' }
 const statusLabel = { pending: '대기', approved: '승인', rejected: '거절' }
@@ -176,6 +202,8 @@ async function load() {
 function openApproveModal(record) {
   approveTarget.value = record
   approveRole.value = 'sales_staff'
+  const department = departments.value.find(dept => dept.name === record.department || dept.path_name === record.department)
+  approveDepartmentId.value = department?.id || null
   approveOpen.value = true
 }
 
@@ -184,9 +212,16 @@ async function handleApprove() {
     message.warning('권한을 선택하세요.')
     return
   }
+  if (!approveDepartmentId.value) {
+    message.warning('확정 부서를 선택하세요.')
+    return
+  }
   approving.value = true
   try {
-    await authApi.approveRegistration(approveTarget.value.id, { role: approveRole.value })
+    await authApi.approveRegistration(approveTarget.value.id, {
+      role: approveRole.value,
+      department_id: approveDepartmentId.value,
+    })
     message.success(`${approveTarget.value.name} 님의 가입이 승인되었습니다.`)
     approveOpen.value = false
     load()
@@ -213,7 +248,14 @@ async function handleReject() {
   } finally { rejecting.value = false }
 }
 
-onMounted(load)
+async function loadDepartments() {
+  departments.value = (await masterApi.getDepartments({ include_inactive: false })).data
+}
+
+onMounted(() => {
+  loadDepartments()
+  load()
+})
 </script>
 
 <style scoped>
@@ -246,6 +288,7 @@ onMounted(load)
 .card-title { font-size: 15px; font-weight: 600; color: #1a2535; }
 
 .reviewed-text { font-size: 12px; color: #8c8c8c; }
+.approve-dept-alert { margin-bottom: 12px; }
 
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }

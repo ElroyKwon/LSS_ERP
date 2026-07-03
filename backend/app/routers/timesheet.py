@@ -239,7 +239,7 @@ def team_status(week_start: date, db: Session = Depends(get_db),
         result.append({
             "employee_id":   emp.id,
             "employee_name": emp.name,
-            "department":    emp.department,
+            "department":    emp.department_name,
             "position":      emp.position,
             "status":        ts.status if ts else "미작성",
             "total_hours":   float(ts.total_hours or 0) if ts else 0,

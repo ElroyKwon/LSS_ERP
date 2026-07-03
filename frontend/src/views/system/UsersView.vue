@@ -231,14 +231,22 @@
         <a-form-item label="권한" required>
           <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
         </a-form-item>
-        <a-form-item label="부서">
+        <a-alert
+          v-if="approveTarget?.department"
+          class="approve-dept-alert"
+          :type="approveDepartmentId ? 'success' : 'warning'"
+          show-icon
+          :message="approveDepartmentId
+            ? `신청 부서 '${approveTarget.department}'와 일치하는 부서를 자동 선택했습니다.`
+            : `신청 부서 '${approveTarget.department}'와 일치하는 부서가 없습니다. 확정 부서를 직접 선택하세요.`"
+        />
+        <a-form-item label="확정 부서" required>
           <a-select
             v-model:value="approveDepartmentId"
             :options="departmentOptions"
-            allow-clear
             show-search
             option-filter-prop="label"
-            placeholder="부서 선택"
+            placeholder="확정 부서 선택"
           />
         </a-form-item>
       </a-form>
@@ -427,6 +435,10 @@ async function handleApprove() {
     message.warning('권한을 선택하세요.')
     return
   }
+  if (!approveDepartmentId.value) {
+    message.warning('확정 부서를 선택하세요.')
+    return
+  }
   approving.value = true
   try {
     await authApi.approveRegistration(approveTarget.value.id, {
@@ -515,6 +527,7 @@ onMounted(() => {
 .main-tabs :deep(.ant-tabs-nav) { margin-bottom: 16px; }
 
 .reg-filter { margin-bottom: 16px; }
+.approve-dept-alert { margin-bottom: 12px; }
 
 .del-link     { color: #e74c3c; }
 .del-link:hover { color: #c0392b; }

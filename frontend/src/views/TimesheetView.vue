@@ -341,7 +341,10 @@ const timesheetModeOptions = [
 ]
 
 const empOptions = computed(() =>
-  employees.value.map(e => ({ value: e.id, label: `${e.name} (${e.department || ''})` }))
+  employees.value.map(e => {
+    const department = (e.department_name || e.department || '').trim()
+    return { value: e.id, label: department ? `${e.name} (${department})` : e.name }
+  })
 )
 const myEmpId = computed(() => {
   const me = employees.value.find(e => e.name === auth.user?.name)

@@ -12,7 +12,7 @@ def effective_employee_code(user: User) -> str:
     return (user.employee_code or "").strip() or user_employee_code(user.id)
 
 
-def sync_employee_for_user(db: Session, user: User) -> Employee:
+def sync_employee_for_user(db: Session, user: User, fallback_department_name: str | None = None) -> Employee:
     if not user.id:
         db.flush()
 
@@ -41,7 +41,8 @@ def sync_employee_for_user(db: Session, user: User) -> Employee:
     employee.phone = user.phone
     employee.position = user.position
     employee.department_id = user.department_id
-    employee.department_name = department.name if department else None
+    fallback_department_name = (fallback_department_name or "").strip() or None
+    employee.department_name = department.name if department else fallback_department_name
     employee.is_active = bool(user.is_active)
     return employee
 

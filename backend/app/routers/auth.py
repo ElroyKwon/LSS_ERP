@@ -289,16 +289,21 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     department = None
+    if not data.department_id:
+        raise HTTPException(status_code=400, detail="가입 승인 시 확정 부서를 선택해야 합니다.")
     if data.department_id:
         department = (
             db.query(Department)
             .filter(Department.id == data.department_id, Department.is_active == True)
             .first()
         )
-    if not department and reg.department:
+        if not department:
+            raise HTTPException(status_code=400, detail="선택한 부서를 찾을 수 없습니다.")
+    registration_department = (reg.department or "").strip()
+    if not department and registration_department:
         department = (
             db.query(Department)
-            .filter(Department.name == reg.department, Department.is_active == True)
+            .filter(Department.name == registration_department, Department.is_active == True)
             .first()
         )
     user = User(
@@ -315,7 +320,7 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
     )
     db.add(user)
     db.flush()
-    sync_employee_for_user(db, user)
+    sync_employee_for_user(db, user, fallback_department_name=registration_department)
     reg.status = "approved"
     reg.reviewed_by = current.id
     reg.reviewed_at = datetime.utcnow()

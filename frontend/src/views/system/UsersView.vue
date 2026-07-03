@@ -65,7 +65,7 @@
             :data-source="users"
             :loading="userLoading"
             :pagination="{ pageSize: 20, showSizeChanger: true }"
-            row-key="id" size="middle" :scroll="{ x: 1040 }"
+            row-key="id" size="middle" :scroll="{ x: 1190 }"
           
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -303,14 +303,15 @@ const userStats = computed(() => ({
 }))
 
 const userColumns = [
-  { title: '아이디', dataIndex: 'username', width: 140, align: 'center' },
-  { title: '이름',   dataIndex: 'name',     width: 120, align: 'center' },
   { title: '사원번호', dataIndex: 'employee_code', width: 110, align: 'center' },
-  { title: '이메일', dataIndex: 'email',    width: 220, align: 'center', ellipsis: true },
-  { title: '직위',   dataIndex: 'position', width: 120, align: 'center' },
-  { title: '권한',   key: 'role',           width: 120, align: 'center' },
-  { title: '상태',   key: 'is_active',      width: 90,  align: 'center' },
-  { title: '관리',   key: 'action',         width: 130, align: 'center', fixed: 'right' },
+  { title: '이름',     dataIndex: 'name',            width: 120, align: 'center' },
+  { title: '아이디',   dataIndex: 'username',        width: 140, align: 'center' },
+  { title: '부서',     dataIndex: 'department_name', width: 140, align: 'center', ellipsis: true },
+  { title: '직위',     dataIndex: 'position',        width: 120, align: 'center' },
+  { title: '이메일',   dataIndex: 'email',           width: 220, align: 'center', ellipsis: true },
+  { title: '권한',     key: 'role',                  width: 120, align: 'center' },
+  { title: '상태',     key: 'is_active',             width: 90,  align: 'center' },
+  { title: '관리',     key: 'action',                width: 130, align: 'center', fixed: 'right' },
 ]
 
 async function loadUsers() {

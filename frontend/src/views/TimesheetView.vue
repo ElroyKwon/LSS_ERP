@@ -49,7 +49,7 @@
             class="save-guide"
             type="info"
             show-icon
-            message="입력한 내용은 자동 저장되지 않습니다. 하루 입력 후 저장 버튼을 눌러야 반영됩니다."
+            message="입력한 내용은 자동 저장되지 않습니다. 작성 후 저장 버튼을 눌러야 반영됩니다."
           />
 
           <a-spin :spinning="weekLoading || monthLoading">

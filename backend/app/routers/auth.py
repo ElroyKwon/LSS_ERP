@@ -176,6 +176,34 @@ def _send_registration_notice(db: Session, reg: UserRegistration) -> None:
         logger.exception("Failed to send registration notice: %s", reg.username)
 
 
+def _send_registration_rejection_notice(reg: UserRegistration) -> None:
+    recipient = (reg.email or "").strip()
+    if not recipient:
+        logger.info("No recipient email for registration rejection notice: %s", reg.username)
+        return
+
+    reason = (reg.rejection_reason or "").strip() or "별도 사유가 입력되지 않았습니다."
+    subject = "[LSS ERP] 회원가입 신청이 거절되었습니다"
+    body = "\n".join([
+        f"{reg.name} 님의 LSS ERP 회원가입 신청이 거절되었습니다.",
+        "",
+        f"아이디: {reg.username}",
+        f"사원번호: {reg.employee_code or '-'}",
+        f"부서: {reg.department or '-'}",
+        "",
+        "거절 사유:",
+        reason,
+        "",
+        "문의가 필요한 경우 시스템 관리자에게 확인해 주세요.",
+    ])
+    try:
+        send_email([recipient], subject, body)
+    except EmailNotConfiguredError:
+        logger.warning("SMTP is not configured; registration rejection notice was not sent: %s", reg.username)
+    except Exception:
+        logger.exception("Failed to send registration rejection notice: %s", reg.username)
+
+
 @router.post("/register")
 def register(data: RegistrationCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == data.username).first():
@@ -322,4 +350,5 @@ def reject_registration(rid: int, data: RejectRequest, db: Session = Depends(get
     reg.reviewed_by = current.id
     reg.reviewed_at = datetime.utcnow()
     db.commit()
+    _send_registration_rejection_notice(reg)
     return {"message": "거절 처리되었습니다."}

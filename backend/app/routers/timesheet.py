@@ -152,7 +152,9 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
 
     total = 0
     for i, e in enumerate(data.entries):
-        entry = TimesheetEntry(**e.dict(), timesheet_id=ts.id, sort_order=i)
+        entry_data = e.model_dump()
+        entry_data["sort_order"] = i
+        entry = TimesheetEntry(**entry_data, timesheet_id=ts.id)
         row_total = sum(float(getattr(entry, f"{d}_hours") or 0) for d in DAYS)
         total += row_total
         db.add(entry)

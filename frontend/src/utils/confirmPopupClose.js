@@ -82,6 +82,10 @@ function askBeforeClose(container) {
 
 export function installConfirmPopupClose() {
   document.addEventListener('click', event => {
+    if (event.target instanceof Element && event.target.closest('.ant-modal-close, .ant-drawer-close')) {
+      return
+    }
+
     const container = popupContainerFromEvent(event.target)
     if (!container || shouldBypassConfirm(container)) return
     if (isConfirmDialog(container) || !hasEditableContent(container)) return

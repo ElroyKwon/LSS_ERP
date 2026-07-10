@@ -79,7 +79,8 @@
                       <a-auto-complete
                         v-model:value="row.project_name"
                         :options="projectSuggestions"
-                        placeholder="프로젝트명"
+                        :filter-option="filterProjectOption"
+                        placeholder="PJT NO. 또는 프로젝트명"
                         :disabled="isLocked"
                         style="width:100%"
                         @select="(v, opt) => onProjectSelect(idx, v, opt)"
@@ -144,7 +145,7 @@
                     <td colspan="4" class="total-label">일  계</td>
                     <td v-for="(d, di) in weekDays" :key="d.date"
                         :class="['col-day', d.isWeekend ? 'weekend' : '']">
-                      <span :class="dayTotal(di) > 8 ? 'overtime' : dayTotal(di) > 0 ? 'num-active' : 'num-zero'">
+                      <span :class="dayTotalClass(di)">
                         {{ dayTotal(di) > 0 ? dayTotal(di) : '—' }}
                       </span>
                     </td>
@@ -278,7 +279,7 @@ import { canAccess } from '@/utils/permissions'
 
 const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
-const SPG_TYPES = ['에너지', '빌딩', '시스템']
+const SPG_TYPES = ['에너지', '빌딩', '시스템', '공통']
 const LABOR_TYPES = ['판관', '원가']
 const WORK_TYPES = ['설계', '시공', 'PM', '영업', '관리', '연차', '교육', '공통', '기타']
 const DAY_KEYS   = ['mon_hours', 'tue_hours', 'wed_hours', 'thu_hours', 'fri_hours', 'sat_hours', 'sun_hours']
@@ -398,15 +399,34 @@ const isLocked = computed(() => false)
 
 // 프로젝트 자동완성
 const projectSuggestions = computed(() =>
-  projects.value.map(p => ({ value: p.project_name, id: p.id, project_no: p.project_no }))
+  projects.value.map(p => {
+    const projectNo = (p.project_no || '').trim()
+    const projectName = (p.project_name || '').trim()
+    const label = [projectNo, projectName].filter(Boolean).join(' ')
+    return {
+      value: label || projectName || projectNo,
+      label: label || projectName || projectNo,
+      searchText: `${projectNo} ${projectName}`.toLowerCase(),
+      id: p.id,
+      project_no: projectNo,
+      project_name: projectName,
+    }
+  })
 )
+function filterProjectOption(input, option) {
+  const keyword = (input || '').trim().toLowerCase()
+  if (!keyword) return true
+  return (option.searchText || '').includes(keyword)
+}
 function onProjectSelect(idx, value, option) {
   entries.value[idx].project_id = option.id || null
+  entries.value[idx].project_name = option.value || value
 }
 
 // 시간 계산
 const rowTotal = (row) => DAY_KEYS.reduce((s, k) => s + (Number(row[k]) || 0), 0)
 const dayTotal  = (di)  => entries.value.reduce((s, r) => s + (Number(r[DAY_KEYS[di]]) || 0), 0)
+const dayTotalClass = (di) => dayTotal(di) > 0 ? 'daily-total-alert' : 'num-zero'
 const weekTotalHours = computed(() => entries.value.reduce((s, r) => s + rowTotal(r), 0))
 const monthlyDayTotal = (day) => monthlyRows.value.reduce((s, r) => s + (Number(r.days[day]) || 0), 0)
 const monthlyTotalHours = computed(() => monthlyRows.value.reduce((s, r) => s + (Number(r.total) || 0), 0))
@@ -730,6 +750,7 @@ onMounted(async () => {
 .num-zero    { color: #bfbfbf; }
 .num-bold    { font-weight: 700; }
 .overtime    { color: #f5222d; font-weight: 700; }
+.daily-total-alert { color: #f5222d; font-weight: 700; }
 
 /* ── 액션 바 ── */
 .action-bar {

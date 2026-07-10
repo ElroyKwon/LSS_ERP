@@ -193,6 +193,7 @@ export const opinionApi = {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 180000,
   }),
+  downloadAttachment: (id) => api.get(`/opinion-attachments/${id}/download`, { responseType: 'blob' }),
   deleteAttachment: (id) => api.delete(`/opinion-attachments/${id}`),
   getNotificationSettings: () => api.get('/opinion-notification-settings'),
   updateNotificationSetting: (userId, d) => api.put(`/opinion-notification-settings/${userId}`, d),

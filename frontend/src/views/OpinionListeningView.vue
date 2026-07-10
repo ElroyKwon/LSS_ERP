@@ -149,7 +149,9 @@
         <a-list v-else class="attachment-list" :data-source="selected.attachments" size="small">
           <template #renderItem="{ item }">
             <a-list-item>
-              <a :href="`/api/opinion-attachments/${item.id}/download`" target="_blank">{{ item.original_name }}</a>
+              <a-button type="link" class="attachment-link" @click="openAttachment(item)">
+                {{ item.original_name }}
+              </a-button>
               <template #actions>
                 <a-popconfirm title="첨부파일을 삭제하시겠습니까?" @confirm="deleteAttachment(item.id)">
                   <a-button type="link" danger size="small">삭제</a-button>
@@ -207,11 +209,22 @@
         </div>
       </template>
     </a-modal>
+
+    <a-modal
+      v-model:open="pdfPreviewOpen"
+      :title="pdfPreviewTitle"
+      width="80vw"
+      :footer="null"
+      destroy-on-close
+      @cancel="closePdfPreview"
+    >
+      <iframe v-if="pdfPreviewUrl" class="pdf-preview-frame" :src="pdfPreviewUrl" />
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   CheckCircleOutlined,
@@ -236,6 +249,9 @@ const editingId = ref(null)
 const selected = ref(null)
 const pendingFiles = ref([])
 const answerText = ref('')
+const pdfPreviewOpen = ref(false)
+const pdfPreviewUrl = ref('')
+const pdfPreviewTitle = ref('')
 const filters = reactive({ search: '', status: undefined })
 const form = reactive({ title: '', content: '' })
 
@@ -407,7 +423,62 @@ async function deleteAttachment(id) {
   }
 }
 
+function attachmentFileName(attachment) {
+  return attachment?.original_name || attachment?.filename || 'attachment'
+}
+
+function isPdfAttachment(attachment, blob) {
+  const contentType = String(blob?.type || attachment?.content_type || '').toLowerCase()
+  const fileName = attachmentFileName(attachment).toLowerCase()
+  return contentType.includes('pdf') || fileName.endsWith('.pdf')
+}
+
+function revokePdfPreviewUrl() {
+  if (pdfPreviewUrl.value) {
+    URL.revokeObjectURL(pdfPreviewUrl.value)
+    pdfPreviewUrl.value = ''
+  }
+}
+
+function closePdfPreview() {
+  revokePdfPreviewUrl()
+  pdfPreviewOpen.value = false
+  pdfPreviewTitle.value = ''
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function openAttachment(attachment) {
+  try {
+    const res = await opinionApi.downloadAttachment(attachment.id)
+    const blob = new Blob([res.data], {
+      type: res.headers?.['content-type'] || attachment.content_type || 'application/octet-stream',
+    })
+    const fileName = attachmentFileName(attachment)
+    if (isPdfAttachment(attachment, blob)) {
+      revokePdfPreviewUrl()
+      pdfPreviewUrl.value = URL.createObjectURL(blob)
+      pdfPreviewTitle.value = fileName
+      pdfPreviewOpen.value = true
+      return
+    }
+    downloadBlob(blob, fileName)
+  } catch (error) {
+    message.error(error.response?.data?.detail || '첨부파일을 열 수 없습니다.')
+  }
+}
+
 onMounted(load)
+onBeforeUnmount(closePdfPreview)
 </script>
 
 <style scoped>
@@ -433,6 +504,8 @@ onMounted(load)
 .detail-content { white-space: pre-wrap; line-height: 1.7; color: #1a2535; }
 .answer-box { padding: 12px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; }
 .attachment-list { border: 1px solid #f0f0f0; border-radius: 8px; }
+.attachment-link { height: auto; padding: 0; text-align: left; white-space: normal; }
+.pdf-preview-frame { width: 100%; height: 75vh; border: 0; display: block; }
 .drawer-footer { display: none; }
 .detail-footer { display: flex; justify-content: flex-end; }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }

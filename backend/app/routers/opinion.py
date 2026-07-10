@@ -262,7 +262,7 @@ def download_opinion_attachment(attachment_id: int, db: Session = Depends(get_db
     return FileResponse(
         row.file_path,
         media_type=row.content_type or "application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(row.original_name)}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(row.original_name, safe='')}"},
     )
 
 

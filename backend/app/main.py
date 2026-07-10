@@ -5,6 +5,10 @@ from fastapi.responses import FileResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 import os
+import traceback
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from .config import settings
 from .database import engine, Base
@@ -12,7 +16,7 @@ from .models import *  # noqa: register all models
 from .utils.authorization import enforce_api_permissions
 from .utils.schema import ensure_accounting_columns, ensure_execution_columns, ensure_master_columns
 
-from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion
+from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule
 
 # Development convenience. Production deployments should run Alembic migrations
 # and set AUTO_CREATE_SCHEMA=false to keep schema changes explicit.
@@ -55,6 +59,10 @@ app.include_router(management.router)
 app.include_router(timesheet.router)
 app.include_router(vehicle.router)
 app.include_router(opinion.router)
+app.include_router(holiday.router)
+app.include_router(schedule.router)
+
+
 
 # 프론트엔드 정적 파일 서빙
 FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")

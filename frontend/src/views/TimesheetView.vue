@@ -426,7 +426,11 @@ function onProjectSelect(idx, value, option) {
 // 시간 계산
 const rowTotal = (row) => DAY_KEYS.reduce((s, k) => s + (Number(row[k]) || 0), 0)
 const dayTotal  = (di)  => entries.value.reduce((s, r) => s + (Number(r[DAY_KEYS[di]]) || 0), 0)
-const dayTotalClass = (di) => dayTotal(di) > 0 ? 'daily-total-alert' : 'num-zero'
+const dayTotalClass = (di) => {
+  const total = dayTotal(di)
+  if (total === 0) return 'num-zero'
+  return total === 8 ? 'num-active' : 'daily-total-alert'
+}
 const weekTotalHours = computed(() => entries.value.reduce((s, r) => s + rowTotal(r), 0))
 const monthlyDayTotal = (day) => monthlyRows.value.reduce((s, r) => s + (Number(r.days[day]) || 0), 0)
 const monthlyTotalHours = computed(() => monthlyRows.value.reduce((s, r) => s + (Number(r.total) || 0), 0))

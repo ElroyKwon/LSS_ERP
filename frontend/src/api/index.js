@@ -201,6 +201,7 @@ export const opinionApi = {
 
 // Timesheet
 export const timesheetApi = {
+  getEmployees: () => api.get('/timesheets/employees'),
   getList:     (p) => api.get('/timesheets', { params: p }),
   getWeek:     (empId, weekStart) => api.get('/timesheets/week', { params: { employee_id: empId, week_start: weekStart } }),
   save:        (d) => api.post('/timesheets', d),

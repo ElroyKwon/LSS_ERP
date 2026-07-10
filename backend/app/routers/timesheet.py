@@ -7,10 +7,12 @@ from datetime import date, datetime, timedelta
 from ..database import get_db
 from ..models.timesheet import Timesheet, TimesheetEntry
 from ..models.master import Employee, OverheadRate
+from ..models.common import Department
 from ..models.execution import Project
 from ..models.purchase import CostInput
 from ..utils.auth import get_current_user
 from ..utils import to_kst, to_kst_date
+from ..utils.permissions import is_system_admin, normalize_role
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["타임시트"])
@@ -67,6 +69,73 @@ def _ts_dict(ts: Timesheet, include_entries=True) -> dict:
     return d
 
 
+def _employee_dict(emp: Employee) -> dict:
+    return {
+        "id": emp.id,
+        "emp_code": emp.emp_code,
+        "name": emp.name,
+        "department_id": emp.department_id,
+        "department_name": emp.department.name if emp.department else emp.department_name,
+        "department": emp.department_name,
+        "position": emp.position,
+        "job_title": emp.job_title,
+        "email": emp.email,
+        "is_active": emp.is_active,
+    }
+
+
+def _current_employee(db: Session, current) -> Employee | None:
+    if current.employee_code:
+        emp = db.query(Employee).filter(Employee.emp_code == current.employee_code).first()
+        if emp:
+            return emp
+    return db.query(Employee).filter(Employee.name == current.name).first()
+
+
+def _descendant_department_ids(db: Session, department_id: int | None) -> set[int]:
+    if not department_id:
+        return set()
+    ids = {department_id}
+    frontier = [department_id]
+    while frontier:
+        child_rows = db.query(Department.id).filter(
+            Department.parent_id.in_(frontier),
+            Department.is_active == True,
+        ).all()
+        children = [row.id for row in child_rows if row.id not in ids]
+        ids.update(children)
+        frontier = children
+    return ids
+
+
+def _allowed_employee_ids(db: Session, current) -> set[int] | None:
+    if is_system_admin(current.role):
+        return None
+
+    current_emp = _current_employee(db, current)
+    role = normalize_role(current.role)
+    scope_department_id = current.department_id or (current_emp.department_id if current_emp else None)
+    if role.endswith("_manager") and scope_department_id:
+        department_ids = _descendant_department_ids(db, scope_department_id)
+        if department_ids:
+            rows = db.query(Employee.id).filter(
+                Employee.is_active == True,
+                Employee.department_id.in_(department_ids),
+            ).all()
+            scoped_ids = {row.id for row in rows}
+            if current_emp:
+                scoped_ids.add(current_emp.id)
+            return scoped_ids
+
+    return {current_emp.id} if current_emp else set()
+
+
+def _require_employee_access(employee_id: int, db: Session, current) -> None:
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None and employee_id not in allowed_ids:
+        raise HTTPException(status_code=403, detail="해당 직원의 타임시트를 조회할 권한이 없습니다.")
+
+
 # ── Pydantic 스키마 ──────────────────────────────────────────
 class EntryIn(BaseModel):
     project_id:   Optional[int]  = None
@@ -96,6 +165,18 @@ class RejectIn(BaseModel):
     reason: Optional[str] = None
 
 
+@router.get("/timesheets/employees")
+def list_timesheet_employees(db: Session = Depends(get_db), current=Depends(get_current_user)):
+    allowed_ids = _allowed_employee_ids(db, current)
+    q = db.query(Employee).filter(Employee.is_active == True)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        q = q.filter(Employee.id.in_(allowed_ids))
+    rows = q.order_by(Employee.name.asc(), Employee.id.asc()).all()
+    return [_employee_dict(row) for row in rows]
+
+
 # ── 주간 타임시트 목록 ──────────────────────────────────────────
 @router.get("/timesheets")
 def list_timesheets(
@@ -106,7 +187,14 @@ def list_timesheets(
     current=Depends(get_current_user),
 ):
     q = db.query(Timesheet)
-    if employee_id: q = q.filter(Timesheet.employee_id == employee_id)
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        q = q.filter(Timesheet.employee_id.in_(allowed_ids))
+    if employee_id:
+        _require_employee_access(employee_id, db, current)
+        q = q.filter(Timesheet.employee_id == employee_id)
     if week_start:  q = q.filter(Timesheet.week_start  == week_start)
     if status:      q = q.filter(Timesheet.status       == status)
     rows = q.order_by(Timesheet.week_start.desc()).all()
@@ -121,6 +209,7 @@ def get_week_timesheet(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    _require_employee_access(employee_id, db, _)
     monday, sunday = _week_of(week_start)
     ts = db.query(Timesheet).filter(
         Timesheet.employee_id == employee_id,
@@ -137,6 +226,7 @@ def get_week_timesheet(
 @router.post("/timesheets")
 def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
                    current=Depends(get_current_user)):
+    _require_employee_access(data.employee_id, db, current)
     monday, sunday = _week_of(data.week_start)
     ts = db.query(Timesheet).filter(
         Timesheet.employee_id == data.employee_id,
@@ -235,9 +325,15 @@ def reject_timesheet(tid: int, data: RejectIn, db: Session = Depends(get_db),
 # ── 팀 현황 (당주 제출 현황) ──────────────────────────────────
 @router.get("/timesheets/team-status")
 def team_status(week_start: date, db: Session = Depends(get_db),
-                _=Depends(get_current_user)):
+                current=Depends(get_current_user)):
     monday, sunday = _week_of(week_start)
-    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    allowed_ids = _allowed_employee_ids(db, current)
+    employee_q = db.query(Employee).filter(Employee.is_active == True)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        employee_q = employee_q.filter(Employee.id.in_(allowed_ids))
+    employees = employee_q.all()
     submitted = {
         ts.employee_id: ts
         for ts in db.query(Timesheet).filter(Timesheet.week_start == monday).all()
@@ -261,7 +357,7 @@ def team_status(week_start: date, db: Session = Depends(get_db),
 @router.get("/timesheets/stats")
 def timesheet_stats(employee_id: Optional[int] = None,
                     year: Optional[int] = None, month: Optional[int] = None,
-                    db: Session = Depends(get_db), _=Depends(get_current_user)):
+                    db: Session = Depends(get_db), current=Depends(get_current_user)):
     now = datetime.now()
     y = year or now.year; m = month or now.month
     q = db.query(Timesheet).filter(
@@ -269,8 +365,20 @@ def timesheet_stats(employee_id: Optional[int] = None,
         sqlfunc.extract("month", Timesheet.week_start) == m,
         Timesheet.status == "승인",
     )
-    if employee_id: q = q.filter(Timesheet.employee_id == employee_id)
-    sheets = q.all()
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            sheets = []
+        else:
+            q = q.filter(Timesheet.employee_id.in_(allowed_ids))
+            if employee_id:
+                _require_employee_access(employee_id, db, current)
+                q = q.filter(Timesheet.employee_id == employee_id)
+            sheets = q.all()
+    else:
+        if employee_id:
+            q = q.filter(Timesheet.employee_id == employee_id)
+        sheets = q.all()
 
     proj_hours = {}
     for ts in sheets:

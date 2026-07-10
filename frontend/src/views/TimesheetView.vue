@@ -241,10 +241,12 @@
           <span class="week-period">{{ summaryMonthLabel }}</span>
           <a-button @click="nextSummaryMonth"><RightOutlined /></a-button>
           <a-button size="small" @click="goSummaryThisMonth" style="margin-left:8px">이번 달</a-button>
-          <a-divider type="vertical" />
-          <a-select v-model:value="summaryEmpId" style="width:180px"
-                    :options="empOptions" option-filter-prop="label" show-search
-                    placeholder="직원 선택" @change="loadSummary" />
+          <template v-if="canSelectTimesheetEmployee">
+            <a-divider type="vertical" />
+            <a-select v-model:value="summaryEmpId" style="width:180px"
+                      :options="empOptions" option-filter-prop="label" show-search
+                      placeholder="직원 선택" @change="loadSummary" />
+          </template>
         </div>
 
         <a-row :gutter="12" style="margin-bottom:14px">
@@ -281,12 +283,13 @@ import { message, Empty } from 'ant-design-vue'
 import {
   LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined,
 } from '@ant-design/icons-vue'
-import { timesheetApi, masterApi, executionApi } from '@/api'
+import { timesheetApi, executionApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { canAccess } from '@/utils/permissions'
 
 const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
+const canSelectTimesheetEmployee = canApproveTimesheet
 const SPG_TYPES = ['에너지', '빌딩', '시스템', '공통']
 const LABOR_TYPES = ['판관', '원가']
 const WORK_TYPE_GROUPS = [
@@ -709,7 +712,7 @@ async function loadSummary() {
 }
 
 async function loadBase() {
-  const [emp, proj] = await Promise.all([masterApi.getEmployees({}), executionApi.getProjects()])
+  const [emp, proj] = await Promise.all([timesheetApi.getEmployees(), executionApi.getProjects()])
   employees.value = emp.data
   projects.value  = proj.data
   if (!canApproveTimesheet.value) selectedEmpId.value = myEmpId.value
@@ -803,6 +806,26 @@ onMounted(async () => {
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher_close::before) { content: '+'; }
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher_open::before) { content: '-'; }
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher-icon) { display: none; }
+:global(.timesheet-work-type-dropdown .ant-select-tree-treenode) {
+  align-items: center;
+  min-width: 180px;
+}
+:global(.timesheet-work-type-dropdown .ant-select-tree-node-content-wrapper) {
+  flex: 1;
+  min-width: 0;
+}
+:global(.timesheet-work-type-dropdown .ant-select-tree-indent-unit) {
+  width: 8px;
+}
+:global(.timesheet-work-type-dropdown .ant-select-tree-treenode-switcher-close .ant-select-tree-title),
+:global(.timesheet-work-type-dropdown .ant-select-tree-treenode-switcher-open .ant-select-tree-title) {
+  font-weight: 600;
+}
+:global(.timesheet-work-type-dropdown .ant-select-tree-title) {
+  display: inline-block;
+  max-width: 128px;
+  white-space: nowrap;
+}
 
 .total-row td { background: #f5f5f5; font-weight: 600; text-align: center; }
 .total-label  { text-align: center; color: #595959; font-size: 12px; }

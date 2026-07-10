@@ -74,6 +74,12 @@
           타임시트
         </a-menu-item>
 
+        <!-- 전사일정 (단독) -->
+		<a-menu-item key="/calendar">
+          <template #icon><ScheduleOutlined /></template>
+          전사일정
+        </a-menu-item>
+
         <!-- 차량일지 (단독) -->
         <a-menu-item v-if="canRead('/vehicle-log')" key="/vehicle-log">
           <template #icon><CarOutlined /></template>
@@ -196,7 +202,7 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   DatabaseOutlined, ShopOutlined, AppstoreOutlined,
   FundOutlined, ClockCircleOutlined, CarOutlined, SettingOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, MessageOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, MessageOutlined,PropertySafetyOutlined,ScheduleOutlined,
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/store/auth'
 import { authApi, masterApi } from '@/api'
@@ -285,6 +291,7 @@ const pageNames = {
   '/management/receivable': '채권관리',
   '/management/payable': '채무관리',
   '/timesheet':   '타임시트',
+  '/calendar':   '전사일정',  
   '/vehicle-log': '차량일지',
   '/opinion-listening': '의견 청취',
   '/system/users': '사용자 관리',
@@ -299,6 +306,7 @@ const sectionMap = {
   '/execution': '실행',
   '/management': '경영',
   '/timesheet':   '타임시트',
+  '/calendar':   '전사일정',
   '/vehicle-log': '차량일지',
   '/opinion-listening': '의견 청취',
   '/system':      '설정',

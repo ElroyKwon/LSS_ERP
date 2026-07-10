@@ -100,9 +100,17 @@
                     </td>
                     <!-- 작업유형 -->
                     <td class="col-type">
-                      <a-select v-model:value="row.work_type" style="width:100%" :disabled="isLocked">
-                        <a-select-option v-for="t in WORK_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
-                      </a-select>
+                      <a-tree-select
+                        v-model:value="row.work_type"
+                        :tree-data="WORK_TYPE_TREE"
+                        :disabled="isLocked"
+                        :tree-default-expand-all="false"
+                        :show-search="true"
+                        tree-node-filter-prop="title"
+                        popup-class-name="timesheet-work-type-dropdown"
+                        placeholder="작업유형"
+                        style="width:100%"
+                      />
                     </td>
                     <!-- 요일별 시간 입력 -->
                     <td v-for="(d, di) in weekDays" :key="d.date"
@@ -281,7 +289,32 @@ const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
 const SPG_TYPES = ['에너지', '빌딩', '시스템', '공통']
 const LABOR_TYPES = ['판관', '원가']
-const WORK_TYPES = ['설계', '시공', 'PM', '영업', '관리', '연차', '교육', '공통', '기타']
+const WORK_TYPE_GROUPS = [
+  { title: '공통', children: ['연차', '교육', '행사', '기타'] },
+  { title: '영업', children: ['설계', '견적', '제안서', '미팅', '기타'] },
+  { title: '실행', children: ['현장관리', '시운전', '안전관리', '유지보수', '업무지원', '하자처리(유상)', '하자처리(무상)', '기타'] },
+  { title: '경영지원', children: ['구매', '총무', '인사', '회계', '자금', '공시', '기타'] },
+]
+const WORK_TYPE_TREE = WORK_TYPE_GROUPS.map(group => ({
+  title: group.title,
+  value: group.title,
+  selectable: false,
+  children: group.children.map(child => ({
+    title: child,
+    value: `${group.title} > ${child}`,
+  })),
+}))
+const LEGACY_WORK_TYPE_MAP = {
+  설계: '영업 > 설계',
+  시공: '실행 > 현장관리',
+  PM: '실행 > 업무지원',
+  영업: '영업 > 미팅',
+  관리: '경영지원 > 총무',
+  연차: '공통 > 연차',
+  교육: '공통 > 교육',
+  공통: '공통 > 기타',
+  기타: '공통 > 기타',
+}
 const DAY_KEYS   = ['mon_hours', 'tue_hours', 'wed_hours', 'thu_hours', 'fri_hours', 'sat_hours', 'sun_hours']
 const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -397,6 +430,13 @@ const weekLabelDisplay = computed(() => {
 
 const isLocked = computed(() => false)
 
+function normalizeWorkType(value) {
+  const workType = String(value || '').trim()
+  if (!workType) return '공통 > 기타'
+  if (workType.includes('>')) return workType
+  return LEGACY_WORK_TYPE_MAP[workType] || `공통 > ${workType}`
+}
+
 // 프로젝트 자동완성
 const projectSuggestions = computed(() =>
   projects.value.map(p => {
@@ -451,7 +491,7 @@ const weekKpis = computed(() => {
 
 function addRow() {
   entries.value.push({
-    project_id: null, project_name: '', spg: '에너지', labor_type: '원가', work_type: '기타',
+    project_id: null, project_name: '', spg: '에너지', labor_type: '원가', work_type: '공통 > 기타',
     mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0,
     fri_hours: 0, sat_hours: 0, sun_hours: 0, notes: '',
   })
@@ -491,7 +531,7 @@ async function loadWeek() {
       ...e,
       spg: e.spg || '에너지',
       labor_type: e.labor_type || '원가',
-      work_type: e.work_type || '기타',
+      work_type: normalizeWorkType(e.work_type),
     }))
   } finally { weekLoading.value = false }
 }
@@ -516,7 +556,7 @@ async function loadMonth() {
         const projectName = entry.project_name || '기타'
         const spg = entry.spg || '에너지'
         const laborType = entry.labor_type || '원가'
-        const workType = entry.work_type || '기타'
+        const workType = normalizeWorkType(entry.work_type)
         const key = `${entry.project_id || projectName}::${spg}::${laborType}::${workType}`
         if (!rowMap.has(key)) {
           rowMap.set(key, {
@@ -727,7 +767,7 @@ onMounted(async () => {
 .col-project { min-width: 180px; max-width: 240px; }
 .col-spg     { width: 96px; min-width: 96px; }
 .col-labor   { width: 104px; min-width: 104px; }
-.col-type    { width: 96px; min-width: 96px; }
+.col-type    { width: 150px; min-width: 150px; }
 .col-day     { width: 72px; text-align: center; }
 .col-month-day { width: 54px; min-width: 54px; text-align: center; }
 .col-total   { width: 62px; text-align: center; font-weight: 600; background: #fafafa; }
@@ -745,6 +785,24 @@ onMounted(async () => {
 :deep(.hour-input) { width: 60px !important; }
 :deep(.hour-input.has-hours .ant-input-number-input) { color: #1677ff; font-weight: 600; }
 :deep(.ant-input-number-input) { text-align: center !important; padding: 0 4px; }
+
+:global(.timesheet-work-type-dropdown .ant-select-tree-switcher_close::before),
+:global(.timesheet-work-type-dropdown .ant-select-tree-switcher_open::before) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  color: #1f1f1f;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+:global(.timesheet-work-type-dropdown .ant-select-tree-switcher_close::before) { content: '+'; }
+:global(.timesheet-work-type-dropdown .ant-select-tree-switcher_open::before) { content: '-'; }
+:global(.timesheet-work-type-dropdown .ant-select-tree-switcher-icon) { display: none; }
 
 .total-row td { background: #f5f5f5; font-weight: 600; text-align: center; }
 .total-label  { text-align: center; color: #595959; font-size: 12px; }

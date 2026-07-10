@@ -15,7 +15,14 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["타임시트"])
 
-WORK_TYPES = ["설계", "시공", "PM", "영업", "관리", "연차", "교육", "공통", "기타"]
+WORK_TYPES = [
+    "공통 > 연차", "공통 > 교육", "공통 > 행사", "공통 > 기타",
+    "영업 > 설계", "영업 > 견적", "영업 > 제안서", "영업 > 미팅", "영업 > 기타",
+    "실행 > 현장관리", "실행 > 시운전", "실행 > 안전관리", "실행 > 유지보수", "실행 > 업무지원",
+    "실행 > 하자처리(유상)", "실행 > 하자처리(무상)", "실행 > 기타",
+    "경영지원 > 구매", "경영지원 > 총무", "경영지원 > 인사", "경영지원 > 회계",
+    "경영지원 > 자금", "경영지원 > 공시", "경영지원 > 기타",
+]
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -33,7 +40,7 @@ def _entry_dict(e: TimesheetEntry) -> dict:
         "project_name": e.project_name or (e.project.project_name if e.project else None),
         "spg":          e.spg or "에너지",
         "labor_type":   e.labor_type or "원가",
-        "work_type":    e.work_type or "기타",
+        "work_type":    e.work_type or "공통 > 기타",
         **{f"{d}_hours": float(getattr(e, f"{d}_hours") or 0) for d in DAYS},
         "row_total": total, "notes": e.notes,
     }
@@ -66,7 +73,7 @@ class EntryIn(BaseModel):
     project_name: Optional[str]  = None
     spg:          str             = "에너지"
     labor_type:   str             = "원가"
-    work_type:    str             = "기타"
+    work_type:    str             = "공통 > 기타"
     mon_hours:    Decimal         = Decimal(0)
     tue_hours:    Decimal         = Decimal(0)
     wed_hours:    Decimal         = Decimal(0)

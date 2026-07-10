@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = ""
     SMTP_FROM_NAME: str = "LSS ERP"
     SMTP_ADMIN_EMAILS: str = ""
+    google_calendar_key: Optional[str] = None
+    GOOGLE_APPLICATION_CREDENTIALS: str | None = None
+    GOOGLE_CALENDAR_ID: str | None = None
+
 
     @property
     def origins(self) -> List[str]:

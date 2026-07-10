@@ -153,6 +153,7 @@
                 {{ item.original_name }}
               </a-button>
               <template #actions>
+                <a-button type="link" size="small" @click="downloadAttachment(item)">다운로드</a-button>
                 <a-popconfirm title="첨부파일을 삭제하시겠습니까?" @confirm="deleteAttachment(item.id)">
                   <a-button type="link" danger size="small">삭제</a-button>
                 </a-popconfirm>
@@ -213,12 +214,16 @@
     <a-modal
       v-model:open="pdfPreviewOpen"
       :title="pdfPreviewTitle"
-      width="80vw"
+      :width="pdfPreviewWidth"
+      :body-style="{ padding: '12px' }"
       :footer="null"
       destroy-on-close
       @cancel="closePdfPreview"
     >
-      <iframe v-if="pdfPreviewUrl" class="pdf-preview-frame" :src="pdfPreviewUrl" />
+      <div class="pdf-preview-shell" :style="{ height: `${pdfPreviewHeight}px` }">
+        <iframe v-if="pdfPreviewUrl" class="pdf-preview-frame" :src="pdfPreviewUrl" />
+        <div class="pdf-preview-resizer" title="크기 조절" @pointerdown="startPdfResize" />
+      </div>
     </a-modal>
   </div>
 </template>
@@ -252,8 +257,11 @@ const answerText = ref('')
 const pdfPreviewOpen = ref(false)
 const pdfPreviewUrl = ref('')
 const pdfPreviewTitle = ref('')
+const pdfPreviewWidth = ref(1100)
+const pdfPreviewHeight = ref(720)
 const filters = reactive({ search: '', status: undefined })
 const form = reactive({ title: '', content: '' })
+let stopPdfResize = null
 
 const columns = [
   { title: '상태', key: 'status', width: 110, align: 'center' },
@@ -441,9 +449,54 @@ function revokePdfPreviewUrl() {
 }
 
 function closePdfPreview() {
+  stopPdfResizeTracking()
   revokePdfPreviewUrl()
   pdfPreviewOpen.value = false
   pdfPreviewTitle.value = ''
+}
+
+function clampSize(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function resetPdfPreviewSize() {
+  const viewportWidth = window.innerWidth || 1280
+  const viewportHeight = window.innerHeight || 900
+  pdfPreviewWidth.value = clampSize(Math.floor(viewportWidth * 0.8), 720, Math.floor(viewportWidth * 0.96))
+  pdfPreviewHeight.value = clampSize(Math.floor(viewportHeight * 0.74), 480, Math.floor(viewportHeight * 0.86))
+}
+
+function stopPdfResizeTracking() {
+  if (stopPdfResize) {
+    stopPdfResize()
+    stopPdfResize = null
+  }
+}
+
+function startPdfResize(event) {
+  event.preventDefault()
+  event.stopPropagation()
+  stopPdfResizeTracking()
+
+  const startX = event.clientX
+  const startY = event.clientY
+  const startWidth = pdfPreviewWidth.value
+  const startHeight = pdfPreviewHeight.value
+
+  const handleMove = (moveEvent) => {
+    const maxWidth = Math.floor((window.innerWidth || 1280) * 0.96)
+    const maxHeight = Math.floor((window.innerHeight || 900) * 0.86)
+    pdfPreviewWidth.value = clampSize(startWidth + moveEvent.clientX - startX, 640, maxWidth)
+    pdfPreviewHeight.value = clampSize(startHeight + moveEvent.clientY - startY, 420, maxHeight)
+  }
+
+  const handleUp = () => stopPdfResizeTracking()
+  window.addEventListener('pointermove', handleMove)
+  window.addEventListener('pointerup', handleUp, { once: true })
+  stopPdfResize = () => {
+    window.removeEventListener('pointermove', handleMove)
+    window.removeEventListener('pointerup', handleUp)
+  }
 }
 
 function downloadBlob(blob, fileName) {
@@ -466,19 +519,35 @@ async function openAttachment(attachment) {
     const fileName = attachmentFileName(attachment)
     if (isPdfAttachment(attachment, blob)) {
       revokePdfPreviewUrl()
+      resetPdfPreviewSize()
       pdfPreviewUrl.value = URL.createObjectURL(blob)
       pdfPreviewTitle.value = fileName
       pdfPreviewOpen.value = true
       return
     }
-    downloadBlob(blob, fileName)
+    message.info('PDF 파일만 미리보기가 가능합니다. 다운로드 버튼을 사용하세요.')
   } catch (error) {
     message.error(error.response?.data?.detail || '첨부파일을 열 수 없습니다.')
   }
 }
 
+async function downloadAttachment(attachment) {
+  try {
+    const res = await opinionApi.downloadAttachment(attachment.id)
+    const blob = new Blob([res.data], {
+      type: res.headers?.['content-type'] || attachment.content_type || 'application/octet-stream',
+    })
+    downloadBlob(blob, attachmentFileName(attachment))
+  } catch (error) {
+    message.error(error.response?.data?.detail || '첨부파일을 다운로드할 수 없습니다.')
+  }
+}
+
 onMounted(load)
-onBeforeUnmount(closePdfPreview)
+onBeforeUnmount(() => {
+  closePdfPreview()
+  stopPdfResizeTracking()
+})
 </script>
 
 <style scoped>
@@ -505,7 +574,18 @@ onBeforeUnmount(closePdfPreview)
 .answer-box { padding: 12px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; }
 .attachment-list { border: 1px solid #f0f0f0; border-radius: 8px; }
 .attachment-link { height: auto; padding: 0; text-align: left; white-space: normal; }
-.pdf-preview-frame { width: 100%; height: 75vh; border: 0; display: block; }
+.pdf-preview-shell { position: relative; width: 100%; min-width: 0; min-height: 420px; overflow: hidden; }
+.pdf-preview-frame { width: 100%; height: 100%; border: 0; display: block; }
+.pdf-preview-resizer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 45%, #bfbfbf 45%, #bfbfbf 55%, transparent 55%),
+    linear-gradient(135deg, transparent 62%, #8c8c8c 62%, #8c8c8c 72%, transparent 72%);
+}
 .drawer-footer { display: none; }
 .detail-footer { display: flex; justify-content: flex-end; }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }

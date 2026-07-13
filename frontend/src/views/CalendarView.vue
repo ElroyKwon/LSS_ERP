@@ -28,8 +28,10 @@
                 </div>
                 <div class="ant-picker-calendar-date-content">
                   <ul class="events" style="list-style: none; padding: 0; margin: 0;">
-                    <li v-for="item in getCompanyListData(current)" :key="item.id" style="margin-bottom: 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                      <a-badge :color="item.type" :text="item.content" />
+                    <li v-for="item in getCompanyListData(current)" :key="item.id" 
+                        :style="getEventStyle(item, current)"
+                        style="margin-bottom: 3px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 1.4;">
+                      {{ shouldShowEventText(item, current) ? item.content : '\u00A0' }}
                     </li>
                   </ul>
                 </div>
@@ -43,7 +45,16 @@
             <a-list item-layout="horizontal" :data-source="companyDetailList">
               <template #renderItem="{ item }">
                 <a-list-item style="padding: 12px 4px;">
-                  <a-badge :color="item.type" :text="item.content" style="font-size: 14px;" />
+                  <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <a-badge :color="item.type" :text="item.raw_content" style="font-size: 14px; font-weight: 500;" />
+                    </div>
+                    <div style="font-size: 12px; color: #8c8c8c; padding-left: 14px;">
+                      <span v-if="item.is_all_day">종일</span>
+                      <span v-else>{{ formatTimeRange(item.start_time, item.end_time) }}</span>
+                      <span style="margin-left: 8px; font-weight: 500; color: #595959;">등록자: {{ item.user_name }}</span>
+                    </div>
+                  </div>
                 </a-list-item>
               </template>
               <template #empty>
@@ -58,8 +69,20 @@
             <a-form-item label="일정명" required>
               <a-input v-model:value="newCompanySchedule.content" placeholder="예: 전사 정기 미팅, 현장 작업" />
             </a-form-item>
-            <a-form-item label="날짜" required>
+            <a-form-item label="종일 여부">
+              <a-switch v-model:checked="newCompanySchedule.is_all_day" checked-children="종일" un-checked-children="시간지정" />
+            </a-form-item>
+            <a-form-item label="날짜" required v-if="newCompanySchedule.is_all_day">
               <a-date-picker v-model:value="newCompanySchedule.dateValue" style="width: 100%" placeholder="날짜 선택" />
+            </a-form-item>
+            <a-form-item label="시간 지정" required v-else>
+              <a-range-picker 
+                v-model:value="newCompanySchedule.rangeValue" 
+                format="YYYY-MM-DD HH:mm" 
+                :show-time="{ format: 'HH:mm', minuteStep: 30 }"
+                :placeholder="['시작 일시', '종료 일시']" 
+                style="width: 100%" 
+              />
             </a-form-item>
             <a-form-item label="일정 유형">
               <a-select v-model:value="newCompanySchedule.type">
@@ -91,15 +114,17 @@
           <a-calendar v-model:value="refreshCalendarValue" :fullscreen="true" @panelChange="handleRefreshPanelChange">
             <template #dateFullCellRender="{ current }">
               <div :class="['ant-picker-cell-inner', 'ant-picker-calendar-date', getRefreshCellClass(current)]" 
-                   style="cursor: pointer;" 
+                   style="cursor: pointer; height: 100%; overflow: visible;" 
                    @click="openRefreshDetailModal(current)">
                 <div class="ant-picker-calendar-date-value">
                   {{ current.date() }}
                 </div>
                 <div class="ant-picker-calendar-date-content">
                   <ul class="events" style="list-style: none; padding: 0; margin: 0;">
-                    <li v-for="item in getRefreshListData(current)" :key="item.id" style="margin-bottom: 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                      <a-badge :color="item.type" :text="item.content" />
+                    <li v-for="item in getRefreshListData(current)" :key="item.id" 
+                        :style="getEventStyle(item, current)"
+                        style="margin-bottom: 3px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 1.4;">
+                      {{ shouldShowEventText(item, current) ? item.content : '\u00A0' }}
                     </li>
                   </ul>
                 </div>
@@ -113,7 +138,16 @@
             <a-list item-layout="horizontal" :data-source="refreshDetailList">
               <template #renderItem="{ item }">
                 <a-list-item style="padding: 12px 4px;">
-                  <a-badge :color="item.type" :text="item.content" style="font-size: 14px;" />
+                  <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <a-badge :color="item.type" :text="item.raw_content" style="font-size: 14px; font-weight: 500;" />
+                    </div>
+                    <div style="font-size: 12px; color: #8c8c8c; padding-left: 14px;">
+                      <span v-if="item.is_all_day">종일</span>
+                      <span v-else>{{ formatTimeRange(item.start_time, item.end_time) }}</span>
+                      <span style="margin-left: 8px; font-weight: 500; color: #595959;">등록자: {{ item.user_name }}</span>
+                    </div>
+                  </div>
                 </a-list-item>
               </template>
               <template #empty>
@@ -128,8 +162,20 @@
             <a-form-item label="일정명" required>
               <a-input v-model:value="newRefreshSchedule.content" placeholder="예: 여름휴가, OOO 매니저 연차" />
             </a-form-item>
-            <a-form-item label="날짜" required>
+            <a-form-item label="종일 여부">
+              <a-switch v-model:checked="newRefreshSchedule.is_all_day" checked-children="종일" un-checked-children="시간지정" />
+            </a-form-item>
+            <a-form-item label="날짜" required v-if="newRefreshSchedule.is_all_day">
               <a-date-picker v-model:value="newRefreshSchedule.dateValue" style="width: 100%" placeholder="날짜 선택" />
+            </a-form-item>
+            <a-form-item label="시간 지정" required v-else>
+              <a-range-picker 
+                v-model:value="newRefreshSchedule.rangeValue" 
+                format="YYYY-MM-DD HH:mm" 
+                :show-time="{ format: 'HH:mm', minuteStep: 30 }"
+                :placeholder="['시작 일시', '종료 일시']" 
+                style="width: 100%" 
+              />
             </a-form-item>
             <a-form-item label="일정 유형">
               <a-select v-model:value="newRefreshSchedule.type">
@@ -165,7 +211,7 @@ const companyHoliday       = ref([])
 const companyHolidayCache  = ref({})
 
 const isCompanyModalOpen   = ref(false)
-const newCompanySchedule   = ref({ content: '', dateValue: null, type: '#52c41a' }) // 기본값 컬러코드로 세팅
+const newCompanySchedule   = ref({ content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#52c41a' })
 
 const isCompanyDetailModalOpen = ref(false)
 const selectedCompanyDate      = ref('')
@@ -233,19 +279,41 @@ function handleCompanyPanelChange(value) {
 
 function getCompanyListData(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
-  return companySchedules.value.filter(item => item.date === dateStr)
+  const list = companySchedules.value.filter(item => {
+    if (item.start_date && item.end_date) {
+      return dateStr >= item.start_date && dateStr <= item.end_date
+    }
+    return item.date === dateStr
+  })
+  return list.sort((a, b) => {
+    if (!a.id || !b.id) return 0
+    return a.id.localeCompare(b.id)
+  })
 }
 
 async function loadCompanyCalendarData() {
   try {
     const response = await axios.get('/api/schedules', { params: { category: 'company' } }) 
     const events = response.data || []
-    companySchedules.value = events.map(item => ({
-      id: item.id,
-      date: item.date,
-      content: item.user_name ? `[${item.user_name}] ${item.content} ` : item.content, 
-      type: item.type
-    }))
+    companySchedules.value = events.map(item => {
+      let timePrefix = ''
+      if (!item.is_all_day && item.start_time) {
+        timePrefix = `${item.start_time.slice(11, 16)} `
+      }
+      return {
+        id: item.id,
+        date: item.date,
+        is_all_day: item.is_all_day,
+        start_time: item.start_time,
+        end_time: item.end_time,
+        start_date: item.start_date,
+        end_date: item.end_date,
+        content: item.user_name ? `${timePrefix}[${item.user_name}] ${item.content}` : `${timePrefix}${item.content}`,
+        raw_content: item.content,
+        user_name: item.user_name,
+        type: item.type
+      }
+    })
   } catch (error) {
     console.error('전사 일정 조회 실패:', error)
     message.error('전사 월간 일정을 불러오지 못했습니다.')
@@ -253,7 +321,7 @@ async function loadCompanyCalendarData() {
 }
 
 function openCompanyModal() {
-  newCompanySchedule.value = { content: '', dateValue: null, type: '#52c41a' }
+  newCompanySchedule.value = { content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#52c41a' }
   isCompanyModalOpen.value = true
 }
 
@@ -266,19 +334,33 @@ async function handleCompanySubmit() {
     message.warning('일정명을 입력해 주세요.')
     return
   }
-  if (!newCompanySchedule.value.dateValue) {
-    message.warning('날짜를 선택해 주세요.')
-    return
+  if (newCompanySchedule.value.is_all_day) {
+    if (!newCompanySchedule.value.dateValue) {
+      message.warning('날짜를 선택해 주세요.')
+      return
+    }
+  } else {
+    if (!newCompanySchedule.value.rangeValue || newCompanySchedule.value.rangeValue.length < 2) {
+      message.warning('시간 범위를 지정해 주세요.')
+      return
+    }
   }
   try {
-    const formattedDate = newCompanySchedule.value.dateValue.format('YYYY-MM-DD')
-    await axios.post('/api/schedules', {
+    const payload = {
       content: newCompanySchedule.value.content,
-      date: formattedDate,
       type: newCompanySchedule.value.type,
       category: 'company',
-      user_name: auth.user?.name || '미확인'
-    })
+      user_name: auth.user?.name || '미확인',
+      is_all_day: newCompanySchedule.value.is_all_day
+    }
+    if (newCompanySchedule.value.is_all_day) {
+      payload.date = newCompanySchedule.value.dateValue.format('YYYY-MM-DD')
+    } else {
+      payload.start_time = newCompanySchedule.value.rangeValue[0].format('YYYY-MM-DD HH:mm:ss')
+      payload.end_time = newCompanySchedule.value.rangeValue[1].format('YYYY-MM-DD HH:mm:ss')
+    }
+
+    await axios.post('/api/schedules', payload)
     message.success('전사 일정 등록이 완료되었습니다.')
     isCompanyModalOpen.value = false
     loadCompanyCalendarData()
@@ -291,7 +373,12 @@ async function handleCompanySubmit() {
 function openCompanyDetailModal(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
   selectedCompanyDate.value = currentDate.format('YYYY년 MM월 DD일')
-  companyDetailList.value = companySchedules.value.filter(item => item.date === dateStr)
+  companyDetailList.value = companySchedules.value.filter(item => {
+    if (item.start_date && item.end_date) {
+      return dateStr >= item.start_date && dateStr <= item.end_date
+    }
+    return item.date === dateStr
+  })
   isCompanyDetailModalOpen.value = true
 }
 
@@ -304,7 +391,7 @@ const refreshHoliday       = ref([])
 const refreshHolidayCache  = ref({})
 
 const isRefreshModalOpen   = ref(false)
-const newRefreshSchedule   = ref({ content: '', dateValue: null, type: '#bae7ff' }) // 기본값 컬러코드로 세팅
+const newRefreshSchedule   = ref({ content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#bae7ff' })
 
 const isRefreshDetailModalOpen = ref(false)
 const selectedRefreshDate      = ref('')
@@ -372,19 +459,41 @@ function handleRefreshPanelChange(value) {
 
 function getRefreshListData(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
-  return refreshSchedules.value.filter(item => item.date === dateStr)
+  const list = refreshSchedules.value.filter(item => {
+    if (item.start_date && item.end_date) {
+      return dateStr >= item.start_date && dateStr <= item.end_date
+    }
+    return item.date === dateStr
+  })
+  return list.sort((a, b) => {
+    if (!a.id || !b.id) return 0
+    return a.id.localeCompare(b.id)
+  })
 }
 
 async function loadRefreshCalendarData() {
   try {
     const response = await axios.get('/api/schedules', { params: { category: 'refresh' } }) 
     const events = response.data || []
-    refreshSchedules.value = events.map(item => ({
-      id: item.id,
-      date: item.date,
-      content: item.user_name ? `[${item.user_name}] ${item.content} ` : item.content, 
-      type: item.type
-    }))
+    refreshSchedules.value = events.map(item => {
+      let timePrefix = ''
+      if (!item.is_all_day && item.start_time) {
+        timePrefix = `${item.start_time.slice(11, 16)} `
+      }
+      return {
+        id: item.id,
+        date: item.date,
+        is_all_day: item.is_all_day,
+        start_time: item.start_time,
+        end_time: item.end_time,
+        start_date: item.start_date,
+        end_date: item.end_date,
+        content: item.user_name ? `${timePrefix}[${item.user_name}] ${item.content}` : `${timePrefix}${item.content}`,
+        raw_content: item.content,
+        user_name: item.user_name,
+        type: item.type
+      }
+    })
   } catch (error) {
     console.error('휴가 일정 조회 실패:', error)
     message.error('전사 휴가 일정을 불러오지 못했습니다.')
@@ -392,7 +501,7 @@ async function loadRefreshCalendarData() {
 }
 
 function openRefreshModal() {
-  newRefreshSchedule.value = { content: '', dateValue: null, type: '#bae7ff' }
+  newRefreshSchedule.value = { content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#bae7ff' }
   isRefreshModalOpen.value = true
 }
 
@@ -405,19 +514,33 @@ async function handleRefreshSubmit() {
     message.warning('일정명을 입력해 주세요.')
     return
   }
-  if (!newRefreshSchedule.value.dateValue) {
-    message.warning('날짜를 선택해 주세요.')
-    return
+  if (newRefreshSchedule.value.is_all_day) {
+    if (!newRefreshSchedule.value.dateValue) {
+      message.warning('날짜를 선택해 주세요.')
+      return
+    }
+  } else {
+    if (!newRefreshSchedule.value.rangeValue || newRefreshSchedule.value.rangeValue.length < 2) {
+      message.warning('시간 범위를 지정해 주세요.')
+      return
+    }
   }
   try {
-    const formattedDate = newRefreshSchedule.value.dateValue.format('YYYY-MM-DD')
-    await axios.post('/api/schedules', {
+    const payload = {
       content: newRefreshSchedule.value.content,
-      date: formattedDate,
       type: newRefreshSchedule.value.type,
       category: 'refresh',
-      user_name: auth.user?.name || '미확인'
-    })
+      user_name: auth.user?.name || '미확인',
+      is_all_day: newRefreshSchedule.value.is_all_day
+    }
+    if (newRefreshSchedule.value.is_all_day) {
+      payload.date = newRefreshSchedule.value.dateValue.format('YYYY-MM-DD')
+    } else {
+      payload.start_time = newRefreshSchedule.value.rangeValue[0].format('YYYY-MM-DD HH:mm:ss')
+      payload.end_time = newRefreshSchedule.value.rangeValue[1].format('YYYY-MM-DD HH:mm:ss')
+    }
+
+    await axios.post('/api/schedules', payload)
     message.success('전사 휴가 일정 등록이 완료되었습니다.')
     isRefreshModalOpen.value = false
     loadRefreshCalendarData()
@@ -430,7 +553,12 @@ async function handleRefreshSubmit() {
 function openRefreshDetailModal(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
   selectedRefreshDate.value = currentDate.format('YYYY년 MM월 DD일')
-  refreshDetailList.value = refreshSchedules.value.filter(item => item.date === dateStr)
+  refreshDetailList.value = refreshSchedules.value.filter(item => {
+    if (item.start_date && item.end_date) {
+      return dateStr >= item.start_date && dateStr <= item.end_date
+    }
+    return item.date === dateStr
+  })
   isRefreshDetailModalOpen.value = true
 }
 
@@ -451,6 +579,80 @@ watch(() => refreshCalendarValue.value, (newVal, oldVal) => {
   if (newYear !== oldYear) fetchRefreshHolidayFromServer(newYear)
 }, { immediate: true })
 
+function formatTimeRange(startTime, endTime) {
+  if (!startTime || !endTime) return ''
+  const start = startTime.slice(11, 16)
+  const end = endTime.slice(11, 16)
+  return `${start} ~ ${end}`
+}
+
+function hexToRgba(hex, alpha) {
+  if (!hex || !hex.startsWith('#')) return `rgba(82, 196, 26, ${alpha})`
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function getEventStyle(item, currentDate) {
+  const baseColor = item.type || '#52c41a'
+  if (!item.start_date || !item.end_date || item.start_date === item.end_date || !currentDate) {
+    return {
+      backgroundColor: hexToRgba(baseColor, 0.12),
+      borderLeft: `3px solid ${baseColor}`,
+      color: '#434343',
+      padding: '2px 6px',
+      borderRadius: '4px'
+    }
+  }
+
+  const dateStr = currentDate.format('YYYY-MM-DD')
+  const isStart = dateStr === item.start_date
+  const isEnd = dateStr === item.end_date
+  
+  const dayOfWeek = currentDate.day() // 0 = Sunday, 6 = Saturday
+  const isWeekStart = (dayOfWeek === 0)
+  const isWeekEnd = (dayOfWeek === 6)
+  
+  const connectLeft = !isStart && !isWeekStart
+  const connectRight = !isEnd && !isWeekEnd
+  
+  return {
+    backgroundColor: hexToRgba(baseColor, 0.35),
+    color: '#1a2535',
+    fontWeight: '600',
+    boxShadow: 'inset 0 -2px 0 rgba(0, 0, 0, 0.05)',
+    
+    // Left boundary
+    marginLeft: connectLeft ? '-12px' : '0px',
+    paddingLeft: connectLeft ? '12px' : '6px',
+    borderLeft: connectLeft ? 'none' : `4px solid ${baseColor}`,
+    borderTopLeftRadius: connectLeft ? '0px' : '4px',
+    borderBottomLeftRadius: connectLeft ? '0px' : '4px',
+    
+    // Right boundary
+    marginRight: connectRight ? '-12px' : '0px',
+    paddingRight: connectRight ? '12px' : '6px',
+    borderTopRightRadius: connectRight ? '0px' : '4px',
+    borderBottomRightRadius: connectRight ? '0px' : '4px',
+    
+    // Default vertical padding
+    paddingTop: '2px',
+    paddingBottom: '2px'
+  }
+}
+
+function shouldShowEventText(item, currentDate) {
+  if (!item.start_date || !item.end_date || item.start_date === item.end_date) {
+    return true
+  }
+  const dateStr = currentDate.format('YYYY-MM-DD')
+  const isStart = dateStr === item.start_date
+  const dayOfWeek = currentDate.day() // 0 = Sunday
+  const isWeekStart = (dayOfWeek === 0)
+  return isStart || isWeekStart
+}
+
 onMounted(() => {
   const currentYear = dayjs().format('YYYY')
   
@@ -467,6 +669,12 @@ onMounted(() => {
 <style scoped>
 .page-wrap { display: flex; flex-direction: column; gap: 0; }
 :deep(.main-tabs .ant-tabs-nav) { margin-bottom: 14px; }
+
+:deep(.ant-picker-calendar-date),
+:deep(.ant-picker-cell-inner),
+:deep(.ant-picker-calendar-date-content) {
+  overflow: visible !important;
+}
 
 .calendar-nav {
   display: flex; justify-content: space-between; align-items: center; 

@@ -21,10 +21,13 @@ router = APIRouter(
 
 class ScheduleCreate(BaseModel):
     content: str
-    date: str
+    date: Optional[str] = None
     type: str
     category: Optional[str] = "company"
     user_name: str
+    is_all_day: Optional[bool] = True
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -81,7 +84,8 @@ def get_schedules(category: str = Query("company", description="company 또는 r
             calendarId=target_calendar_id,
             maxResults=250,
             singleEvents=True,
-            orderBy='startTime'
+            orderBy='startTime',
+            timeZone='Asia/Seoul'
         ).execute()
         
         google_events = events_result.get('items', [])
@@ -89,7 +93,30 @@ def get_schedules(category: str = Query("company", description="company 또는 r
         formatted_schedules = []
         for event in google_events:
             start_info = event.get('start', {})
-            event_date = start_info.get('date') or start_info.get('dateTime', '')[:10]
+            is_all_day = 'date' in start_info
+            
+            if is_all_day:
+                event_date = start_info.get('date')
+                start_date = event_date
+                start_time = None
+                end_time = None
+                
+                # Google Calendar all-day end date is exclusive, so subtract 1 day
+                end_date_str = event.get('end', {}).get('date', start_date)
+                try:
+                    dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+                    end_date = (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+                except Exception:
+                    end_date = start_date
+            else:
+                date_time_str = start_info.get('dateTime', '')
+                event_date = date_time_str[:10] if date_time_str else ''
+                start_date = event_date
+                start_time = date_time_str.replace('T', ' ')[:19] if date_time_str else None
+                
+                end_time_str = event.get('end', {}).get('dateTime', '')
+                end_time = end_time_str.replace('T', ' ')[:19] if end_time_str else None
+                end_date = end_time_str[:10] if end_time_str else event_date
             
             raw_summary = event.get('summary', '제목 없음')
             content = raw_summary
@@ -130,7 +157,12 @@ def get_schedules(category: str = Query("company", description="company 또는 r
                 "content": content,          
                 "user_name": user_name,      
                 "date": event_date,
-                "type": schedule_type
+                "type": schedule_type,
+                "is_all_day": is_all_day,
+                "start_time": start_time,
+                "end_time": end_time,
+                "start_date": start_date,
+                "end_date": end_date
             })
             
         return formatted_schedules
@@ -154,24 +186,45 @@ def create_schedule(payload: ScheduleCreate):
     try:
         service, target_calendar_id = get_calendar_config_and_service(payload.category)
         
-        start_date_str = payload.date
-        dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date_str = (dt + timedelta(days=1)).strftime("%Y-%m-%d")
-        
         display_summary = f"[{payload.user_name}] {payload.content}"
         
-        event = {
-            'summary': display_summary,
-            'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
-            'start': {
-                'date': start_date_str,
-                'timeZone': 'Asia/Seoul',
-            },
-            'end': {
-                'date': end_date_str,
-                'timeZone': 'Asia/Seoul',
-            },
-        }
+        if payload.is_all_day:
+            start_date_str = payload.date
+            if not start_date_str:
+                raise HTTPException(status_code=400, detail="종일 일정은 date 필드가 필요합니다.")
+            dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_date_str = (dt + timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            event = {
+                'summary': display_summary,
+                'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
+                'start': {
+                    'date': start_date_str,
+                    'timeZone': 'Asia/Seoul',
+                },
+                'end': {
+                    'date': end_date_str,
+                    'timeZone': 'Asia/Seoul',
+                },
+            }
+        else:
+            if not payload.start_time or not payload.end_time:
+                raise HTTPException(status_code=400, detail="시간 지정 일정은 start_time과 end_time 필드가 필요합니다.")
+            start_dt = datetime.strptime(payload.start_time, "%Y-%m-%d %H:%M:%S")
+            end_dt = datetime.strptime(payload.end_time, "%Y-%m-%d %H:%M:%S")
+            
+            event = {
+                'summary': display_summary,
+                'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
+                'start': {
+                    'dateTime': start_dt.isoformat(),
+                    'timeZone': 'Asia/Seoul',
+                },
+                'end': {
+                    'dateTime': end_dt.isoformat(),
+                    'timeZone': 'Asia/Seoul',
+                },
+            }
         
         google_result = service.events().insert(calendarId=target_calendar_id, body=event).execute()
         

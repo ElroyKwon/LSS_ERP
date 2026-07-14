@@ -37,6 +37,17 @@ def _parse_date(value: Any, default: date) -> date:
     return default
 
 
+def _parse_optional_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
 def _num(value: Any) -> float:
     if isinstance(value, Decimal):
         return float(value)
@@ -125,9 +136,17 @@ def list_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": "조회할 주의 시작일(YYYY-MM-DD).",
                     },
+                    "period_start": {
+                        "type": "string",
+                        "description": "조회 기간 시작일(YYYY-MM-DD). 월간/기간 조회에 사용합니다.",
+                    },
+                    "period_end": {
+                        "type": "string",
+                        "description": "조회 기간 종료일(YYYY-MM-DD). 월간/기간 조회에 사용합니다.",
+                    },
                     "status": {
                         "type": "string",
-                        "description": "미작성, 작성중, 승인, 반려 중 하나로 필터링합니다.",
+                        "description": "미작성, 작성중 중 하나로 필터링합니다.",
                     },
                 },
             },
@@ -149,7 +168,7 @@ def list_tools() -> list[dict[str, Any]]:
                         "description": "recent, amount_desc, amount_asc, end_date 중 하나로 정렬합니다.",
                         "default": "recent",
                     },
-                    "limit": {"type": "integer", "description": "최대 결과 수", "default": 10},
+                    "limit": {"type": "integer", "description": "최대 결과 수. 생략하면 전체를 조회합니다."},
                 },
             },
         },
@@ -167,7 +186,7 @@ def list_tools() -> list[dict[str, Any]]:
                     },
                     "query": {"type": "string", "description": "제목/내용 검색어"},
                     "has_attachments": {"type": "boolean", "description": "첨부 파일이 있는 의견만 조회합니다."},
-                    "limit": {"type": "integer", "description": "최대 결과 수", "default": 10}
+                    "limit": {"type": "integer", "description": "최대 결과 수. 생략하면 전체를 조회합니다."}
                 },
             },
         },
@@ -175,26 +194,35 @@ def list_tools() -> list[dict[str, Any]]:
 
 
 def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
-    monday, sunday = _week_of(_parse_date(args.get("week_start"), _today()))
+    period_start = _parse_optional_date(args.get("period_start"))
+    period_end = _parse_optional_date(args.get("period_end"))
+    period_unit = "기간"
+    if not period_start or not period_end:
+        monday, sunday = _week_of(_parse_date(args.get("week_start"), _today()))
+        period_start, period_end = monday, sunday
+        period_unit = "주"
+    elif period_start.day == 1 and period_end.day >= 28:
+        period_unit = "월"
+
     employees = _employee_query(db, current).order_by(Employee.department_name.asc(), Employee.name.asc()).all()
     employee_ids = [emp.id for emp in employees]
     rows = []
-    sheets_by_employee: dict[int, Timesheet] = {}
+    sheets_by_employee: dict[int, list[Timesheet]] = {}
     if employee_ids:
         sheets = db.query(Timesheet).filter(
-            Timesheet.week_start == monday,
+            Timesheet.week_start <= period_end,
+            Timesheet.week_end >= period_start,
             Timesheet.employee_id.in_(employee_ids),
         ).all()
-        sheets_by_employee = {sheet.employee_id: sheet for sheet in sheets}
+        for sheet in sheets:
+            sheets_by_employee.setdefault(sheet.employee_id, []).append(sheet)
 
     status_filter = args.get("status")
     all_counts: dict[str, int] = {}
     for emp in employees:
-        sheet = sheets_by_employee.get(emp.id)
-        raw_status = sheet.status if sheet else "미작성"
-        # The current workflow saves timesheets instead of submitting them.
-        # Treat legacy "제출" rows as saved drafts in assistant summaries.
-        status = "작성중" if raw_status == "제출" else raw_status
+        sheets = sheets_by_employee.get(emp.id, [])
+        status = "작성중" if sheets else "미작성"
+        total_hours = sum(_num(sheet.total_hours) for sheet in sheets)
         all_counts[status] = all_counts.get(status, 0) + 1
         if status_filter and status != status_filter:
             continue
@@ -204,8 +232,9 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
             "department": emp.department.name if emp.department else emp.department_name,
             "position": emp.position,
             "status": status,
-            "total_hours": _num(sheet.total_hours) if sheet else 0,
-            "timesheet_id": sheet.id if sheet else None,
+            "total_hours": total_hours,
+            "timesheet_id": sheets[0].id if len(sheets) == 1 else None,
+            "timesheet_count": len(sheets),
         })
 
     counts: dict[str, int] = {}
@@ -215,8 +244,11 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
         total_hours += row["total_hours"]
 
     return {
-        "week_start": str(monday),
-        "week_end": str(sunday),
+        "week_start": str(period_start),
+        "week_end": str(period_end),
+        "period_start": str(period_start),
+        "period_end": str(period_end),
+        "period_unit": period_unit,
         "counts": counts,
         "all_counts": all_counts,
         "status_filter": status_filter,
@@ -227,7 +259,8 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
 
 def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
     query = str(args.get("query") or "").strip()
-    limit = min(max(int(args.get("limit") or 10), 1), 30)
+    limit = args.get("limit")
+    limit = min(max(int(limit), 1), 500) if limit is not None else None
     status_filter = str(args.get("status") or "").strip()
     order_by = str(args.get("order_by") or "recent")
     q = db.query(Project)
@@ -257,7 +290,7 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
         order_by = "recent"
         q = q.order_by(Project.updated_at.desc(), Project.id.desc())
 
-    projects = q.limit(limit).all()
+    projects = q.limit(limit).all() if limit else q.all()
     return {
         "query": query,
         "status_filter": status_filter or None,
@@ -284,7 +317,8 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
 
 
 def list_waiting_opinions(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
-    limit = min(max(int(args.get("limit") or 10), 1), 30)
+    limit = args.get("limit")
+    limit = min(max(int(limit), 1), 500) if limit is not None else None
     status_filter = str(args.get("status") or "waiting").strip()
     query = str(args.get("query") or "").strip()
     has_attachments = args.get("has_attachments")
@@ -302,7 +336,8 @@ def list_waiting_opinions(args: dict[str, Any], db: Session, current: User) -> d
         q = q.filter(OpinionPost.attachments.any())
 
     total_count = q.count()
-    rows = q.order_by(OpinionPost.created_at.desc(), OpinionPost.id.desc()).limit(limit).all()
+    q = q.order_by(OpinionPost.created_at.desc(), OpinionPost.id.desc())
+    rows = q.limit(limit).all() if limit else q.all()
     total_waiting = db.query(func.count(OpinionPost.id)).filter(OpinionPost.answer.is_(None)).scalar() or 0
     total_answered = db.query(func.count(OpinionPost.id)).filter(OpinionPost.answer.isnot(None)).scalar() or 0
     return {
@@ -329,14 +364,22 @@ def list_waiting_opinions(args: dict[str, Any], db: Session, current: User) -> d
 
 
 def get_operational_summary(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
-    timesheet = get_timesheet_team_status({"week_start": args.get("week_start")}, db, current)
-    opinions = list_waiting_opinions({"limit": 10, "status": "waiting"}, db, current)
+    timesheet_args = {
+        "week_start": args.get("week_start"),
+        "period_start": args.get("period_start"),
+        "period_end": args.get("period_end"),
+    }
+    timesheet = get_timesheet_team_status(timesheet_args, db, current)
+    opinions = list_waiting_opinions({"status": "waiting"}, db, current)
     active_projects = db.query(func.count(Project.id)).filter(Project.status == "진행중").scalar() or 0
-    project_summary = search_projects({"limit": 10, "status": "진행중", "order_by": "recent"}, db, current)
+    project_summary = search_projects({"status": "진행중", "order_by": "recent"}, db, current)
     return {
         "timesheet": {
             "week_start": timesheet["week_start"],
             "week_end": timesheet["week_end"],
+            "period_start": timesheet["period_start"],
+            "period_end": timesheet["period_end"],
+            "period_unit": timesheet["period_unit"],
             "counts": timesheet["counts"],
             "all_counts": timesheet["all_counts"],
             "total_hours": timesheet["total_hours"],

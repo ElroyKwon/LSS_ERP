@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,29 +40,61 @@ class McpJsonRpcRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+def _week_bounds(day: date) -> tuple[date, date]:
+    monday = day - timedelta(days=day.weekday())
+    return monday, monday + timedelta(days=6)
+
+
+def _month_bounds(day: date) -> tuple[date, date]:
+    start = day.replace(day=1)
+    if start.month == 12:
+        next_month = start.replace(year=start.year + 1, month=1)
+    else:
+        next_month = start.replace(month=start.month + 1)
+    return start, next_month - timedelta(days=1)
+
+
+def _timesheet_period_args(normalized: str, filters: dict[str, Any]) -> dict[str, Any]:
+    today = date.today()
+    args: dict[str, Any] = {}
+    if any(token in normalized for token in ["지난달", "전월"]):
+        first_this_month, _ = _month_bounds(today)
+        previous_month_day = first_this_month - timedelta(days=1)
+        start, end = _month_bounds(previous_month_day)
+        args["period_start"] = str(start)
+        args["period_end"] = str(end)
+        args["period_label"] = "지난달"
+    elif any(token in normalized for token in ["이번달", "금월", "이번월"]):
+        start, end = _month_bounds(today)
+        args["period_start"] = str(start)
+        args["period_end"] = str(end)
+        args["period_label"] = "이번달"
+    elif any(token in normalized for token in ["지난주", "전주"]):
+        start, end = _week_bounds(today - timedelta(days=7))
+        args["week_start"] = str(start)
+        args["period_label"] = "지난주"
+    elif filters.get("week_start"):
+        args["week_start"] = filters["week_start"]
+    return args
+
+
 def _select_tool(message: str, context: ChatContext) -> tuple[str, dict[str, Any]]:
     text = message.lower()
     normalized = "".join(message.split())
     filters = context.filters or {}
     if (
         "타임시트" in message
-        or any(token in normalized for token in ["미제출", "미작성", "작성중", "작성자", "저장", "입력자", "제출자"])
+        or any(token in normalized for token in ["미제출", "미작성", "작성중", "작성자", "작성인원", "저장", "저장인원", "입력자", "입력인원", "제출자"])
         or context.route == "/timesheet"
     ):
-        args: dict[str, Any] = {}
-        if filters.get("week_start"):
-            args["week_start"] = filters["week_start"]
+        args = _timesheet_period_args(normalized, filters)
         if any(token in normalized for token in ["미제출", "미작성", "안낸", "안냈"]):
             args["status"] = "미작성"
-        elif any(token in normalized for token in ["작성중", "작성자", "작성한", "입력자", "입력한", "저장자", "저장한", "저장된", "제출자", "제출만", "제출한"]):
+        elif any(token in normalized for token in ["작성중", "작성자", "작성인원", "작성한", "입력자", "입력인원", "입력한", "저장자", "저장인원", "저장한", "저장된", "제출자", "제출만", "제출한"]):
             args["status"] = "작성중"
-        elif "승인" in normalized:
-            args["status"] = "승인"
-        elif "반려" in normalized:
-            args["status"] = "반려"
         return "get_timesheet_team_status", args
     if "의견" in message or "답변" in message or context.route == "/opinion-listening":
-        args: dict[str, Any] = {"limit": 10}
+        args: dict[str, Any] = {}
         if any(token in normalized for token in ["답변완료", "완료의견", "답변된"]):
             args["status"] = "answered"
         elif any(token in normalized for token in ["전체의견", "의견전체", "모든의견"]):
@@ -78,7 +111,7 @@ def _select_tool(message: str, context: ChatContext) -> tuple[str, dict[str, Any
             args["query"] = query
         return "list_waiting_opinions", args
     if "프로젝트" in message or "pjt" in text or "pj-" in text or context.route == "/execution/projects":
-        args: dict[str, Any] = {"limit": 10}
+        args: dict[str, Any] = {}
         for status in PROJECT_STATUSES:
             if status in normalized:
                 args["status"] = status
@@ -102,7 +135,7 @@ def _select_tool(message: str, context: ChatContext) -> tuple[str, dict[str, Any
         if query:
             args["query"] = query
         return "search_projects", args
-    return "get_operational_summary", {"week_start": filters.get("week_start")}
+    return "get_operational_summary", _timesheet_period_args(normalized, filters)
 
 
 def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str, list[dict[str, Any]], list[str]]:
@@ -111,12 +144,15 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
         all_counts = result.get("all_counts") or counts
         rows = result.get("rows", [])
         status_filter = result.get("status_filter")
+        period_start = result.get("period_start") or result.get("week_start")
+        period_end = result.get("period_end") or result.get("week_end")
+        period_unit = result.get("period_unit", "주")
         missing = [row for row in rows if row.get("status") == "미작성"]
         if status_filter:
             answer = (
-                f"{result.get('week_start')} ~ {result.get('week_end')} "
+                f"{period_start} ~ {period_end} "
                 f"{status_filter} 상태 타임시트 직원은 {len(rows)}명입니다. "
-                f"총 입력 시간은 {result.get('total_hours', 0)}h입니다."
+                f"해당 {period_unit} {status_filter} 입력 시간은 {result.get('total_hours', 0)}h입니다."
             )
             if rows:
                 names = ", ".join(row["employee_name"] for row in rows[:20])
@@ -124,17 +160,17 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
         else:
             status_text = ", ".join(f"{k} {v}명" for k, v in counts.items()) or "해당 없음"
             answer = (
-                f"{result.get('week_start')} ~ {result.get('week_end')} 타임시트 현황입니다. "
-                f"총 {len(rows)}명, 총 입력 시간 {result.get('total_hours', 0)}h입니다. "
+                f"{period_start} ~ {period_end} 타임시트 현황입니다. "
+                f"총 {len(rows)}명, 해당 {period_unit} 입력 시간 {result.get('total_hours', 0)}h입니다. "
                 f"상태별 건수는 {status_text}입니다."
             )
             if missing:
                 names = ", ".join(row["employee_name"] for row in missing[:20])
                 answer += f" 미작성자는 {names}" + (" 외 추가 인원이 있습니다." if len(missing) > 20 else "입니다.")
         description = (
-            f"{status_filter} 필터 적용 · 전체 미작성 {all_counts.get('미작성', 0)}명 · 작성중 {all_counts.get('작성중', 0)}명 · 승인 {all_counts.get('승인', 0)}명"
+            f"{status_filter} 필터 적용 · 전체 미작성 {all_counts.get('미작성', 0)}명 · 작성중 {all_counts.get('작성중', 0)}명"
             if status_filter
-            else f"미작성 {counts.get('미작성', 0)}명 · 작성중 {counts.get('작성중', 0)}명 · 승인 {counts.get('승인', 0)}명"
+            else f"미작성 {counts.get('미작성', 0)}명 · 작성중 {counts.get('작성중', 0)}명"
         )
         cards = [{
             "title": "타임시트 현황",
@@ -142,7 +178,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
             "description": description,
             "items": rows,
         }]
-        suggestions = ["미작성자만 다시 보여줘", "작성중인 사람만 보여줘", "승인된 타임시트만 요약해줘"]
+        suggestions = ["지난주 작성인원 보여줘", "지난주 미작성인원 보여줘", "이번달 타임시트 현황 보여줘"]
         return answer, cards, suggestions
 
     if tool_name == "list_waiting_opinions":
@@ -198,7 +234,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
     project_amount = summary.get("projects", {}).get("total_contract_amount", 0)
     answer = (
         "ERP 운영 요약입니다. "
-        f"타임시트는 미작성 {ts_counts.get('미작성', 0)}명, 작성중 {ts_counts.get('작성중', 0)}명, 승인 {ts_counts.get('승인', 0)}명입니다. "
+        f"타임시트는 미작성 {ts_counts.get('미작성', 0)}명, 작성중 {ts_counts.get('작성중', 0)}명입니다. "
         f"답변 대기 의견은 {waiting}건, 답변 완료 의견은 {answered}건입니다. "
         f"진행 중 프로젝트는 {active_projects}건이고 계약금액 합계는 {project_amount:,.0f}입니다."
     )
@@ -206,7 +242,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
         {
             "title": "타임시트",
             "metric": f"미작성 {ts_counts.get('미작성', 0)}명",
-            "description": f"{summary.get('timesheet', {}).get('week_start')} ~ {summary.get('timesheet', {}).get('week_end')}",
+            "description": f"{summary.get('timesheet', {}).get('period_start')} ~ {summary.get('timesheet', {}).get('period_end')}",
             "items": ts_rows,
         },
         {
@@ -222,7 +258,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
             "items": summary.get("projects", {}).get("recent", []),
         },
     ]
-    return answer, cards, ["미제출 타임시트 조회", "답변 대기 의견 보여줘", "진행중 프로젝트 보여줘"]
+    return answer, cards, ["지난주 미작성인원 보여줘", "답변 대기 의견 보여줘", "진행중 프로젝트 보여줘"]
 
 
 @router.get("/ai/tools")

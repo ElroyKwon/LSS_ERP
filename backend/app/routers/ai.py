@@ -43,20 +43,22 @@ def _select_tool(message: str, context: ChatContext) -> tuple[str, dict[str, Any
     text = message.lower()
     normalized = "".join(message.split())
     filters = context.filters or {}
-    if "타임시트" in message or "미제출" in message or "제출" in message or context.route == "/timesheet":
+    if (
+        "타임시트" in message
+        or any(token in normalized for token in ["미제출", "미작성", "작성중", "작성자", "저장", "입력자", "제출자"])
+        or context.route == "/timesheet"
+    ):
         args: dict[str, Any] = {}
         if filters.get("week_start"):
             args["week_start"] = filters["week_start"]
         if any(token in normalized for token in ["미제출", "미작성", "안낸", "안냈"]):
             args["status"] = "미작성"
-        elif "작성중" in normalized:
+        elif any(token in normalized for token in ["작성중", "작성자", "작성한", "입력자", "입력한", "저장자", "저장한", "저장된", "제출자", "제출만", "제출한"]):
             args["status"] = "작성중"
         elif "승인" in normalized:
             args["status"] = "승인"
         elif "반려" in normalized:
             args["status"] = "반려"
-        elif any(token in normalized for token in ["제출자", "제출만", "제출한", "제출직원"]):
-            args["status"] = "제출"
         return "get_timesheet_team_status", args
     if "의견" in message or "답변" in message or context.route == "/opinion-listening":
         args: dict[str, Any] = {"limit": 10}
@@ -130,9 +132,9 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
                 names = ", ".join(row["employee_name"] for row in missing[:20])
                 answer += f" 미작성자는 {names}" + (" 외 추가 인원이 있습니다." if len(missing) > 20 else "입니다.")
         description = (
-            f"{status_filter} 필터 적용 · 전체 미작성 {all_counts.get('미작성', 0)}명 · 제출 {all_counts.get('제출', 0)}명 · 승인 {all_counts.get('승인', 0)}명"
+            f"{status_filter} 필터 적용 · 전체 미작성 {all_counts.get('미작성', 0)}명 · 작성중 {all_counts.get('작성중', 0)}명 · 승인 {all_counts.get('승인', 0)}명"
             if status_filter
-            else f"미작성 {counts.get('미작성', 0)}명 · 제출 {counts.get('제출', 0)}명 · 승인 {counts.get('승인', 0)}명"
+            else f"미작성 {counts.get('미작성', 0)}명 · 작성중 {counts.get('작성중', 0)}명 · 승인 {counts.get('승인', 0)}명"
         )
         cards = [{
             "title": "타임시트 현황",
@@ -140,7 +142,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
             "description": description,
             "items": rows,
         }]
-        suggestions = ["미제출자만 다시 보여줘", "제출자만 다시 보여줘", "승인된 타임시트만 요약해줘"]
+        suggestions = ["미작성자만 다시 보여줘", "작성중인 사람만 보여줘", "승인된 타임시트만 요약해줘"]
         return answer, cards, suggestions
 
     if tool_name == "list_waiting_opinions":
@@ -196,7 +198,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
     project_amount = summary.get("projects", {}).get("total_contract_amount", 0)
     answer = (
         "ERP 운영 요약입니다. "
-        f"타임시트는 미작성 {ts_counts.get('미작성', 0)}명, 제출 {ts_counts.get('제출', 0)}명, 승인 {ts_counts.get('승인', 0)}명입니다. "
+        f"타임시트는 미작성 {ts_counts.get('미작성', 0)}명, 작성중 {ts_counts.get('작성중', 0)}명, 승인 {ts_counts.get('승인', 0)}명입니다. "
         f"답변 대기 의견은 {waiting}건, 답변 완료 의견은 {answered}건입니다. "
         f"진행 중 프로젝트는 {active_projects}건이고 계약금액 합계는 {project_amount:,.0f}입니다."
     )

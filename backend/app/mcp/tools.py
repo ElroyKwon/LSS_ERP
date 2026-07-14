@@ -116,8 +116,8 @@ def list_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "get_timesheet_team_status",
-            "title": "타임시트 제출 현황",
-            "description": "권한 범위 내 직원의 주간 타임시트 제출 상태와 총 시간을 조회합니다.",
+            "title": "타임시트 저장 현황",
+            "description": "권한 범위 내 직원의 주간 타임시트 작성/저장 상태와 총 시간을 조회합니다.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -127,7 +127,7 @@ def list_tools() -> list[dict[str, Any]]:
                     },
                     "status": {
                         "type": "string",
-                        "description": "미작성, 작성중, 제출, 승인, 반려 중 하나로 필터링합니다.",
+                        "description": "미작성, 작성중, 승인, 반려 중 하나로 필터링합니다.",
                     },
                 },
             },
@@ -191,7 +191,10 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
     all_counts: dict[str, int] = {}
     for emp in employees:
         sheet = sheets_by_employee.get(emp.id)
-        status = sheet.status if sheet else "미작성"
+        raw_status = sheet.status if sheet else "미작성"
+        # The current workflow saves timesheets instead of submitting them.
+        # Treat legacy "제출" rows as saved drafts in assistant summaries.
+        status = "작성중" if raw_status == "제출" else raw_status
         all_counts[status] = all_counts.get(status, 0) + 1
         if status_filter and status != status_filter:
             continue

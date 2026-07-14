@@ -16,6 +16,15 @@ from ..utils.permissions import is_system_admin, normalize_role
 
 ToolHandler = Callable[[dict[str, Any], Session, User], dict[str, Any]]
 
+PROJECT_STATUS_ALIASES = {
+    "진행": "진행중",
+    "진행 중": "진행중",
+    "종료": "완료",
+    "종료됨": "완료",
+    "완료됨": "완료",
+}
+PROJECT_STANDARD_STATUSES = {"미진행", "진행중", "완료"}
+
 
 def _today() -> date:
     return date.today()
@@ -52,6 +61,19 @@ def _num(value: Any) -> float:
     if isinstance(value, Decimal):
         return float(value)
     return float(value or 0)
+
+
+def _normalize_project_status(value: Any) -> str:
+    status = str(value or "").strip()
+    status = PROJECT_STATUS_ALIASES.get(status, status)
+    return status if status in PROJECT_STANDARD_STATUSES else (status or "미지정")
+
+
+def _project_status_filter_values(value: Any) -> list[str]:
+    normalized = _normalize_project_status(value)
+    values = [normalized]
+    values.extend(alias for alias, status in PROJECT_STATUS_ALIASES.items() if status == normalized)
+    return values
 
 
 def _current_employee(db: Session, current: User) -> Employee | None:
@@ -262,6 +284,7 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
     limit = args.get("limit")
     limit = min(max(int(limit), 1), 500) if limit is not None else None
     status_filter = str(args.get("status") or "").strip()
+    normalized_status_filter = _normalize_project_status(status_filter) if status_filter else ""
     order_by = str(args.get("order_by") or "recent")
     q = db.query(Project)
     if query:
@@ -273,11 +296,14 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
             Project.pm_name.ilike(like),
         ))
     if status_filter:
-        q = q.filter(Project.status == status_filter)
+        q = q.filter(Project.status.in_(_project_status_filter_values(status_filter)))
 
     total_count = q.count()
     status_rows = q.with_entities(Project.status, func.count(Project.id)).group_by(Project.status).all()
-    status_counts = {status or "미지정": count for status, count in status_rows}
+    status_counts: dict[str, int] = {}
+    for status, count in status_rows:
+        normalized_status = _normalize_project_status(status)
+        status_counts[normalized_status] = status_counts.get(normalized_status, 0) + count
     total_amount = q.with_entities(func.coalesce(func.sum(Project.contract_amount), 0)).scalar() or 0
 
     if order_by == "amount_desc":
@@ -293,7 +319,7 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
     projects = q.limit(limit).all() if limit else q.all()
     return {
         "query": query,
-        "status_filter": status_filter or None,
+        "status_filter": normalized_status_filter or None,
         "order_by": order_by,
         "total_count": total_count,
         "status_counts": status_counts,
@@ -304,7 +330,7 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
                 "project_no": row.project_no,
                 "project_name": row.project_name,
                 "client_name": row.client_name,
-                "status": row.status,
+                "status": _normalize_project_status(row.status),
                 "pm_name": row.pm_name,
                 "contract_amount": _num(row.contract_amount),
                 "contract_start": str(row.contract_start) if row.contract_start else None,
@@ -371,7 +397,9 @@ def get_operational_summary(args: dict[str, Any], db: Session, current: User) ->
     }
     timesheet = get_timesheet_team_status(timesheet_args, db, current)
     opinions = list_waiting_opinions({"status": "waiting"}, db, current)
-    active_projects = db.query(func.count(Project.id)).filter(Project.status == "진행중").scalar() or 0
+    active_projects = db.query(func.count(Project.id)).filter(
+        Project.status.in_(_project_status_filter_values("진행중"))
+    ).scalar() or 0
     project_summary = search_projects({"status": "진행중", "order_by": "recent"}, db, current)
     return {
         "timesheet": {

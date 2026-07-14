@@ -19,6 +19,25 @@ router = APIRouter(prefix="/api", tags=["경영"])
 APPROVED_SALES_BILL_STATUS = "승인"
 
 CATEGORIES = ["매출목표", "재료비", "노무비", "외주비", "경비", "판관비", "기타"]
+PROJECT_STATUS_ALIASES = {
+    "진행": "진행중",
+    "진행 중": "진행중",
+    "종료": "완료",
+    "종료됨": "완료",
+    "완료됨": "완료",
+}
+
+
+def _normalize_project_status(value: Optional[str]) -> str:
+    status = str(value or "").strip()
+    return PROJECT_STATUS_ALIASES.get(status, status)
+
+
+def _project_status_filter_values(value: str) -> list[str]:
+    normalized = _normalize_project_status(value)
+    values = [normalized]
+    values.extend(alias for alias, status in PROJECT_STATUS_ALIASES.items() if status == normalized)
+    return values
 
 
 # ══════════════════════════════════════════════════════
@@ -321,7 +340,7 @@ def management_analysis(year: Optional[int] = None,
         monthly.append({"month": m, "revenue": float(rev), "orders": float(orders), "cost": float(cost)})
 
     # 프로젝트별 수익성
-    projects = db.query(Project).filter(Project.status == "진행중").all()
+    projects = db.query(Project).filter(Project.status.in_(_project_status_filter_values("진행중"))).all()
     proj_pl = []
     for p in projects:
         rev = float(db.query(sqlfunc.sum(SalesBill.bill_amount)).filter(
@@ -331,7 +350,7 @@ def management_analysis(year: Optional[int] = None,
         proj_pl.append({
             "id": p.id, "project_no": p.project_no, "project_name": p.project_name,
             "client_name": p.client_name, "contract_amount": float(p.contract_amount or 0),
-            "status": p.status, "pm_name": p.pm_name,
+            "status": _normalize_project_status(p.status), "pm_name": p.pm_name,
         })
 
     # YTD 요약

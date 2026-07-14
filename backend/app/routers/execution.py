@@ -34,6 +34,13 @@ router = APIRouter(prefix="/api", tags=["실행"])
 CONTRACT_FORMS = ["원도급", "하도급", "공동도급", "위탁", "기타"]
 CONTRACT_TYPES = ["국내", "국외"]
 STATUSES       = ["미진행", "진행중", "완료"]
+STATUS_ALIASES = {
+    "진행": "진행중",
+    "진행 중": "진행중",
+    "종료": "완료",
+    "종료됨": "완료",
+    "완료됨": "완료",
+}
 PROJECT_REQ_MARKER = "\n---프로젝트리스트요구사항---\n"
 AP_BILL_REQ_MARKER = "\n---매입청구요구사항---\n"
 PURCHASE_CONTRACT_REQ_MARKER = "\n---구매계약요구사항---\n"
@@ -85,6 +92,19 @@ def _valid_customer_class(value: Optional[str]) -> str:
     return value if value in ["특수관계자", "대리점", "일반"] else "일반"
 
 
+def _normalize_project_status(value: Optional[str]) -> str:
+    status = str(value or "").strip()
+    status = STATUS_ALIASES.get(status, status)
+    return status if status in STATUSES else STATUSES[0]
+
+
+def _project_status_filter_values(value: Optional[str]) -> list[str]:
+    status = _normalize_project_status(value)
+    values = [status]
+    values.extend(alias for alias, normalized in STATUS_ALIASES.items() if normalized == status)
+    return values
+
+
 class ProjectCreate(BaseModel):
     project_no:      Optional[str]     = None
     project_name:    str
@@ -114,7 +134,7 @@ def _proj_dict(p: Project) -> dict:
         "client_name":    p.client_name or (p.client.company_name if p.client else None),
         "contract_form":  p.contract_form,
         "contract_type":  p.contract_type,
-        "status":         p.status,
+        "status":         _normalize_project_status(p.status),
         "contract_amount": float(p.contract_amount or 0),
         "contract_rate":  float(p.contract_rate or 0),
         "contract_start": to_kst_date(p.contract_start),
@@ -263,7 +283,7 @@ def list_projects(
 ):
     q = db.query(Project)
     if status:
-        q = q.filter(Project.status == status)
+        q = q.filter(Project.status.in_(_project_status_filter_values(status)))
     if contract_form:
         q = q.filter(Project.contract_form == contract_form)
     if contract_type:
@@ -292,7 +312,9 @@ def list_projects(
 @router.post("/projects")
 def create_project(data: ProjectCreate, db: Session = Depends(get_db),
                    current=Depends(get_current_user)):
-    p = Project(**data.dict(), created_by=current.id)
+    payload = data.dict()
+    payload["status"] = _normalize_project_status(payload.get("status"))
+    p = Project(**payload, created_by=current.id)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -345,7 +367,7 @@ def import_projects_excel(
                 "client_name": client_name,
                 "contract_form": row.get("contract_form") or CONTRACT_FORMS[0],
                 "contract_type": row.get("contract_type") or CONTRACT_TYPES[0],
-                "status": row.get("status") or STATUSES[0],
+                "status": _normalize_project_status(row.get("status")),
                 "contract_amount": to_decimal_value(row.get("contract_amount"), Decimal(0)) or Decimal(0),
                 "contract_start": to_date_value(row.get("contract_start")),
                 "construct_end": to_date_value(row.get("construct_end")),
@@ -410,6 +432,8 @@ def update_project(pid: int, data: ProjectCreate, db: Session = Depends(get_db),
     if not p:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     for field, val in data.dict().items():
+        if field == "status":
+            val = _normalize_project_status(val)
         setattr(p, field, val)
     db.commit()
     db.refresh(p)

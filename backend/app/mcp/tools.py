@@ -135,22 +135,38 @@ def list_tools() -> list[dict[str, Any]]:
         {
             "name": "search_projects",
             "title": "프로젝트 검색",
-            "description": "프로젝트 번호, 프로젝트명, 거래처명, PM명으로 프로젝트를 검색합니다.",
+            "description": "프로젝트 번호, 프로젝트명, 거래처명, PM명으로 프로젝트를 검색하고 상태/정렬 조건을 적용합니다.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "검색어"},
+                    "status": {
+                        "type": "string",
+                        "description": "미진행, 진행중, 완료 중 하나로 필터링합니다.",
+                    },
+                    "order_by": {
+                        "type": "string",
+                        "description": "recent, amount_desc, amount_asc, end_date 중 하나로 정렬합니다.",
+                        "default": "recent",
+                    },
                     "limit": {"type": "integer", "description": "최대 결과 수", "default": 10},
                 },
             },
         },
         {
             "name": "list_waiting_opinions",
-            "title": "의견 청취 답변 대기",
-            "description": "답변이 등록되지 않은 의견 청취 글을 최신순으로 조회합니다.",
+            "title": "의견 청취 조회",
+            "description": "의견 청취 글을 답변 상태, 검색어, 첨부 여부로 필터링해 최신순으로 조회합니다.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "waiting, answered, all 중 하나로 필터링합니다.",
+                        "default": "waiting",
+                    },
+                    "query": {"type": "string", "description": "제목/내용 검색어"},
+                    "has_attachments": {"type": "boolean", "description": "첨부 파일이 있는 의견만 조회합니다."},
                     "limit": {"type": "integer", "description": "최대 결과 수", "default": 10}
                 },
             },
@@ -172,9 +188,11 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
         sheets_by_employee = {sheet.employee_id: sheet for sheet in sheets}
 
     status_filter = args.get("status")
+    all_counts: dict[str, int] = {}
     for emp in employees:
         sheet = sheets_by_employee.get(emp.id)
         status = sheet.status if sheet else "미작성"
+        all_counts[status] = all_counts.get(status, 0) + 1
         if status_filter and status != status_filter:
             continue
         rows.append({
@@ -197,6 +215,8 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
         "week_start": str(monday),
         "week_end": str(sunday),
         "counts": counts,
+        "all_counts": all_counts,
+        "status_filter": status_filter,
         "total_hours": round(total_hours, 2),
         "rows": rows,
     }
@@ -205,6 +225,8 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
 def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
     query = str(args.get("query") or "").strip()
     limit = min(max(int(args.get("limit") or 10), 1), 30)
+    status_filter = str(args.get("status") or "").strip()
+    order_by = str(args.get("order_by") or "recent")
     q = db.query(Project)
     if query:
         like = f"%{query}%"
@@ -214,9 +236,32 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
             Project.client_name.ilike(like),
             Project.pm_name.ilike(like),
         ))
-    projects = q.order_by(Project.updated_at.desc(), Project.id.desc()).limit(limit).all()
+    if status_filter:
+        q = q.filter(Project.status == status_filter)
+
+    total_count = q.count()
+    status_rows = q.with_entities(Project.status, func.count(Project.id)).group_by(Project.status).all()
+    status_counts = {status or "미지정": count for status, count in status_rows}
+    total_amount = q.with_entities(func.coalesce(func.sum(Project.contract_amount), 0)).scalar() or 0
+
+    if order_by == "amount_desc":
+        q = q.order_by(Project.contract_amount.desc(), Project.updated_at.desc(), Project.id.desc())
+    elif order_by == "amount_asc":
+        q = q.order_by(Project.contract_amount.asc(), Project.updated_at.desc(), Project.id.desc())
+    elif order_by == "end_date":
+        q = q.order_by(Project.contract_end.asc().nullslast(), Project.updated_at.desc(), Project.id.desc())
+    else:
+        order_by = "recent"
+        q = q.order_by(Project.updated_at.desc(), Project.id.desc())
+
+    projects = q.limit(limit).all()
     return {
         "query": query,
+        "status_filter": status_filter or None,
+        "order_by": order_by,
+        "total_count": total_count,
+        "status_counts": status_counts,
+        "total_contract_amount": _num(total_amount),
         "items": [
             {
                 "id": row.id,
@@ -228,6 +273,7 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
                 "contract_amount": _num(row.contract_amount),
                 "contract_start": str(row.contract_start) if row.contract_start else None,
                 "contract_end": str(row.contract_end) if row.contract_end else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
             }
             for row in projects
         ],
@@ -236,18 +282,42 @@ def search_projects(args: dict[str, Any], db: Session, current: User) -> dict[st
 
 def list_waiting_opinions(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
     limit = min(max(int(args.get("limit") or 10), 1), 30)
-    rows = db.query(OpinionPost).filter(
-        OpinionPost.answer.is_(None)
-    ).order_by(OpinionPost.created_at.desc(), OpinionPost.id.desc()).limit(limit).all()
+    status_filter = str(args.get("status") or "waiting").strip()
+    query = str(args.get("query") or "").strip()
+    has_attachments = args.get("has_attachments")
+    q = db.query(OpinionPost)
+    if query:
+        like = f"%{query}%"
+        q = q.filter(or_(OpinionPost.title.ilike(like), OpinionPost.content.ilike(like)))
+    if status_filter == "waiting":
+        q = q.filter(OpinionPost.answer.is_(None))
+    elif status_filter == "answered":
+        q = q.filter(OpinionPost.answer.isnot(None))
+    else:
+        status_filter = "all"
+    if has_attachments is True:
+        q = q.filter(OpinionPost.attachments.any())
+
+    total_count = q.count()
+    rows = q.order_by(OpinionPost.created_at.desc(), OpinionPost.id.desc()).limit(limit).all()
     total_waiting = db.query(func.count(OpinionPost.id)).filter(OpinionPost.answer.is_(None)).scalar() or 0
+    total_answered = db.query(func.count(OpinionPost.id)).filter(OpinionPost.answer.isnot(None)).scalar() or 0
     return {
+        "status_filter": status_filter,
+        "query": query,
+        "has_attachments": has_attachments is True,
+        "total_count": total_count,
         "total_waiting": total_waiting,
+        "total_answered": total_answered,
         "items": [
             {
                 "id": row.id,
                 "title": row.title,
+                "status": "answered" if row.answer else "waiting",
                 "creator_name": row.creator.name if row.creator else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
+                "answered_at": row.answered_at.isoformat() if row.answered_at else None,
+                "answerer_name": row.answerer.name if row.answerer else None,
                 "attachment_count": len(row.attachments),
             }
             for row in rows
@@ -257,20 +327,25 @@ def list_waiting_opinions(args: dict[str, Any], db: Session, current: User) -> d
 
 def get_operational_summary(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
     timesheet = get_timesheet_team_status({"week_start": args.get("week_start")}, db, current)
-    opinions = list_waiting_opinions({"limit": 5}, db, current)
-    active_projects = db.query(func.count(Project.id)).filter(Project.status != "완료").scalar() or 0
-    recent_projects = search_projects({"limit": 5}, db, current)
+    opinions = list_waiting_opinions({"limit": 10, "status": "waiting"}, db, current)
+    active_projects = db.query(func.count(Project.id)).filter(Project.status == "진행중").scalar() or 0
+    project_summary = search_projects({"limit": 10, "status": "진행중", "order_by": "recent"}, db, current)
     return {
         "timesheet": {
             "week_start": timesheet["week_start"],
             "week_end": timesheet["week_end"],
             "counts": timesheet["counts"],
+            "all_counts": timesheet["all_counts"],
             "total_hours": timesheet["total_hours"],
+            "rows": timesheet["rows"],
         },
         "opinions": opinions,
         "projects": {
             "active_count": active_projects,
-            "recent": recent_projects["items"],
+            "total_count": project_summary["total_count"],
+            "status_counts": project_summary["status_counts"],
+            "total_contract_amount": project_summary["total_contract_amount"],
+            "recent": project_summary["items"],
         },
     }
 
@@ -288,4 +363,3 @@ def call_tool(name: str, arguments: dict[str, Any] | None, db: Session, current:
     if not handler:
         raise KeyError(f"Unknown MCP tool: {name}")
     return handler(arguments or {}, db, current)
-

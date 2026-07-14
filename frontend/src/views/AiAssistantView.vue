@@ -77,7 +77,7 @@
                 </div>
                 <div class="result-card-desc">{{ card.description }}</div>
                 <div v-if="card.items?.length" class="result-items">
-                  <div v-for="(item, index) in card.items.slice(0, 5)" :key="index" class="result-item">
+                  <div v-for="(item, index) in card.items" :key="index" class="result-item">
                     {{ itemTitle(item) }}
                     <span>{{ itemSub(item) }}</span>
                   </div>
@@ -199,10 +199,19 @@ function itemTitle(item) {
   return item.employee_name || item.title || item.project_name || item.project_no || '항목'
 }
 
+function formatAmount(value) {
+  return Number(value || 0).toLocaleString()
+}
+
 function itemSub(item) {
-  if (item.status || item.total_hours !== undefined) return `${item.status || '-'} · ${item.total_hours || 0}h`
-  if (item.creator_name) return `${item.creator_name} · 첨부 ${item.attachment_count || 0}개`
-  if (item.client_name || item.pm_name) return `${item.client_name || '-'} · PM ${item.pm_name || '-'}`
+  if (item.employee_name || item.total_hours !== undefined) return `${item.status || '-'} · ${item.total_hours || 0}h`
+  if (item.project_name || item.project_no) {
+    return `${item.status || '-'} · ${item.client_name || '-'} · PM ${item.pm_name || '-'} · ${formatAmount(item.contract_amount)}`
+  }
+  if (item.creator_name) {
+    const status = item.status === 'answered' ? '답변 완료' : '답변 대기'
+    return `${status} · ${item.creator_name} · 첨부 ${item.attachment_count || 0}개`
+  }
   return ''
 }
 
@@ -338,7 +347,7 @@ onMounted(loadTools)
 .result-card-head span { font-size: 12px; font-weight: 700; }
 .result-card-head strong { color: #1677ff; }
 .result-card-desc { padding: 8px 10px; font-size: 12px; color: #8c8c8c; }
-.result-items { border-top: 1px solid #f5f5f5; }
+.result-items { border-top: 1px solid #f5f5f5; max-height: 360px; overflow-y: auto; }
 .result-item { padding: 7px 10px; font-size: 12px; border-bottom: 1px solid #f7f7f7; }
 .result-item span { display: block; color: #8c8c8c; margin-top: 2px; }
 .suggestion-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

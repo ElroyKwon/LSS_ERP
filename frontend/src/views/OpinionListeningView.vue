@@ -164,7 +164,25 @@
 
         <a-divider orientation="left">답변</a-divider>
         <div v-if="selected.answer" class="answer-box">
-          <div class="detail-meta">{{ selected.answerer_name || '-' }} · {{ selected.answered_at || '-' }}</div>
+          <div class="answer-header">
+            <div class="detail-meta">{{ selected.answerer_name || '-' }} · {{ selected.answered_at || '-' }}</div>
+            <a-space v-if="auth.isAdmin" size="small">
+              <a-button type="text" size="small" title="답변 수정" @click="startAnswerEdit">
+                <template #icon><EditOutlined /></template>
+              </a-button>
+              <a-popconfirm
+                title="관리자 답변을 삭제하시겠습니까?"
+                ok-text="삭제"
+                ok-type="danger"
+                cancel-text="취소"
+                @confirm="deleteAnswer"
+              >
+                <a-button type="text" danger size="small" title="답변 삭제">
+                  <template #icon><DeleteOutlined /></template>
+                </a-button>
+              </a-popconfirm>
+            </a-space>
+          </div>
           <div class="detail-content">{{ selected.answer }}</div>
         </div>
         <a-empty v-else description="답변 없음" />
@@ -181,12 +199,12 @@
         <div class="detail-footer">
           <a-space>
             <a-button @click="detailOpen = false">닫기</a-button>
-            <a-button v-if="selected" @click="openEditFromDetail">
+            <a-button v-if="canEditSelectedOpinion" @click="openEditFromDetail">
               <template #icon><EditOutlined /></template>
               수정
             </a-button>
             <a-popconfirm
-              v-if="selected"
+              v-if="canDeleteSelectedOpinion"
               title="의견 글을 삭제하시겠습니까?"
               ok-text="삭제"
               ok-type="danger"
@@ -277,6 +295,27 @@ const columns = [
 const visibleColumns = computed(() => columns.filter(column => column.key !== 'action'))
 const waitingCount = computed(() => opinions.value.filter(row => row.status !== 'answered').length)
 const answeredCount = computed(() => opinions.value.filter(row => row.status === 'answered').length)
+const currentUserId = computed(() => auth.user?.id ?? auth.user?.user_id ?? null)
+const currentUserName = computed(() => auth.user?.name || '')
+const canEditSelectedOpinion = computed(() => canEditOpinion(selected.value))
+const canDeleteSelectedOpinion = computed(() => canDeleteOpinion(selected.value))
+
+function isOpinionOwner(row) {
+  if (!row) return false
+  const ownerId = row.created_by ?? row.creator_id ?? null
+  if (currentUserId.value !== null && ownerId !== null) {
+    return Number(ownerId) === Number(currentUserId.value)
+  }
+  return !!currentUserName.value && row.creator_name === currentUserName.value
+}
+
+function canEditOpinion(row) {
+  return isOpinionOwner(row)
+}
+
+function canDeleteOpinion(row) {
+  return isOpinionOwner(row) || auth.isAdmin
+}
 
 async function load() {
   loading.value = true
@@ -306,6 +345,10 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  if (!canEditOpinion(row)) {
+    message.warning('등록한 사용자만 수정할 수 있습니다.')
+    return
+  }
   editingId.value = row.id
   form.title = row.title || ''
   form.content = row.content || ''
@@ -400,6 +443,11 @@ async function removeSelectedOpinion() {
   await removeOpinion(selected.value.id)
 }
 
+function startAnswerEdit() {
+  if (!selected.value?.answer) return
+  answerText.value = selected.value.answer
+}
+
 async function saveAnswer() {
   if (!selected.value) return
   if (!answerText.value.trim()) {
@@ -415,6 +463,22 @@ async function saveAnswer() {
     await load()
   } catch (error) {
     message.error(error.response?.data?.detail || '답변 저장에 실패했습니다.')
+  } finally {
+    answerSaving.value = false
+  }
+}
+
+async function deleteAnswer() {
+  if (!selected.value) return
+  answerSaving.value = true
+  try {
+    const res = await opinionApi.deleteAnswer(selected.value.id)
+    selected.value = res.data
+    answerText.value = ''
+    message.success('답변이 삭제되었습니다.')
+    await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '답변 삭제에 실패했습니다.')
   } finally {
     answerSaving.value = false
   }
@@ -572,6 +636,7 @@ onBeforeUnmount(() => {
 .detail-meta { display: flex; align-items: center; gap: 8px; color: #8c8c8c; font-size: 12px; }
 .detail-content { white-space: pre-wrap; line-height: 1.7; color: #1a2535; }
 .answer-box { padding: 12px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; }
+.answer-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .attachment-list { border: 1px solid #f0f0f0; border-radius: 8px; }
 .attachment-link { height: auto; padding: 0; text-align: left; white-space: normal; }
 .pdf-preview-shell { position: relative; width: 100%; min-width: 0; min-height: 420px; overflow: hidden; }

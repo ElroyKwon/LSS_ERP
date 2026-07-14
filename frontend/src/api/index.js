@@ -189,6 +189,7 @@ export const opinionApi = {
   updateOpinion: (id, d) => api.put(`/opinions/${id}`, d),
   deleteOpinion: (id) => api.delete(`/opinions/${id}`),
   answerOpinion: (id, d) => api.put(`/opinions/${id}/answer`, d),
+  deleteAnswer: (id) => api.delete(`/opinions/${id}/answer`),
   uploadAttachment: (id, formData) => api.post(`/opinions/${id}/attachments`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 180000,

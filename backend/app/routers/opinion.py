@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -71,14 +72,18 @@ def _opinion_dict(row: OpinionPost) -> dict:
 
 
 def _admin_notification_recipients(db: Session) -> list[str]:
-    admins = db.query(User).filter(
-        User.is_active == True,
-        User.email.isnot(None),
-    ).all()
-    settings_by_user = {
-        item.user_id: item.notify_on_new_post
-        for item in db.query(OpinionNotificationSetting).all()
-    }
+    try:
+        admins = db.query(User).filter(
+            User.is_active == True,
+            User.email.isnot(None),
+        ).all()
+        settings_by_user = {
+            item.user_id: item.notify_on_new_post
+            for item in db.query(OpinionNotificationSetting).all()
+        }
+    except SQLAlchemyError:
+        db.rollback()
+        return []
     recipients = []
     for user in admins:
         if not is_system_admin(user.role):
@@ -100,6 +105,16 @@ def _send_mail_safely(recipients: list[str], subject: str, body: str) -> bool:
 def _require_admin(current: User) -> None:
     if not is_system_admin(current.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+
+
+def _require_owner(row: OpinionPost, current: User) -> None:
+    if row.created_by != current.id:
+        raise HTTPException(status_code=403, detail="등록한 사용자만 수정할 수 있습니다.")
+
+
+def _require_owner_or_admin(row: OpinionPost, current: User) -> None:
+    if row.created_by != current.id and not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="등록한 사용자 또는 관리자만 삭제할 수 있습니다.")
 
 
 @router.get("/opinions")
@@ -154,11 +169,12 @@ def update_opinion(
     opinion_id: int,
     data: OpinionCreate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current=Depends(get_current_user),
 ):
     row = db.query(OpinionPost).filter(OpinionPost.id == opinion_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="의견 청취 글을 찾을 수 없습니다.")
+    _require_owner(row, current)
     if not data.title.strip():
         raise HTTPException(status_code=422, detail="제목을 입력하세요.")
     if not data.content.strip():
@@ -171,10 +187,11 @@ def update_opinion(
 
 
 @router.delete("/opinions/{opinion_id}")
-def delete_opinion(opinion_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def delete_opinion(opinion_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
     row = db.query(OpinionPost).filter(OpinionPost.id == opinion_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="의견 청취 글을 찾을 수 없습니다.")
+    _require_owner_or_admin(row, current)
     file_paths = [attachment.file_path for attachment in row.attachments]
     db.delete(row)
     db.commit()
@@ -215,6 +232,24 @@ def answer_opinion(
     return _opinion_dict(row)
 
 
+@router.delete("/opinions/{opinion_id}/answer")
+def delete_opinion_answer(
+    opinion_id: int,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    _require_admin(current)
+    row = db.query(OpinionPost).filter(OpinionPost.id == opinion_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="의견 청취 글을 찾을 수 없습니다.")
+    row.answer = None
+    row.answered_by = None
+    row.answered_at = None
+    db.commit()
+    db.refresh(row)
+    return _opinion_dict(row)
+
+
 @router.post("/opinions/{opinion_id}/attachments")
 def upload_opinion_attachment(
     opinion_id: int,
@@ -225,6 +260,7 @@ def upload_opinion_attachment(
     row = db.query(OpinionPost).filter(OpinionPost.id == opinion_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="의견 청취 글을 찾을 수 없습니다.")
+    _require_owner(row, current)
     original_name = os.path.basename(file.filename or "attachment")
     ext = os.path.splitext(original_name)[1]
     stored_name = f"{uuid.uuid4().hex}{ext}"
@@ -267,10 +303,14 @@ def download_opinion_attachment(attachment_id: int, db: Session = Depends(get_db
 
 
 @router.delete("/opinion-attachments/{attachment_id}")
-def delete_opinion_attachment(attachment_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def delete_opinion_attachment(attachment_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
     row = db.query(OpinionAttachment).filter(OpinionAttachment.id == attachment_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+    opinion = db.query(OpinionPost).filter(OpinionPost.id == row.opinion_id).first()
+    if not opinion:
+        raise HTTPException(status_code=404, detail="의견 청취 글을 찾을 수 없습니다.")
+    _require_owner_or_admin(opinion, current)
     file_path = row.file_path
     db.delete(row)
     db.commit()

@@ -2111,14 +2111,7 @@ function closeProjectEditor() {
   projectEditorSnapshot.value = ''
 }
 
-function handleEditorCancel(event) {
-  const target = event?.target
-  const isCloseButton = Boolean(target?.closest?.('.ant-modal-close'))
-  if (isCloseButton || !isProjectEditorDirty()) {
-    closeProjectEditor()
-    return
-  }
-
+function confirmProjectEditorCancel() {
   if (projectCancelConfirmOpen.value) return
   projectCancelConfirmOpen.value = true
   Modal.confirm({
@@ -2132,6 +2125,17 @@ function handleEditorCancel(event) {
       projectCancelConfirmOpen.value = false
     },
   })
+}
+
+function handleEditorCancel(event) {
+  const target = event?.target
+  const isCloseButton = Boolean(target?.closest?.('.ant-modal-close'))
+  if (isCloseButton) {
+    closeProjectEditor()
+    return
+  }
+
+  confirmProjectEditorCancel()
 }
 
 function isProjectEditorPopupTarget(target) {
@@ -2150,7 +2154,8 @@ function handleProjectEditorOutsideMouseDown(event) {
   if (!drawerOpen.value || isProjectEditorPopupTarget(event.target)) return
   event.preventDefault()
   event.stopPropagation()
-  handleEditorCancel(event)
+  event.stopImmediatePropagation?.()
+  confirmProjectEditorCancel()
 }
 
 // 발주처 자동완성: 등록된 거래처 목록 제안 (직접 입력도 허용)

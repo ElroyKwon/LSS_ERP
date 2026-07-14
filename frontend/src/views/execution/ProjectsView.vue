@@ -375,7 +375,7 @@
               width="840"
               wrap-class-name="project-editor-modal"
               :body-style="{ paddingBottom: '72px' }"
-              :mask-closable="true"
+              :mask-closable="false"
               @cancel="handleEditorCancel"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef">
@@ -757,7 +757,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import {
   ProjectOutlined, PlayCircleOutlined, CheckCircleOutlined, PauseCircleOutlined, PlusOutlined,
@@ -928,6 +928,7 @@ const selectedId = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
 const projectEditorSnapshot = ref('')
+const projectCancelConfirmOpen = ref(false)
 
 const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
 const canAccessSalesPurchaseTabs = computed(() =>
@@ -939,6 +940,14 @@ watch(canAccessSalesPurchaseTabs, (allowed) => {
     activeTab.value = 'orders'
   }
 }, { immediate: true })
+
+watch(drawerOpen, (open) => {
+  if (open) {
+    document.addEventListener('mousedown', handleProjectEditorOutsideMouseDown, true)
+  } else {
+    document.removeEventListener('mousedown', handleProjectEditorOutsideMouseDown, true)
+  }
+})
 
 // ── 필터 ──
 const filters = reactive({
@@ -2110,6 +2119,8 @@ function handleEditorCancel(event) {
     return
   }
 
+  if (projectCancelConfirmOpen.value) return
+  projectCancelConfirmOpen.value = true
   Modal.confirm({
     title: '입력을 취소하시겠습니까?',
     content: '저장하지 않은 프로젝트 등록/수정 내용은 사라집니다.',
@@ -2117,7 +2128,29 @@ function handleEditorCancel(event) {
     cancelText: '계속 작성',
     okType: 'danger',
     onOk: closeProjectEditor,
+    afterClose: () => {
+      projectCancelConfirmOpen.value = false
+    },
   })
+}
+
+function isProjectEditorPopupTarget(target) {
+  return Boolean(target?.closest?.(
+    '.project-editor-modal .ant-modal, ' +
+    '.ant-modal-confirm, ' +
+    '.ant-select-dropdown, ' +
+    '.ant-picker-dropdown, ' +
+    '.ant-dropdown, ' +
+    '.ant-popover, ' +
+    '.ant-tooltip'
+  ))
+}
+
+function handleProjectEditorOutsideMouseDown(event) {
+  if (!drawerOpen.value || isProjectEditorPopupTarget(event.target)) return
+  event.preventDefault()
+  event.stopPropagation()
+  handleEditorCancel(event)
 }
 
 // 발주처 자동완성: 등록된 거래처 목록 제안 (직접 입력도 허용)
@@ -2278,6 +2311,10 @@ async function load() {
 }
 
 onMounted(load)
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleProjectEditorOutsideMouseDown, true)
+})
 </script>
 
 <style scoped>

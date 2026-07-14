@@ -38,6 +38,7 @@ const routes = [
       // 단독 메뉴
       { path: 'timesheet', component: () => import('@/views/TimesheetView.vue') },
 	  { path: 'calendar', component: () => import('@/views/CalendarView.vue') },
+      { path: 'ai-assistant', component: () => import('@/views/AiAssistantView.vue') },
       { path: 'vehicle-log', component: () => import('@/views/VehicleLogView.vue') },
       { path: 'opinion-listening', component: () => import('@/views/OpinionListeningView.vue') },
 

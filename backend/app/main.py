@@ -16,7 +16,7 @@ from .models import *  # noqa: register all models
 from .utils.authorization import enforce_api_permissions
 from .utils.schema import ensure_accounting_columns, ensure_execution_columns, ensure_master_columns
 
-from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule
+from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule, ai
 
 # Development convenience. Production deployments should run Alembic migrations
 # and set AUTO_CREATE_SCHEMA=false to keep schema changes explicit.
@@ -61,6 +61,7 @@ app.include_router(vehicle.router)
 app.include_router(opinion.router)
 app.include_router(holiday.router)
 app.include_router(schedule.router)
+app.include_router(ai.router)
 
 
 

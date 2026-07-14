@@ -122,6 +122,11 @@ export const MENU_PERMISSIONS = {
     purchase_staff: cru, purchase_manager: crua, accounting_staff: cru, accounting_manager: crua,
     design_staff: cru, design_manager: crua,
   },
+  '/ai-assistant': {
+    system_admin: r, sales_staff: r, sales_manager: r, execution_staff: r,
+    purchase_staff: r, purchase_manager: r, accounting_staff: r, accounting_manager: r,
+    design_staff: r, design_manager: r,
+  },
   '/vehicle-log': {
     system_admin: cruda, sales_staff: cru, sales_manager: crua, execution_staff: cru,
     purchase_staff: cru, purchase_manager: crua, accounting_staff: cru, accounting_manager: crua,

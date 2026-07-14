@@ -236,3 +236,11 @@ export const managementApi = {
 export const forecastApi = {
   getDashboard: (p) => api.get('/dashboard', { params: p }),
 }
+
+// AI Assistant
+export const aiApi = {
+  getTools: () => api.get('/ai/tools'),
+  chat: (d) => api.post('/ai/chat', d),
+  listMcpTools: () => api.get('/mcp/tools'),
+  callMcp: (d) => api.post('/mcp', d),
+}

@@ -62,13 +62,6 @@
           <div class="message-bubble">
             <div class="message-text">{{ message.content }}</div>
 
-            <div v-if="message.toolCalls?.length" class="tool-call-box">
-              <div class="tool-call-title">MCP 호출</div>
-              <div v-for="call in message.toolCalls" :key="call.name" class="tool-call-line">
-                {{ call.name }} <span>{{ formatArgs(call.arguments) }}</span>
-              </div>
-            </div>
-
             <div v-if="message.cards?.length" class="result-grid">
               <div v-for="card in message.cards" :key="card.title" class="result-card">
                 <div class="result-card-head">
@@ -189,12 +182,6 @@ function scrollToBottom() {
   })
 }
 
-function formatArgs(args) {
-  const keys = Object.keys(args || {})
-  if (!keys.length) return '{}'
-  return JSON.stringify(args)
-}
-
 function itemTitle(item) {
   return item.employee_name || item.title || item.project_name || item.project_no || '항목'
 }
@@ -242,7 +229,6 @@ async function sendMessage() {
       id: messageSeq++,
       role: 'assistant',
       content: res.data.answer,
-      toolCalls: res.data.tool_calls || [],
       cards: res.data.cards || [],
       suggestions: res.data.suggestions || [],
     })
@@ -334,13 +320,6 @@ onMounted(loadTools)
 .message-row.user .message-bubble { background: #1677ff; color: #fff; border-color: #1677ff; }
 .message-text { white-space: pre-wrap; line-height: 1.6; font-size: 13px; }
 .loading-bubble { display: inline-flex; align-items: center; gap: 8px; color: #595959; }
-.tool-call-box {
-  margin-top: 10px; border: 1px solid #d9e7ff; background: #f5f9ff; border-radius: 7px; padding: 9px;
-  color: #1a2535;
-}
-.tool-call-title { font-size: 11px; font-weight: 700; color: #0958d9; margin-bottom: 5px; }
-.tool-call-line { font-size: 12px; }
-.tool-call-line span { color: #8c8c8c; margin-left: 6px; }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 10px; }
 .result-card { border: 1px solid #eef1f5; border-radius: 8px; background: #fff; overflow: hidden; color: #1a2535; }
 .result-card-head { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f0f0f0; }

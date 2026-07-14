@@ -908,10 +908,10 @@ onMounted(async () => {
 .ts-grid th { text-align: center; font-weight: 600; color: #595959; white-space: nowrap; }
 
 .col-source  { width: 70px; min-width: 70px; text-align: center; }
-.col-project { width: 150px; min-width: 140px; max-width: 182px; }
-.col-task    { width: 180px; min-width: 160px; }
+.col-project { width: 200px; min-width: 190px; max-width: 232px; }
+.col-task    { width: 160px; min-width: 144px; }
 .col-labor   { width: 86px; min-width: 86px; }
-.col-type    { width: 130px; min-width: 120px; }
+.col-type    { width: 100px; min-width: 100px; }
 .col-day     { width: 58px; text-align: center; }
 .col-month-day { width: 54px; min-width: 54px; text-align: center; }
 .col-total   { width: 54px; text-align: center; font-weight: 600; background: #fafafa; }

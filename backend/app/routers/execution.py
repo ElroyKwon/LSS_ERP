@@ -15,7 +15,7 @@ from ..models.execution import (
     PurchaseContract, ReleaseRequest, SalesBill, APBill,
 )
 from ..models.accounting import AccountsReceivable, AccountsPayable
-from ..models.master import Company, Material
+from ..models.master import Company, Employee, Material
 from ..utils.auth import get_current_user
 from ..utils import to_kst_date, to_kst
 from ..utils.excel_import import (
@@ -105,6 +105,34 @@ def _project_status_filter_values(value: Optional[str]) -> list[str]:
     return values
 
 
+def _employee_by_code(db: Session, employee_code: Optional[str]) -> Optional[Employee]:
+    code = str(employee_code or "").strip()
+    if not code:
+        return None
+    return db.query(Employee).filter(Employee.emp_code == code).first()
+
+
+def _employee_code_for_name(db: Session, name: Optional[str]) -> Optional[str]:
+    value = str(name or "").strip()
+    if not value:
+        return None
+    matches = db.query(Employee).filter(Employee.name == value).all()
+    return matches[0].emp_code if len(matches) == 1 else None
+
+
+def _resolve_project_pm(db: Session, payload: dict) -> None:
+    employee = _employee_by_code(db, payload.get("pm_employee_code"))
+    if employee:
+        payload["pm_employee_code"] = employee.emp_code
+        if not payload.get("pm_name"):
+            payload["pm_name"] = employee.name
+        if not payload.get("pm_dept"):
+            payload["pm_dept"] = employee.department_name
+        return
+
+    payload["pm_employee_code"] = _employee_code_for_name(db, payload.get("pm_name"))
+
+
 class ProjectCreate(BaseModel):
     project_no:      Optional[str]     = None
     project_name:    str
@@ -115,11 +143,20 @@ class ProjectCreate(BaseModel):
     status:          str               = "미진행"
     contract_amount: Decimal           = Decimal(0)
     contract_rate:   Decimal           = Decimal(0)
+    contract_material_cost: Decimal    = Decimal(0)
+    contract_labor_cost: Decimal       = Decimal(0)
+    sales_domestic_material_cost: Decimal = Decimal(0)
+    sales_overseas_material_cost: Decimal = Decimal(0)
+    sales_outsourcing_cost: Decimal    = Decimal(0)
+    sales_labor_cost: Decimal          = Decimal(0)
+    sales_expense_cost: Decimal        = Decimal(0)
+    sales_indirect_cost: Decimal       = Decimal(0)
     contract_start:  Optional[date]    = None
     contract_end:    Optional[date]    = None
     construct_start: Optional[date]    = None
     construct_end:   Optional[date]    = None
     pm_name:         Optional[str]     = None
+    pm_employee_code: Optional[str]    = None
     pm_dept:         Optional[str]     = None
     region:          Optional[str]     = None
     notes:           Optional[str]     = None
@@ -137,11 +174,20 @@ def _proj_dict(p: Project) -> dict:
         "status":         _normalize_project_status(p.status),
         "contract_amount": float(p.contract_amount or 0),
         "contract_rate":  float(p.contract_rate or 0),
+        "contract_material_cost": float(p.contract_material_cost or 0),
+        "contract_labor_cost": float(p.contract_labor_cost or 0),
+        "sales_domestic_material_cost": float(p.sales_domestic_material_cost or 0),
+        "sales_overseas_material_cost": float(p.sales_overseas_material_cost or 0),
+        "sales_outsourcing_cost": float(p.sales_outsourcing_cost or 0),
+        "sales_labor_cost": float(p.sales_labor_cost or 0),
+        "sales_expense_cost": float(p.sales_expense_cost or 0),
+        "sales_indirect_cost": float(p.sales_indirect_cost or 0),
         "contract_start": to_kst_date(p.contract_start),
         "contract_end":   to_kst_date(p.contract_end),
         "construct_start": to_kst_date(p.construct_start),
         "construct_end":  to_kst_date(p.construct_end),
         "pm_name":        p.pm_name,
+        "pm_employee_code": p.pm_employee_code,
         "pm_dept":        p.pm_dept,
         "region":         p.region,
         "notes":          p.notes,
@@ -314,6 +360,7 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db),
                    current=Depends(get_current_user)):
     payload = data.dict()
     payload["status"] = _normalize_project_status(payload.get("status"))
+    _resolve_project_pm(db, payload)
     p = Project(**payload, created_by=current.id)
     db.add(p)
     db.commit()
@@ -369,6 +416,14 @@ def import_projects_excel(
                 "contract_type": row.get("contract_type") or CONTRACT_TYPES[0],
                 "status": _normalize_project_status(row.get("status")),
                 "contract_amount": to_decimal_value(row.get("contract_amount"), Decimal(0)) or Decimal(0),
+                "contract_material_cost": to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or Decimal(0),
+                "contract_labor_cost": to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or Decimal(0),
+                "sales_domestic_material_cost": to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or Decimal(0),
+                "sales_overseas_material_cost": Decimal(0),
+                "sales_outsourcing_cost": Decimal(0),
+                "sales_labor_cost": to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or Decimal(0),
+                "sales_expense_cost": Decimal(0),
+                "sales_indirect_cost": Decimal(0),
                 "contract_start": to_date_value(row.get("contract_start")),
                 "construct_end": to_date_value(row.get("construct_end")),
                 "pm_name": row.get("execution_manager") or row.get("sales_manager"),
@@ -376,6 +431,7 @@ def import_projects_excel(
                 "region": row.get("site_address"),
                 "excel_data_json": json.dumps(raw_excel, ensure_ascii=False, default=str),
             }
+            _resolve_project_pm(db, payload)
             req = {
                 "business_division": row.get("business_division"),
                 "team_name": row.get("team_name"),
@@ -389,11 +445,6 @@ def import_projects_excel(
                 "collection_terms": row.get("collection_terms"),
                 "warranty_period": row.get("warranty_period"),
                 "special_relation": row.get("special_relation"),
-                "contract_material_cost": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
-                "contract_labor_cost": float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0),
-                "sales_domestic_material_cost": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
-                "sales_material_cost_total": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
-                "sales_labor_cost": float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0),
                 "_excel_raw": raw_excel,
             }
             payload["notes"] = PROJECT_REQ_MARKER + json.dumps(req, ensure_ascii=False, default=str)
@@ -431,9 +482,10 @@ def update_project(pid: int, data: ProjectCreate, db: Session = Depends(get_db),
     p = db.query(Project).filter(Project.id == pid).first()
     if not p:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
-    for field, val in data.dict().items():
-        if field == "status":
-            val = _normalize_project_status(val)
+    payload = data.dict()
+    payload["status"] = _normalize_project_status(payload.get("status"))
+    _resolve_project_pm(db, payload)
+    for field, val in payload.items():
         setattr(p, field, val)
     db.commit()
     db.refresh(p)

@@ -195,6 +195,15 @@ PROJECT_PLAN_COLUMNS = {
 
 PROJECT_COLUMNS = {
     "excel_data_json": "TEXT",
+    "pm_employee_code": "VARCHAR(20)",
+    "contract_material_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "contract_labor_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_domestic_material_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_overseas_material_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_outsourcing_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_labor_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_expense_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_indirect_cost": "NUMERIC(18, 2) DEFAULT 0",
 }
 
 MASTER_INDEXES = {

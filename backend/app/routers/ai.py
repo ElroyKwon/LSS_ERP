@@ -246,16 +246,16 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
             "items": ts_rows,
         },
         {
-            "title": "의견 청취",
-            "metric": f"{waiting}건",
-            "description": "답변 대기 의견",
-            "items": summary.get("opinions", {}).get("items", []),
-        },
-        {
             "title": "프로젝트",
             "metric": f"{active_projects}건",
             "description": f"진행중 프로젝트 · 계약금액 합계 {project_amount:,.0f}",
             "items": summary.get("projects", {}).get("recent", []),
+        },
+        {
+            "title": "의견 청취",
+            "metric": f"{waiting}건",
+            "description": "답변 대기 의견",
+            "items": summary.get("opinions", {}).get("items", []),
         },
     ]
     return answer, cards, ["지난주 미작성인원 보여줘", "답변 대기 의견 보여줘", "진행중 프로젝트 보여줘"]

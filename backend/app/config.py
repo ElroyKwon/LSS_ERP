@@ -1,6 +1,6 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -34,9 +34,13 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = ""
     SMTP_FROM_NAME: str = "LSS ERP"
     SMTP_ADMIN_EMAILS: str = ""
+    DATE_SERVIECE_KEY: str | None = None
     google_calendar_key: Optional[str] = None
     GOOGLE_APPLICATION_CREDENTIALS: str | None = None
     GOOGLE_CALENDAR_ID: str | None = None
+
+
+
 
 
     @property

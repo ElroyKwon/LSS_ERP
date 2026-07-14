@@ -92,6 +92,7 @@ def _select_tool(message: str, context: ChatContext) -> tuple[str, dict[str, Any
         query = message
         for token in [
             "프로젝트", "검색", "찾아", "찾아줘", "요약", "알려줘", "보여줘",
+            "해줘", "현황", "최근", "목록", "리스트", "다시",
             "진행중", "미진행", "완료", "계약금액", "금액", "큰", "작은", "순서", "순",
         ]:
             query = query.replace(token, " ")

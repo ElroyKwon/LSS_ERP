@@ -171,7 +171,7 @@
 
         <template v-if="auth.isAdmin">
           <a-divider orientation="left">관리자 답변</a-divider>
-          <a-textarea v-model:value="answerText" :rows="6" />
+          <a-textarea v-model:value="answerText" :rows="6" placeholder="새 답변을 입력하세요." />
           <div class="drawer-footer">
             <a-button type="primary" :loading="answerSaving" @click="saveAnswer">답변 저장</a-button>
           </div>
@@ -323,7 +323,7 @@ async function openDetail(row) {
   try {
     const res = await opinionApi.getOpinion(row.id)
     selected.value = res.data
-    answerText.value = res.data.answer || ''
+    answerText.value = ''
     detailOpen.value = true
   } catch (error) {
     message.error(error.response?.data?.detail || '의견 상세를 불러오지 못했습니다.')
@@ -410,7 +410,7 @@ async function saveAnswer() {
   try {
     const res = await opinionApi.answerOpinion(selected.value.id, { answer: answerText.value.trim() })
     selected.value = res.data
-    answerText.value = res.data.answer || ''
+    answerText.value = ''
     message.success('답변이 저장되었습니다.')
     await load()
   } catch (error) {

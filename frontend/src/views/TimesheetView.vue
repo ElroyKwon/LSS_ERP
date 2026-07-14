@@ -64,6 +64,7 @@
                   <tr>
                     <th class="col-source">구분</th>
                     <th class="col-project">프로젝트</th>
+                    <th class="col-task">업무 내용</th>
                     <th class="col-labor">원가 구분</th>
                     <th class="col-type">작업유형</th>
                     <th v-for="(d, i) in weekDays" :key="d.date"
@@ -96,6 +97,14 @@
                         style="width:100%"
                         @select="(v, opt) => onProjectSelect(idx, v, opt)"
                         @change="(v) => onProjectInputChange(idx, v)"
+                      />
+                    </td>
+                    <td class="col-task">
+                      <a-input
+                        v-model:value="row.notes"
+                        :disabled="isLocked"
+                        placeholder="업무 내용"
+                        allow-clear
                       />
                     </td>
                     <!-- 원가 구분 -->
@@ -151,7 +160,7 @@
 
                   <!-- 빈 상태 -->
                   <tr v-if="entries.length === 0">
-                    <td :colspan="13" class="empty-row">
+                    <td :colspan="14" class="empty-row">
                       <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE"
                                description='아래 "일정 추가" 버튼으로 프로젝트별 시간을 입력하세요.' />
                     </td>
@@ -159,7 +168,7 @@
 
                   <!-- 일별 합계 행 -->
                   <tr class="total-row">
-                    <td colspan="4" class="total-label">일  계</td>
+                    <td colspan="5" class="total-label">일  계</td>
                     <td v-for="(d, di) in weekDays" :key="d.date"
                         :class="['col-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="dayTotalClass(di)">
@@ -177,6 +186,7 @@
                   <tr>
                     <th class="col-source">구분</th>
                     <th class="col-project">프로젝트</th>
+                    <th class="col-task">업무 내용</th>
                     <th class="col-labor">원가 구분</th>
                     <th class="col-type">작업유형</th>
                     <th v-for="d in monthDays" :key="d.date"
@@ -193,6 +203,7 @@
                   <tr v-for="row in monthlyRows" :key="row.key">
                     <td class="col-source">{{ row.project_source || '공통' }}</td>
                     <td class="col-project text-left">{{ row.project_name || '기타' }}</td>
+                    <td class="col-task text-left">{{ row.notes || '-' }}</td>
                     <td class="col-labor">{{ row.labor_type }}</td>
                     <td class="col-type">{{ displayWorkType(row.work_type) }}</td>
                     <td v-for="d in monthDays" :key="d.date"
@@ -204,12 +215,12 @@
                     <td class="col-total num-bold">{{ row.total }}</td>
                   </tr>
                   <tr v-if="monthlyRows.length === 0">
-                    <td :colspan="monthDays.length + 5" class="empty-row">
+                    <td :colspan="monthDays.length + 6" class="empty-row">
                       <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="해당 월의 타임시트 내용이 없습니다." />
                     </td>
                   </tr>
                   <tr class="total-row">
-                    <td colspan="4" class="total-label">일  계</td>
+                    <td colspan="5" class="total-label">일  계</td>
                     <td v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="monthlyDayTotal(d.day) > 0 ? 'num-active' : 'num-zero'">
@@ -683,12 +694,14 @@ async function loadMonth() {
         const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
         const laborType = entry.labor_type || '원가'
         const workType = serializeWorkType(entry.work_type)
-        const key = `${projectSource}::${entry.project_id || projectName}::${laborType}::${workType}`
+        const taskNote = entry.notes || ''
+        const key = `${projectSource}::${entry.project_id || projectName}::${taskNote}::${laborType}::${workType}`
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key,
             project_source: projectSource,
             project_name: projectName,
+            notes: taskNote,
             labor_type: laborType,
             work_type: displayWorkType(workType),
             days: {},
@@ -889,19 +902,20 @@ onMounted(async () => {
 .ts-grid-wrap { overflow-x: auto; }
 
 /* ── 타임시트 그리드 테이블 ── */
-.ts-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
-.ts-grid th, .ts-grid td { border: 1px solid #f0f0f0; padding: 6px 4px; }
+.ts-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.ts-grid th, .ts-grid td { border: 1px solid #f0f0f0; padding: 5px 3px; }
 .ts-grid thead tr { background: #fafafa; }
 .ts-grid th { text-align: center; font-weight: 600; color: #595959; white-space: nowrap; }
 
-.col-source  { width: 86px; min-width: 86px; text-align: center; }
-.col-project { min-width: 200px; max-width: 260px; }
-.col-labor   { width: 104px; min-width: 104px; }
-.col-type    { width: 150px; min-width: 150px; }
-.col-day     { width: 72px; text-align: center; }
+.col-source  { width: 70px; min-width: 70px; text-align: center; }
+.col-project { width: 150px; min-width: 140px; max-width: 182px; }
+.col-task    { width: 180px; min-width: 160px; }
+.col-labor   { width: 86px; min-width: 86px; }
+.col-type    { width: 130px; min-width: 120px; }
+.col-day     { width: 58px; text-align: center; }
 .col-month-day { width: 54px; min-width: 54px; text-align: center; }
-.col-total   { width: 62px; text-align: center; font-weight: 600; background: #fafafa; }
-.col-del     { width: 36px; text-align: center; }
+.col-total   { width: 54px; text-align: center; font-weight: 600; background: #fafafa; }
+.col-del     { width: 32px; text-align: center; }
 .month-grid { width: max-content; min-width: 100%; }
 .text-left { text-align: left; }
 
@@ -912,9 +926,9 @@ onMounted(async () => {
 .day-name    { font-size: 12px; font-weight: 700; }
 .day-date    { font-size: 10px; color: #8c8c8c; }
 
-:deep(.hour-input) { width: 60px !important; }
+:deep(.hour-input) { width: 50px !important; }
 :deep(.hour-input.has-hours .ant-input-number-input) { color: #1677ff; font-weight: 600; }
-:deep(.ant-input-number-input) { text-align: center !important; padding: 0 4px; }
+:deep(.ant-input-number-input) { text-align: center !important; padding: 0 2px; }
 
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher_close::before),
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher_open::before) {

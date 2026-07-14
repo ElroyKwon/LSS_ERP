@@ -70,7 +70,7 @@
   </div>
 
   <!-- 회원가입 신청 모달 -->
-  <a-modal v-model:open="registerOpen" title="회원가입 신청" width="580px"
+  <a-modal :mask-closable="false" v-model:open="registerOpen" title="회원가입 신청" width="580px"
            :footer="null" :destroy-on-close="true" @cancel="resetRegForm">
     <!-- 완료 화면 -->
     <div v-if="registerDone" class="reg-done">

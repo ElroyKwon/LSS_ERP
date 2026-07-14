@@ -56,7 +56,7 @@
       </a-table>
     </a-card>
 
-    <a-modal v-model:open="drawerOpen" :title="editItem ? '구매 발주서 수정' : '구매 발주서 등록'"
+    <a-modal :mask-closable="false" v-model:open="drawerOpen" :title="editItem ? '구매 발주서 수정' : '구매 발주서 등록'"
               :width="945" wrap-class-name="purchase-contract-modal" :body-style="{ paddingBottom:'72px' }"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef" class="order-form">

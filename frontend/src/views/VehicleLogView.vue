@@ -177,7 +177,7 @@
     </a-tabs>
 
     <!-- ══════════ 운행 일지 등록/수정 Drawer ══════════ -->
-    <a-modal v-model:open="logDrawerOpen"
+    <a-modal :mask-closable="false" v-model:open="logDrawerOpen"
               :title="editLog ? '운행 일지 수정' : '운행 등록'"
               width="580" :body-style="{ paddingBottom:'72px' }"
       centered>
@@ -318,7 +318,7 @@
     </a-modal>
 
     <!-- ══════════ 차량 등록/수정 Drawer ══════════ -->
-    <a-modal v-model:open="vehicleDrawerOpen"
+    <a-modal :mask-closable="false" v-model:open="vehicleDrawerOpen"
               :title="editVehicle ? '차량 수정' : '차량 등록'"
               width="520" :body-style="{ paddingBottom:'72px' }"
       centered>

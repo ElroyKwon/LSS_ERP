@@ -91,7 +91,7 @@
     </a-card>
 
     <!-- 거절 사유 모달 -->
-    <a-modal v-model:open="rejectOpen" title="가입 신청 거절" width="440px"
+    <a-modal :mask-closable="false" v-model:open="rejectOpen" title="가입 신청 거절" width="440px"
              @ok="handleReject" :confirm-loading="rejecting" ok-text="거절 처리" :ok-button-props="{ danger: true }" cancel-text="취소">
       <div style="margin: 16px 0 8px">
         <strong>{{ rejectTarget?.name }}</strong> ({{ rejectTarget?.username }}) 님의 가입 신청을 거절합니다.
@@ -105,7 +105,7 @@
     </a-modal>
 
     <!-- 가입 승인 권한 지정 모달 -->
-    <a-modal v-model:open="approveOpen" title="가입 승인" width="440px"
+    <a-modal :mask-closable="false" v-model:open="approveOpen" title="가입 승인" width="440px"
              @ok="handleApprove" :confirm-loading="approving"
              ok-text="권한 부여 후 승인" cancel-text="취소">
       <div style="margin: 16px 0 12px">

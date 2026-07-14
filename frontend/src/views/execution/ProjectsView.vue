@@ -376,7 +376,7 @@
               wrap-class-name="project-editor-modal"
               :body-style="{ paddingBottom: '72px' }"
               :mask-closable="false"
-              @cancel="handleEditorCancel"
+              @cancel="closeProjectEditor"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef">
 
@@ -719,7 +719,7 @@
       <template #footer>
         <div style="text-align:right">
           <a-space>
-            <a-button @click="handleEditorCancel">취소</a-button>
+            <a-button @click="closeProjectEditor">취소</a-button>
             <a-button type="primary" :loading="saving" @click="handleSave">저장</a-button>
           </a-space>
         </div>
@@ -727,6 +727,7 @@
     </a-modal>
 
     <a-modal
+      :mask-closable="false"
       v-model:open="businessCategoryModalOpen"
       title="사업구분 관리"
       width="460px"
@@ -2125,17 +2126,6 @@ function confirmProjectEditorCancel() {
       projectCancelConfirmOpen.value = false
     },
   })
-}
-
-function handleEditorCancel(event) {
-  const target = event?.target
-  const isCloseButton = Boolean(target?.closest?.('.ant-modal-close'))
-  if (isCloseButton) {
-    closeProjectEditor()
-    return
-  }
-
-  confirmProjectEditorCancel()
 }
 
 function isProjectEditorPopupTarget(target) {

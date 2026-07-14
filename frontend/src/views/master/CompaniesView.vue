@@ -91,7 +91,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="editorOpen"
       :title="editItem ? '거래처 수정' : '거래처 신규 등록'"
       width="720px"
@@ -397,7 +397,7 @@
       </div>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="lookupOpen"
       :title="lookupTitle"
       width="520px"
@@ -430,7 +430,7 @@
       </a-table>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="businessStatusModal.open"
       title="국세청 휴폐업 조회 결과"
       ok-text="확인"
@@ -449,7 +449,7 @@
       </a-descriptions>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="apiKeyModal.open"
       title="외부 API 인증키 확인"
       ok-text="인증키 저장"

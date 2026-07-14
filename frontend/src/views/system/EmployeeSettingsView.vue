@@ -102,7 +102,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="drawerOpen"
       :title="editItem ? '직원 수정' : '직원 등록'"
       width="560"

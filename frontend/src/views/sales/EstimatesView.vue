@@ -30,7 +30,7 @@
       </template>
     </CrudTable>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="drawerOpen"
       :title="editItem ? '견적 수정' : '견적 등록'"
       :width="840"

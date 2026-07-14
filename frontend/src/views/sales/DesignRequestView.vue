@@ -43,7 +43,7 @@
       </template>
     </CrudTable>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="modalOpen"
       :title="editItem ? '설계의뢰 수정' : '설계의뢰 신규 등록'"
       width="1120px"

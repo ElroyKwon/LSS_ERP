@@ -177,7 +177,7 @@
     </a-layout>
   </a-layout>
 
-  <a-modal
+  <a-modal :mask-closable="false"
     v-model:open="noticePopupOpen"
     title="공지사항 안내"
     width="640px"

@@ -122,7 +122,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="editorOpen"
       :title="editItem ? '자재 수정' : '자재 신규 등록'"
       width="900px"
@@ -348,7 +348,7 @@
       </div>
     </a-modal>
 
-    <a-modal v-model:open="lookupOpen" title="품목군 조회" width="480px" :footer="null">
+    <a-modal :mask-closable="false" v-model:open="lookupOpen" title="품목군 조회" width="480px" :footer="null">
       <a-table
         :columns="lookupColumns"
         :data-source="lookupRows"

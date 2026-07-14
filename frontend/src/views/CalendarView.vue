@@ -40,7 +40,7 @@
           </a-calendar>
         </a-card>	
 
-        <a-modal v-model:open="isCompanyDetailModalOpen" :title="`${selectedCompanyDate} 일정 상세`" :footer="null">
+        <a-modal :mask-closable="false" v-model:open="isCompanyDetailModalOpen" :title="`${selectedCompanyDate} 일정 상세`" :footer="null">
           <div style="margin-top: 16px;">
             <a-list item-layout="horizontal" :data-source="companyDetailList">
               <template #renderItem="{ item }">
@@ -64,7 +64,7 @@
           </div>
         </a-modal>
 
-        <a-modal v-model:open="isCompanyModalOpen" title="전사 월간 일정 등록" @ok="handleCompanySubmit" @cancel="closeCompanyModal" ok-text="등록" cancel-text="취소">
+        <a-modal :mask-closable="false" v-model:open="isCompanyModalOpen" title="전사 월간 일정 등록" @ok="handleCompanySubmit" @cancel="closeCompanyModal" ok-text="등록" cancel-text="취소">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
               <a-input v-model:value="newCompanySchedule.content" placeholder="예: 전사 정기 미팅, 현장 작업" />
@@ -133,7 +133,7 @@
           </a-calendar>
         </a-card>	
 
-        <a-modal v-model:open="isRefreshDetailModalOpen" :title="`${selectedRefreshDate} 휴가 상세`" :footer="null">
+        <a-modal :mask-closable="false" v-model:open="isRefreshDetailModalOpen" :title="`${selectedRefreshDate} 휴가 상세`" :footer="null">
           <div style="margin-top: 16px;">
             <a-list item-layout="horizontal" :data-source="refreshDetailList">
               <template #renderItem="{ item }">
@@ -157,7 +157,7 @@
           </div>
         </a-modal>
 
-        <a-modal v-model:open="isRefreshModalOpen" title="전사 휴가 일정 등록" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" ok-text="등록" cancel-text="취소">
+        <a-modal :mask-closable="false" v-model:open="isRefreshModalOpen" title="전사 휴가 일정 등록" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" ok-text="등록" cancel-text="취소">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
               <a-input v-model:value="newRefreshSchedule.content" placeholder="예: 여름휴가, OOO 매니저 연차" />

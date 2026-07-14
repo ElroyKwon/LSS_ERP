@@ -57,7 +57,7 @@
       </a-table>
     </a-card>
 
-    <a-modal v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
+    <a-modal :mask-closable="false" v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
               width="840" wrap-class-name="purchase-billing-modal" :body-style="{ paddingBottom:'72px' }"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef">

@@ -94,7 +94,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="editorOpen"
       :title="editingId ? '의견 수정' : '의견 등록'"
       width="760px"
@@ -126,7 +126,7 @@
       </a-form>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="detailOpen"
       title="의견 상세"
       width="760"
@@ -211,7 +211,7 @@
       </template>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="pdfPreviewOpen"
       :title="pdfPreviewTitle"
       :width="pdfPreviewWidth"

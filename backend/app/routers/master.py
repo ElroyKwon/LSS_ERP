@@ -369,6 +369,7 @@ class UserCreate(BaseModel):
     department_id: Optional[int] = None
     position: Optional[str] = None
     role: str = "sales_staff"
+    labor_type: str = "원가"
 
 
 class UserUpdate(BaseModel):
@@ -379,6 +380,7 @@ class UserUpdate(BaseModel):
     department_id: Optional[int] = None
     position: Optional[str] = None
     role: Optional[str] = None
+    labor_type: Optional[str] = None
     is_active: Optional[bool] = None
     new_password: Optional[str] = None
 
@@ -398,6 +400,7 @@ def list_users(db: Session = Depends(get_db), _=Depends(get_current_user)):
             "id": u.id, "username": u.username, "name": u.name, "email": u.email,
             "employee_code": u.employee_code,
             "role": normalize_role(u.role), "position": u.position, "is_active": u.is_active,
+            "labor_type": u.labor_type or "원가",
             "department_id": u.department_id,
             "department_name": department_name,
         })
@@ -417,12 +420,14 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), current=Depends
         role = validate_role(data.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    labor_type = data.labor_type if data.labor_type in {"판관", "원가"} else "원가"
     user = User(
         username=data.username,
         employee_code=employee_code,
         password_hash=hash_password(data.password),
         name=data.name, email=data.email, phone=data.phone,
         department_id=data.department_id, position=data.position, role=role,
+        labor_type=labor_type,
     )
     db.add(user)
     db.flush()
@@ -445,6 +450,8 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
         if employee_code and db.query(User).filter(User.employee_code == employee_code, User.id != user_id).first():
             raise HTTPException(status_code=400, detail="이미 사용 중인 사원번호입니다.")
         data.employee_code = employee_code
+    if data.labor_type is not None and data.labor_type not in {"판관", "원가"}:
+        data.labor_type = "원가"
     for field, val in data.dict(exclude_none=True).items():
         if field == "new_password":
             if val:

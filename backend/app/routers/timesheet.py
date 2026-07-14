@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from ..database import get_db
 from ..models.timesheet import Timesheet, TimesheetEntry
 from ..models.master import Employee, OverheadRate
-from ..models.common import Department
+from ..models.common import Department, User
 from ..models.execution import Project
 from ..models.purchase import CostInput
 from ..utils.auth import get_current_user
@@ -26,6 +26,7 @@ WORK_TYPES = [
     "경영지원 > 자금", "경영지원 > 공시", "경영지원 > 기타",
 ]
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+PROJECT_SOURCES = {"실행", "영업", "공통"}
 
 
 def _week_of(d: date):
@@ -40,6 +41,7 @@ def _entry_dict(e: TimesheetEntry) -> dict:
         "id": e.id, "sort_order": e.sort_order,
         "project_id":   e.project_id,
         "project_name": e.project_name or (e.project.project_name if e.project else None),
+        "project_source": e.project_source or ("실행" if e.project_id else "공통"),
         "spg":          e.spg or "에너지",
         "labor_type":   e.labor_type or "원가",
         "work_type":    e.work_type or "공통 > 기타",
@@ -69,7 +71,7 @@ def _ts_dict(ts: Timesheet, include_entries=True) -> dict:
     return d
 
 
-def _employee_dict(emp: Employee) -> dict:
+def _employee_dict(emp: Employee, labor_type: str | None = None) -> dict:
     return {
         "id": emp.id,
         "emp_code": emp.emp_code,
@@ -80,8 +82,25 @@ def _employee_dict(emp: Employee) -> dict:
         "position": emp.position,
         "job_title": emp.job_title,
         "email": emp.email,
+        "labor_type": labor_type or "원가",
         "is_active": emp.is_active,
     }
+
+
+def _normalize_entry_data(entry_data: dict) -> dict:
+    source = (entry_data.get("project_source") or "").strip()
+    if source not in PROJECT_SOURCES:
+        source = "실행" if entry_data.get("project_id") else "공통"
+
+    project_name = (entry_data.get("project_name") or "").strip()
+    if project_name == "연차":
+        entry_data["project_id"] = None
+        source = "공통"
+        entry_data["project_name"] = "연차"
+        entry_data["work_type"] = "공통 > 연차"
+
+    entry_data["project_source"] = source
+    return entry_data
 
 
 def _current_employee(db: Session, current) -> Employee | None:
@@ -140,6 +159,7 @@ def _require_employee_access(employee_id: int, db: Session, current) -> None:
 class EntryIn(BaseModel):
     project_id:   Optional[int]  = None
     project_name: Optional[str]  = None
+    project_source: str           = "공통"
     spg:          str             = "에너지"
     labor_type:   str             = "원가"
     work_type:    str             = "공통 > 기타"
@@ -174,7 +194,14 @@ def list_timesheet_employees(db: Session = Depends(get_db), current=Depends(get_
             return []
         q = q.filter(Employee.id.in_(allowed_ids))
     rows = q.order_by(Employee.name.asc(), Employee.id.asc()).all()
-    return [_employee_dict(row) for row in rows]
+    user_by_code = {
+        user.employee_code: user
+        for user in db.query(User).filter(User.employee_code.isnot(None)).all()
+    }
+    return [
+        _employee_dict(row, user_by_code.get(row.emp_code).labor_type if user_by_code.get(row.emp_code) else None)
+        for row in rows
+    ]
 
 
 # ── 주간 타임시트 목록 ──────────────────────────────────────────
@@ -249,7 +276,7 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
 
     total = 0
     for i, e in enumerate(data.entries):
-        entry_data = e.model_dump()
+        entry_data = _normalize_entry_data(e.model_dump())
         entry_data["sort_order"] = i
         entry = TimesheetEntry(**entry_data, timesheet_id=ts.id)
         row_total = sum(float(getattr(entry, f"{d}_hours") or 0) for d in DAYS)

@@ -48,6 +48,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             "name": user.name,
             "role": normalize_role(user.role),
             "email": user.email,
+            "labor_type": user.labor_type or "원가",
         },
     }
 
@@ -61,6 +62,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         "role": normalize_role(current_user.role),
         "email": current_user.email,
         "position": current_user.position,
+        "labor_type": current_user.labor_type or "원가",
         "role_options": ROLE_OPTIONS,
     }
 
@@ -108,6 +110,7 @@ class RejectRequest(BaseModel):
 class ApproveRegistrationRequest(BaseModel):
     role: str
     department_id: Optional[int] = None
+    labor_type: str = "원가"
 
 
 def _reg_dict(r):
@@ -288,6 +291,7 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
         role = validate_role(data.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    labor_type = data.labor_type if data.labor_type in {"판관", "원가"} else "원가"
     department = None
     if not data.department_id:
         raise HTTPException(status_code=400, detail="가입 승인 시 확정 부서를 선택해야 합니다.")
@@ -316,6 +320,7 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
         department_id=department.id if department else None,
         position=reg.position,
         role=role,
+        labor_type=labor_type,
         is_active=True,
     )
     db.add(user)

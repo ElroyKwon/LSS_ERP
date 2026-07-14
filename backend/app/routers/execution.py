@@ -47,6 +47,18 @@ PURCHASE_CONTRACT_REQ_MARKER = "\n---구매계약요구사항---\n"
 DEFAULT_BUSINESS_CATEGORIES = ["빌딩", "DC", "BAS", "E&M", "O&M", "DR", "FEMS리스", "SE", "솔루션", "CS", "스테콤", "SCADA"]
 
 
+PROJECT_REQ_FIELDS = [
+    "business_division", "team_name", "business_category", "spg",
+    "sales_manager", "execution_manager", "collection_manager",
+    "revenue_type", "work_type", "collection_terms", "warranty_period",
+    "special_relation", "employment_insurance", "industrial_accident_insurance",
+    "contract_material_note", "contract_labor_note", "contract_total_note",
+    "sales_domestic_material_note", "sales_overseas_material_note", "sales_outsourcing_note",
+    "sales_labor_note", "sales_expense_note", "sales_direct_cost_note",
+    "sales_indirect_note", "sales_cost_total_note", "pre_tax_profit_note",
+]
+
+
 def _json_meta(notes: Optional[str], marker: str) -> dict:
     raw = notes or ""
     idx = raw.find(marker)
@@ -163,7 +175,8 @@ class ProjectCreate(BaseModel):
 
 
 def _proj_dict(p: Project) -> dict:
-    return {
+    req = _project_req(p)
+    result = {
         "id":             p.id,
         "project_no":     p.project_no,
         "project_name":   p.project_name,
@@ -193,6 +206,9 @@ def _proj_dict(p: Project) -> dict:
         "notes":          p.notes,
         "created_at":     to_kst(p.created_at),
     }
+    for field in PROJECT_REQ_FIELDS:
+        result[field] = req.get(field)
+    return result
 
 
 def _excel_response(content: bytes, filename: str):

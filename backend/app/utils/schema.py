@@ -125,6 +125,7 @@ EMPLOYEE_COLUMNS = {
 
 USER_COLUMNS = {
     "employee_code": "VARCHAR(20)",
+    "labor_type": "VARCHAR(20) DEFAULT '원가'",
 }
 
 
@@ -144,6 +145,7 @@ DEPARTMENT_COLUMNS = {
 
 
 TIMESHEET_ENTRY_COLUMNS = {
+    "project_source": "VARCHAR(20) DEFAULT '공통'",
     "spg": "VARCHAR(20)",
     "labor_type": "VARCHAR(20)",
 }

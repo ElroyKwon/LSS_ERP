@@ -758,8 +758,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { Modal, message } from 'ant-design-vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { message } from 'ant-design-vue'
 import {
   ProjectOutlined, PlayCircleOutlined, CheckCircleOutlined, PauseCircleOutlined, PlusOutlined,
   DownloadOutlined, UploadOutlined,
@@ -799,6 +799,12 @@ const COST_DB_AMOUNT_KEYS = [
   'sales_labor_cost', 'sales_expense_cost', 'sales_indirect_cost',
 ]
 const COST_NOTE_KEYS = COST_META_KEYS.filter(key => key.endsWith('_note'))
+const PROJECT_REQUIREMENT_KEYS = [
+  'business_division', 'team_name', 'business_category', 'spg',
+  'sales_manager', 'execution_manager', 'collection_manager',
+  'revenue_type', 'work_type', 'collection_terms', 'warranty_period',
+  'special_relation', 'employment_insurance', 'industrial_accident_insurance',
+]
 const costAmountColumnKeys = [
   'contract_material_cost', 'contract_labor_cost', 'contract_detail_total',
   'sales_material_cost_total', 'sales_labor_cost', 'sales_expense_cost',
@@ -929,7 +935,6 @@ const selectedId = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
 const projectEditorSnapshot = ref('')
-const projectCancelConfirmOpen = ref(false)
 
 const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
 const canAccessSalesPurchaseTabs = computed(() =>
@@ -941,14 +946,6 @@ watch(canAccessSalesPurchaseTabs, (allowed) => {
     activeTab.value = 'orders'
   }
 }, { immediate: true })
-
-watch(drawerOpen, (open) => {
-  if (open) {
-    document.addEventListener('mousedown', handleProjectEditorOutsideMouseDown, true)
-  } else {
-    document.removeEventListener('mousedown', handleProjectEditorOutsideMouseDown, true)
-  }
-})
 
 // ── 필터 ──
 const filters = reactive({
@@ -1325,9 +1322,17 @@ function mergeCostMeta(req = {}, item = {}) {
     }
   })
   COST_NOTE_KEYS.forEach((key) => {
-    merged[key] = req?.[key] || ''
+    merged[key] = req?.[key] || item?.[key] || ''
   })
   return merged
+}
+
+function projectMetaValue(req = {}, item = {}, key, fallback = '') {
+  const reqValue = req?.[key]
+  if (reqValue !== undefined && reqValue !== null && reqValue !== '') return reqValue
+  const itemValue = item?.[key]
+  if (itemValue !== undefined && itemValue !== null && itemValue !== '') return itemValue
+  return fallback
 }
 
 function calculateCostTotals(source = {}) {
@@ -2112,42 +2117,6 @@ function closeProjectEditor() {
   projectEditorSnapshot.value = ''
 }
 
-function confirmProjectEditorCancel() {
-  if (projectCancelConfirmOpen.value) return
-  projectCancelConfirmOpen.value = true
-  Modal.confirm({
-    title: '입력을 취소하시겠습니까?',
-    content: '저장하지 않은 프로젝트 등록/수정 내용은 사라집니다.',
-    okText: '입력 취소',
-    cancelText: '계속 작성',
-    okType: 'danger',
-    onOk: closeProjectEditor,
-    afterClose: () => {
-      projectCancelConfirmOpen.value = false
-    },
-  })
-}
-
-function isProjectEditorPopupTarget(target) {
-  return Boolean(target?.closest?.(
-    '.project-editor-modal .ant-modal, ' +
-    '.ant-modal-confirm, ' +
-    '.ant-select-dropdown, ' +
-    '.ant-picker-dropdown, ' +
-    '.ant-dropdown, ' +
-    '.ant-popover, ' +
-    '.ant-tooltip'
-  ))
-}
-
-function handleProjectEditorOutsideMouseDown(event) {
-  if (!drawerOpen.value || isProjectEditorPopupTarget(event.target)) return
-  event.preventDefault()
-  event.stopPropagation()
-  event.stopImmediatePropagation?.()
-  confirmProjectEditorCancel()
-}
-
 // 발주처 자동완성: 등록된 거래처 목록 제안 (직접 입력도 허용)
 const clientSuggestions = computed(() => {
   const keyword = (form.client_name || '').toLowerCase()
@@ -2202,7 +2171,13 @@ function findUniqueEmployeeCodeByName(name) {
 
 function openDrawer(item) {
   editItem.value = item
-  const { memo, req } = splitNotes(item?.notes)
+  const { memo, req: parsedReq } = splitNotes(item?.notes)
+  const req = item
+    ? PROJECT_REQUIREMENT_KEYS.reduce((acc, key) => {
+      acc[key] = projectMetaValue(parsedReq, item, key)
+      return acc
+    }, { ...parsedReq })
+    : parsedReq
   Object.assign(form, item ? {
     project_no:      item.project_no     ?? '',
     project_name:    item.project_name,
@@ -2222,18 +2197,18 @@ function openDrawer(item) {
     pm_dept:         item.pm_dept ?? '',
     region:          item.region  ?? '',
     notes:           memo ?? '',
-    business_division: req.business_division || undefined,
-    team_name: req.team_name || '',
-    business_category: req.business_category || undefined,
-    spg: req.spg || undefined,
-    sales_manager: req.sales_manager || '',
-    execution_manager: req.execution_manager || '',
-    collection_manager: req.collection_manager || '',
-    revenue_type: req.revenue_type || undefined,
-    work_type: req.work_type || undefined,
-    collection_terms: req.collection_terms || '',
-    warranty_period: req.warranty_period || '',
-    special_relation: req.special_relation || 'x',
+    business_division: projectMetaValue(req, item, 'business_division', undefined),
+    team_name: projectMetaValue(req, item, 'team_name', ''),
+    business_category: projectMetaValue(req, item, 'business_category', undefined),
+    spg: projectMetaValue(req, item, 'spg', undefined),
+    sales_manager: projectMetaValue(req, item, 'sales_manager', ''),
+    execution_manager: projectMetaValue(req, item, 'execution_manager', ''),
+    collection_manager: projectMetaValue(req, item, 'collection_manager', ''),
+    revenue_type: projectMetaValue(req, item, 'revenue_type', undefined),
+    work_type: projectMetaValue(req, item, 'work_type', undefined),
+    collection_terms: projectMetaValue(req, item, 'collection_terms', ''),
+    warranty_period: projectMetaValue(req, item, 'warranty_period', ''),
+    special_relation: projectMetaValue(req, item, 'special_relation', 'x'),
     employment_insurance: Boolean(req.employment_insurance),
     industrial_accident_insurance: Boolean(req.industrial_accident_insurance),
     ...mergeCostMeta(req, item),
@@ -2306,10 +2281,6 @@ async function load() {
 }
 
 onMounted(load)
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleProjectEditorOutsideMouseDown, true)
-})
 </script>
 
 <style scoped>

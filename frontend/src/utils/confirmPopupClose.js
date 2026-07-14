@@ -140,16 +140,13 @@ function closePopup(container) {
 }
 
 function askBeforeClose(container) {
-  if (!hasDirtyEditableContent(container)) {
-    return
-  }
   if (confirming) return
   confirming = true
   Modal.confirm({
-    title: '작성을 취소하시겠습니까?',
-    content: '작성 중인 내용이 사라집니다.',
-    okText: '예',
-    cancelText: '아니오',
+    title: '입력을 취소하시겠습니까?',
+    content: '작성 중인 내용은 저장되지 않고 사라집니다.',
+    okText: '입력 취소',
+    cancelText: '계속 작성',
     okType: 'danger',
     centered: true,
     onOk: () => {
@@ -200,11 +197,10 @@ export function installConfirmPopupClose() {
     const container = popupContainerFromEvent(event.target)
     if (!container || shouldBypassConfirm(container)) return
     if (isConfirmDialog(container)) return
-    if (!hasDirtyEditableContent(container)) {
+    if (!hasEditableContent(container)) {
       event.preventDefault()
       event.stopPropagation()
       event.stopImmediatePropagation()
-      closePopup(container)
       return
     }
 
@@ -222,10 +218,8 @@ export function installConfirmPopupClose() {
     event.preventDefault()
     event.stopPropagation()
     event.stopImmediatePropagation()
-    if (hasDirtyEditableContent(container)) {
+    if (hasEditableContent(container)) {
       askBeforeClose(container)
-      return
     }
-    closePopup(container)
   }, true)
 }

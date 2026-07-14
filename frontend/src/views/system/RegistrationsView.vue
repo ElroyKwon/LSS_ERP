@@ -115,6 +115,9 @@
         <a-form-item label="권한" required>
           <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
         </a-form-item>
+        <a-form-item label="원가구분" required>
+          <a-select v-model:value="approveLaborType" :options="laborTypeOptions" placeholder="원가구분 선택" />
+        </a-form-item>
         <a-alert
           v-if="approveTarget?.department"
           class="approve-dept-alert"
@@ -158,9 +161,14 @@ const approveOpen = ref(false)
 const approving = ref(false)
 const approveTarget = ref(null)
 const approveRole = ref('sales_staff')
+const approveLaborType = ref('원가')
 const approveDepartmentId = ref(null)
 const departments = ref([])
 const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
+const laborTypeOptions = [
+  { value: '원가', label: '원가' },
+  { value: '판관', label: '판관' },
+]
 const departmentOptions = computed(() =>
   departments.value.map(dept => ({
     value: dept.id,
@@ -202,6 +210,7 @@ async function load() {
 function openApproveModal(record) {
   approveTarget.value = record
   approveRole.value = 'sales_staff'
+  approveLaborType.value = '원가'
   const department = departments.value.find(dept => dept.name === record.department || dept.path_name === record.department)
   approveDepartmentId.value = department?.id || null
   approveOpen.value = true
@@ -220,6 +229,7 @@ async function handleApprove() {
   try {
     await authApi.approveRegistration(approveTarget.value.id, {
       role: approveRole.value,
+      labor_type: approveLaborType.value,
       department_id: approveDepartmentId.value,
     })
     message.success(`${approveTarget.value.name} 님의 가입이 승인되었습니다.`)

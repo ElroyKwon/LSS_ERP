@@ -35,6 +35,7 @@ class User(Base):
     department_id = Column(Integer, ForeignKey("departments.id"))
     position = Column(String(50))
     role = Column(String(30), default="user")
+    labor_type = Column(String(20), default="원가")
     is_active = Column(Boolean, default=True)
     last_login = Column(DateTime)
     created_at = Column(DateTime, default=func.now())

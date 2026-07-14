@@ -50,16 +50,21 @@
             type="info"
             show-icon
             message="입력한 내용은 자동 저장되지 않습니다. 작성 후 저장 버튼을 눌러야 반영됩니다."
-          />
+          >
+            <template #description>
+              <div>등록된 프로젝트가 없을 시 구분 항목은 '공통', 프로젝트 항목에는 직접 입력하세요.(예시. 교육명, 행사명, 업무명 등)</div>
+              <div>관련 프로젝트 선택 후 작업 유형 선택해 주세요.(최대 3개 선택 가능)</div>
+            </template>
+          </a-alert>
 
           <a-spin :spinning="weekLoading || monthLoading">
             <div class="ts-grid-wrap">
               <table v-if="timesheetMode === 'week'" class="ts-grid">
                 <thead>
                   <tr>
+                    <th class="col-source">구분</th>
                     <th class="col-project">프로젝트</th>
-                    <th class="col-spg">SPG</th>
-                    <th class="col-labor">인건비 구분</th>
+                    <th class="col-labor">원가 구분</th>
                     <th class="col-type">작업유형</th>
                     <th v-for="(d, i) in weekDays" :key="d.date"
                         :class="['col-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
@@ -74,6 +79,12 @@
                 </thead>
                 <tbody>
                   <tr v-for="(row, idx) in entries" :key="idx">
+                    <!-- 구분 -->
+                    <td class="col-source">
+                      <a-select v-model:value="row.project_source" style="width:100%" :disabled="isLocked">
+                        <a-select-option v-for="source in PROJECT_SOURCE_TYPES" :key="source" :value="source">{{ source }}</a-select-option>
+                      </a-select>
+                    </td>
                     <!-- 프로젝트 -->
                     <td class="col-project">
                       <a-auto-complete
@@ -84,15 +95,10 @@
                         :disabled="isLocked"
                         style="width:100%"
                         @select="(v, opt) => onProjectSelect(idx, v, opt)"
+                        @change="(v) => onProjectInputChange(idx, v)"
                       />
                     </td>
-                    <!-- SPG -->
-                    <td class="col-spg">
-                      <a-select v-model:value="row.spg" style="width:100%" :disabled="isLocked">
-                        <a-select-option v-for="spg in SPG_TYPES" :key="spg" :value="spg">{{ spg }}</a-select-option>
-                      </a-select>
-                    </td>
-                    <!-- 인건비 구분 -->
+                    <!-- 원가 구분 -->
                     <td class="col-labor">
                       <a-select v-model:value="row.labor_type" style="width:100%" :disabled="isLocked">
                         <a-select-option v-for="labor in LABOR_TYPES" :key="labor" :value="labor">{{ labor }}</a-select-option>
@@ -106,10 +112,13 @@
                         :disabled="isLocked"
                         :tree-default-expand-all="false"
                         :show-search="true"
+                        :multiple="true"
+                        max-tag-count="responsive"
                         tree-node-filter-prop="title"
                         popup-class-name="timesheet-work-type-dropdown"
                         placeholder="작업유형"
                         style="width:100%"
+                        @change="value => onWorkTypeChange(idx, value)"
                       />
                     </td>
                     <!-- 요일별 시간 입력 -->
@@ -144,7 +153,7 @@
                   <tr v-if="entries.length === 0">
                     <td :colspan="13" class="empty-row">
                       <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE"
-                               description='아래 "행 추가" 버튼으로 프로젝트별 시간을 입력하세요.' />
+                               description='아래 "일정 추가" 버튼으로 프로젝트별 시간을 입력하세요.' />
                     </td>
                   </tr>
 
@@ -166,9 +175,9 @@
               <table v-else class="ts-grid month-grid">
                 <thead>
                   <tr>
+                    <th class="col-source">구분</th>
                     <th class="col-project">프로젝트</th>
-                    <th class="col-spg">SPG</th>
-                    <th class="col-labor">인건비 구분</th>
+                    <th class="col-labor">원가 구분</th>
                     <th class="col-type">작업유형</th>
                     <th v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
@@ -182,10 +191,10 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in monthlyRows" :key="row.key">
+                    <td class="col-source">{{ row.project_source || '공통' }}</td>
                     <td class="col-project text-left">{{ row.project_name || '기타' }}</td>
-                    <td class="col-spg">{{ row.spg }}</td>
                     <td class="col-labor">{{ row.labor_type }}</td>
-                    <td class="col-type">{{ row.work_type }}</td>
+                    <td class="col-type">{{ displayWorkType(row.work_type) }}</td>
                     <td v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="row.days[d.day] > 0 ? 'num-active' : 'num-zero'">
@@ -216,10 +225,8 @@
             <!-- 액션 바 -->
             <div v-if="timesheetMode === 'week'" class="action-bar">
               <a-button v-if="!isLocked" @click="addRow" icon-placement="start">
-                <template #icon><PlusOutlined /></template>행 추가
+                <template #icon><PlusOutlined /></template>일정 추가
               </a-button>
-              <a-input v-if="!isLocked" v-model:value="tsNotes"
-                       placeholder="메모 (선택)" style="width:280px; margin-left:8px" />
               <div style="flex:1" />
               <a-space>
                 <a-button v-if="!isLocked" :loading="saving" @click="handleSave">
@@ -283,18 +290,18 @@ import { message, Empty } from 'ant-design-vue'
 import {
   LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined,
 } from '@ant-design/icons-vue'
-import { timesheetApi, executionApi } from '@/api'
+import { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { canAccess } from '@/utils/permissions'
 
 const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
 const canSelectTimesheetEmployee = canApproveTimesheet
-const SPG_TYPES = ['에너지', '빌딩', '시스템', '공통']
+const PROJECT_SOURCE_TYPES = ['실행', '영업', '공통']
 const LABOR_TYPES = ['판관', '원가']
 const WORK_TYPE_GROUPS = [
   { title: '공통', children: ['연차', '교육', '행사', '기타'] },
-  { title: '영업', children: ['설계', '견적', '제안서', '미팅', '기타'] },
+  { title: '영업', children: ['설계', 'SHOP작업', '견적', '제안서', '미팅', '기타'] },
   { title: '실행', children: ['현장관리', '시운전', '안전관리', '유지보수', '업무지원', '하자처리(유상)', '하자처리(무상)', '기타'] },
   { title: '경영지원', children: ['구매', '총무', '인사', '회계', '자금', '공시', '기타'] },
 ]
@@ -309,6 +316,7 @@ const WORK_TYPE_TREE = WORK_TYPE_GROUPS.map(group => ({
 }))
 const LEGACY_WORK_TYPE_MAP = {
   설계: '영업 > 설계',
+  SHOP작업: '영업 > SHOP작업',
   시공: '실행 > 현장관리',
   PM: '실행 > 업무지원',
   영업: '영업 > 미팅',
@@ -318,6 +326,8 @@ const LEGACY_WORK_TYPE_MAP = {
   공통: '공통 > 기타',
   기타: '공통 > 기타',
 }
+const WORK_TYPE_SEPARATOR = ' | '
+const WORK_TYPE_LIMIT = 3
 const DAY_KEYS   = ['mon_hours', 'tue_hours', 'wed_hours', 'thu_hours', 'fri_hours', 'sat_hours', 'sun_hours']
 const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -362,6 +372,7 @@ const weekStart      = ref(mondayOf(todayStr))
 const selectedEmpId  = ref(null)
 const employees      = ref([])
 const projects       = ref([])
+const salesProjects  = ref([])
 const weekLoading    = ref(false)
 const saving         = ref(false)
 const tsId           = ref(null)
@@ -386,6 +397,12 @@ const empOptions = computed(() =>
 const myEmpId = computed(() => {
   const me = employees.value.find(e => e.name === auth.user?.name)
   return me?.id || null
+})
+const selectedEmployeeLaborType = computed(() => {
+  const empId = selectedEmpId.value || myEmpId.value
+  const employee = employees.value.find(e => e.id === empId)
+  const laborType = employee?.labor_type || auth.user?.labor_type
+  return LABOR_TYPES.includes(laborType) ? laborType : '원가'
 })
 
 const weekEnd = computed(() => addDays(weekStart.value, 6))
@@ -433,16 +450,61 @@ const weekLabelDisplay = computed(() => {
 
 const isLocked = computed(() => false)
 
-function normalizeWorkType(value) {
+function normalizeSingleWorkType(value) {
   const workType = String(value || '').trim()
-  if (!workType) return '공통 > 기타'
+  if (!workType) return null
   if (workType.includes('>')) return workType
   return LEGACY_WORK_TYPE_MAP[workType] || `공통 > ${workType}`
 }
 
+function normalizeWorkType(value) {
+  const values = Array.isArray(value)
+    ? value
+    : String(value || '')
+      .split(WORK_TYPE_SEPARATOR)
+      .flatMap(item => item.split(/\s*,\s*/))
+  const normalized = values
+    .map(normalizeSingleWorkType)
+    .filter(Boolean)
+  const unique = [...new Set(normalized)].slice(0, WORK_TYPE_LIMIT)
+  return unique.length ? unique : ['공통 > 기타']
+}
+
+function serializeWorkType(value) {
+  return normalizeWorkType(value).join(WORK_TYPE_SEPARATOR)
+}
+
+function displayWorkType(value) {
+  return normalizeWorkType(value).join(', ')
+}
+
+function onWorkTypeChange(idx, value) {
+  const row = entries.value[idx]
+  if (!row) return
+  const selectedCount = Array.isArray(value)
+    ? value.filter(Boolean).length
+    : String(value || '').split(WORK_TYPE_SEPARATOR).filter(Boolean).length
+  const normalized = normalizeWorkType(value)
+  if (selectedCount > WORK_TYPE_LIMIT) {
+    message.warning(`작업유형은 최대 ${WORK_TYPE_LIMIT}개까지 선택할 수 있습니다.`)
+  }
+  row.work_type = normalized
+}
+
 // 프로젝트 자동완성
-const projectSuggestions = computed(() =>
-  projects.value.map(p => {
+const projectSuggestions = computed(() => {
+  const annualLeaveOption = {
+    value: '연차',
+    label: '연차',
+    searchText: '공통 연차 annual leave',
+    id: null,
+    project_no: '',
+    project_name: '연차',
+    source: '공통',
+    work_type: '공통 > 연차',
+  }
+
+  const executionOptions = projects.value.map(p => {
     const projectNo = (p.project_no || '').trim()
     const projectName = (p.project_name || '').trim()
     const label = [projectNo, projectName].filter(Boolean).join(' ')
@@ -453,9 +515,30 @@ const projectSuggestions = computed(() =>
       id: p.id,
       project_no: projectNo,
       project_name: projectName,
+      source: '실행',
     }
   })
-)
+
+  const salesOptions = salesProjects.value
+    .map(row => {
+      const projectNo = (row.project_no || row.sales_no || '').trim()
+      const projectName = (row.project_name || '').trim()
+      const label = [projectNo, projectName].filter(Boolean).join(' ')
+      if (!projectName && !projectNo) return null
+      return {
+        value: label || projectName || projectNo,
+        label: label || projectName || projectNo,
+        searchText: `${projectNo} ${projectName} ${row.client_name || ''} ${row.sales_status || ''}`.toLowerCase(),
+        id: null,
+        project_no: projectNo,
+        project_name: projectName || projectNo,
+        source: '영업',
+      }
+    })
+    .filter(Boolean)
+
+  return [annualLeaveOption, ...executionOptions, ...salesOptions]
+})
 function filterProjectOption(input, option) {
   const keyword = (input || '').trim().toLowerCase()
   if (!keyword) return true
@@ -463,7 +546,31 @@ function filterProjectOption(input, option) {
 }
 function onProjectSelect(idx, value, option) {
   entries.value[idx].project_id = option.id || null
-  entries.value[idx].project_name = option.value || value
+  entries.value[idx].project_name = option.project_name || option.value || value
+  entries.value[idx].project_source = option.source || (option.id ? '실행' : '공통')
+  if (option.work_type) entries.value[idx].work_type = [option.work_type]
+}
+
+function onProjectInputChange(idx, value) {
+  const row = entries.value[idx]
+  if (!row) return
+  const typed = String(value || '').trim()
+  if (!typed) {
+    row.project_id = null
+    row.project_source = '공통'
+    return
+  }
+  if (typed === '연차') {
+    row.project_id = null
+    row.project_source = '공통'
+    row.project_name = '연차'
+    row.work_type = ['공통 > 연차']
+    return
+  }
+  const matched = projectSuggestions.value.find(option => option.value === typed || option.project_name === typed)
+  if (matched) return
+  row.project_id = null
+  row.project_source = '공통'
 }
 
 // 시간 계산
@@ -494,7 +601,7 @@ const weekKpis = computed(() => {
 
 function addRow() {
   entries.value.push({
-    project_id: null, project_name: '', spg: '에너지', labor_type: '원가', work_type: '공통 > 기타',
+    project_id: null, project_name: '', project_source: '공통', spg: '공통', labor_type: selectedEmployeeLaborType.value, work_type: ['공통 > 기타'],
     mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0,
     fri_hours: 0, sat_hours: 0, sun_hours: 0, notes: '',
   })
@@ -515,8 +622,23 @@ function handleEmployeeChange() {
 }
 
 function refreshCurrentMode() {
+  loadSalesProjects()
   loadWeek()
   if (timesheetMode.value === 'month') loadMonth()
+}
+
+async function loadSalesProjects() {
+  try {
+    const current = await salesApi.getSalesManagementRows(weekStart.value)
+    if ((current.data || []).length) {
+      salesProjects.value = current.data || []
+      return
+    }
+    const latest = await salesApi.getLatestSalesManagementRowsBefore(weekStart.value)
+    salesProjects.value = latest.data?.rows || []
+  } catch (_) {
+    salesProjects.value = []
+  }
 }
 
 async function loadWeek() {
@@ -532,7 +654,8 @@ async function loadWeek() {
     rejectReason.value = d.reject_reason || ''
     entries.value  = (d.entries || []).map(e => ({
       ...e,
-      spg: e.spg || '에너지',
+      project_source: e.project_source || (e.project_id ? '실행' : '공통'),
+      spg: e.spg || '공통',
       labor_type: e.labor_type || '원가',
       work_type: normalizeWorkType(e.work_type),
     }))
@@ -557,17 +680,17 @@ async function loadMonth() {
       const sheet = res.data
       ;(sheet.entries || []).forEach(entry => {
         const projectName = entry.project_name || '기타'
-        const spg = entry.spg || '에너지'
+        const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
         const laborType = entry.labor_type || '원가'
-        const workType = normalizeWorkType(entry.work_type)
-        const key = `${entry.project_id || projectName}::${spg}::${laborType}::${workType}`
+        const workType = serializeWorkType(entry.work_type)
+        const key = `${projectSource}::${entry.project_id || projectName}::${laborType}::${workType}`
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key,
+            project_source: projectSource,
             project_name: projectName,
-            spg,
             labor_type: laborType,
-            work_type: workType,
+            work_type: displayWorkType(workType),
             days: {},
             total: 0,
           })
@@ -600,7 +723,11 @@ async function handleSave() {
   try {
     const res = await timesheetApi.save({
       employee_id: empId, week_start: weekStart.value,
-      entries: entries.value, notes: tsNotes.value,
+      entries: entries.value.map(row => ({
+        ...row,
+        work_type: serializeWorkType(row.work_type),
+      })),
+      notes: tsNotes.value,
     })
     tsId.value = res.data.id
     tsStatus.value = res.data.status
@@ -634,9 +761,9 @@ const summaryStats = computed(() => {
 })
 
 const summaryCols = [
+  { title: '구분', dataIndex: 'project_source', width: 90, align: 'center' },
   { title: '프로젝트', dataIndex: 'project_name', width: 280, align: 'center', ellipsis: true },
-  { title: 'SPG', dataIndex: 'spg', width: 120, align: 'center' },
-  { title: '인건비 구분', dataIndex: 'labor_type', width: 130, align: 'center' },
+  { title: '원가 구분', dataIndex: 'labor_type', width: 130, align: 'center' },
   { title: '월 투입시간 합계', key: 'total_hours', width: 160, align: 'right' },
 ]
 
@@ -682,14 +809,14 @@ async function loadSummary() {
       const sheet = res.data
       ;(sheet.entries || []).forEach(entry => {
         const projectName = entry.project_name || '기타'
-        const spg = entry.spg || '에너지'
+        const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
         const laborType = entry.labor_type || '원가'
-        const key = `${entry.project_id || projectName}::${spg}::${laborType}`
+        const key = `${projectSource}::${entry.project_id || projectName}::${laborType}`
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key,
+            project_source: projectSource,
             project_name: projectName,
-            spg,
             labor_type: laborType,
             total_hours: 0,
           })
@@ -712,7 +839,7 @@ async function loadSummary() {
 }
 
 async function loadBase() {
-  const [emp, proj] = await Promise.all([timesheetApi.getEmployees(), executionApi.getProjects()])
+  const [emp, proj] = await Promise.all([timesheetApi.getEmployees(), executionApi.getProjects(), loadSalesProjects()])
   employees.value = emp.data
   projects.value  = proj.data
   if (!canApproveTimesheet.value) selectedEmpId.value = myEmpId.value
@@ -767,8 +894,8 @@ onMounted(async () => {
 .ts-grid thead tr { background: #fafafa; }
 .ts-grid th { text-align: center; font-weight: 600; color: #595959; white-space: nowrap; }
 
-.col-project { min-width: 180px; max-width: 240px; }
-.col-spg     { width: 96px; min-width: 96px; }
+.col-source  { width: 86px; min-width: 86px; text-align: center; }
+.col-project { min-width: 200px; max-width: 260px; }
 .col-labor   { width: 104px; min-width: 104px; }
 .col-type    { width: 150px; min-width: 150px; }
 .col-day     { width: 72px; text-align: center; }

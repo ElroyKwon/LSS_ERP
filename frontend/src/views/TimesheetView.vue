@@ -109,7 +109,7 @@
                     </td>
                     <!-- 원가 구분 -->
                     <td class="col-labor">
-                      <a-select v-model:value="row.labor_type" style="width:100%" :disabled="isLocked">
+                      <a-select v-model:value="row.labor_type" style="width:100%" disabled>
                         <a-select-option v-for="labor in LABOR_TYPES" :key="labor" :value="labor">{{ labor }}</a-select-option>
                       </a-select>
                     </td>
@@ -667,7 +667,7 @@ async function loadWeek() {
       ...e,
       project_source: e.project_source || (e.project_id ? '실행' : '공통'),
       spg: e.spg || '공통',
-      labor_type: e.labor_type || '원가',
+      labor_type: selectedEmployeeLaborType.value,
       work_type: normalizeWorkType(e.work_type),
     }))
   } finally { weekLoading.value = false }
@@ -738,6 +738,7 @@ async function handleSave() {
       employee_id: empId, week_start: weekStart.value,
       entries: entries.value.map(row => ({
         ...row,
+        labor_type: selectedEmployeeLaborType.value,
         work_type: serializeWorkType(row.work_type),
       })),
       notes: tsNotes.value,

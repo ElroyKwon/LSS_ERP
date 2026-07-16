@@ -140,11 +140,12 @@
         :columns="columns"
         :data-source="filtered"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="orderTablePagination"
         row-key="id"
         size="middle"
         :scroll="{ x: 3000 }"
         :row-class-name="rowClass"
+        @change="handleOrderTableChange"
         @row-click="(record) => handleRowClick(record)"
       
         :sticky="{ offsetHeader: 56 }">
@@ -213,12 +214,13 @@
             :columns="salesPlanColumns"
             :data-source="salesPlanRows"
             :loading="loading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="salesPlanTablePagination"
             row-key="id"
             size="small"
             :scroll="{ x: salesPlanScrollX }"
             bordered
             class="sales-plan-table"
+            @change="handleSalesPlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -302,12 +304,13 @@
             :columns="purchasePlanColumns"
             :data-source="purchasePlanRows"
             :loading="loading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="purchasePlanTablePagination"
             row-key="id"
             size="small"
             :scroll="{ x: purchasePlanScrollX }"
             bordered
             class="sales-plan-table"
+            @change="handlePurchasePlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -935,6 +938,33 @@ const selectedId = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
 const projectEditorSnapshot = ref('')
+const TABLE_PAGE_SIZE_OPTIONS = ['10', '20', '50', '100']
+const createTablePagination = () => reactive({
+  current: 1,
+  pageSize: 20,
+  showSizeChanger: true,
+  pageSizeOptions: TABLE_PAGE_SIZE_OPTIONS,
+})
+const orderTablePagination = createTablePagination()
+const salesPlanTablePagination = createTablePagination()
+const purchasePlanTablePagination = createTablePagination()
+
+function updateTablePagination(target, pagination) {
+  target.current = pagination.current || 1
+  target.pageSize = pagination.pageSize || target.pageSize
+}
+
+function handleOrderTableChange(pagination) {
+  updateTablePagination(orderTablePagination, pagination)
+}
+
+function handleSalesPlanTableChange(pagination) {
+  updateTablePagination(salesPlanTablePagination, pagination)
+}
+
+function handlePurchasePlanTableChange(pagination) {
+  updateTablePagination(purchasePlanTablePagination, pagination)
+}
 
 const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
 const canAccessSalesPurchaseTabs = computed(() =>
@@ -988,6 +1018,15 @@ const filtered = computed(() => items.value.filter(d => {
 }))
 
 // ── 통계 카드 ──
+function keepPaginationInRange(pagination, total) {
+  const maxPage = Math.max(1, Math.ceil(total / pagination.pageSize))
+  if (pagination.current > maxPage) pagination.current = maxPage
+}
+
+watch(filtered, rows => keepPaginationInRange(orderTablePagination, rows.length))
+watch(salesPlanRows, rows => keepPaginationInRange(salesPlanTablePagination, rows.length))
+watch(purchasePlanRows, rows => keepPaginationInRange(purchasePlanTablePagination, rows.length))
+
 const statsCards = computed(() => {
   const all = items.value
   return [

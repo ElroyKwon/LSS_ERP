@@ -12,8 +12,10 @@ import os
 import shutil
 import uuid
 from ..database import get_db
+from ..models.common import User
 from ..models.sales import Estimate, EstimateItem, EstimateAttachment, DesignRequest, SalesManagementWeeklyRow
 from ..utils.auth import get_current_user
+from ..utils.permissions import is_system_admin
 from ..utils import to_kst, to_kst_date
 from ..utils.excel_import import (
     SALES_HEADERS,
@@ -28,6 +30,15 @@ from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["영업·수주"])
 UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "estimates")
+
+
+def _can_manage_estimate(estimate: Estimate, current) -> bool:
+    return estimate.created_by == current.id or is_system_admin(current.role)
+
+
+def _require_estimate_manager(estimate: Estimate, current) -> None:
+    if not _can_manage_estimate(estimate, current):
+        raise HTTPException(status_code=403, detail="견적 작성자 또는 관리자만 처리할 수 있습니다.")
 
 
 def _excel_response(content: bytes, filename: str):
@@ -357,6 +368,50 @@ class EstimateCreate(BaseModel):
     items: List[EstimateItemIn] = []
 
 
+def _estimate_item_dict(row: EstimateItem) -> dict:
+    return {
+        "id": row.id,
+        "estimate_id": row.estimate_id,
+        "cost_code_id": row.cost_code_id,
+        "item_name": row.item_name,
+        "spec": row.spec,
+        "unit": row.unit,
+        "quantity": row.quantity,
+        "unit_price": row.unit_price,
+        "amount": row.amount,
+        "sort_order": row.sort_order,
+        "notes": row.notes,
+    }
+
+
+def _estimate_dict(row: Estimate, users_by_id: Optional[dict[int, User]] = None) -> dict:
+    creator = users_by_id.get(row.created_by) if users_by_id else None
+    return {
+        "id": row.id,
+        "estimate_no": row.estimate_no,
+        "site_id": row.site_id,
+        "client_id": row.client_id,
+        "title": row.title,
+        "estimate_type": row.estimate_type,
+        "total_amount": row.total_amount,
+        "labor_amount": row.labor_amount,
+        "material_amount": row.material_amount,
+        "subcontract_amount": row.subcontract_amount,
+        "expense_amount": row.expense_amount,
+        "overhead_amount": row.overhead_amount,
+        "profit_amount": row.profit_amount,
+        "status": row.status,
+        "estimated_by": row.estimated_by,
+        "estimate_date": to_kst_date(row.estimate_date),
+        "notes": row.notes,
+        "created_by": row.created_by,
+        "creator_name": creator.name if creator else None,
+        "created_at": to_kst(row.created_at),
+        "updated_at": to_kst(row.updated_at),
+        "items": [_estimate_item_dict(item) for item in row.items],
+    }
+
+
 @router.get("/estimates")
 def list_estimates(status: Optional[str] = None, search: Optional[str] = None,
                    db: Session = Depends(get_db), _=Depends(get_current_user)):
@@ -365,7 +420,13 @@ def list_estimates(status: Optional[str] = None, search: Optional[str] = None,
         q = q.filter(Estimate.status == status)
     if search:
         q = q.filter(or_(Estimate.title.ilike(f"%{search}%"), Estimate.estimate_no.ilike(f"%{search}%")))
-    return q.order_by(Estimate.created_at.desc()).all()
+    rows = q.order_by(Estimate.created_at.desc()).all()
+    user_ids = {row.created_by for row in rows if row.created_by}
+    users_by_id = {
+        user.id: user
+        for user in db.query(User).filter(User.id.in_(user_ids)).all()
+    } if user_ids else {}
+    return [_estimate_dict(row, users_by_id) for row in rows]
 
 
 @router.get("/estimates/{eid}")
@@ -373,7 +434,8 @@ def get_estimate(eid: int, db: Session = Depends(get_db), _=Depends(get_current_
     e = db.query(Estimate).filter(Estimate.id == eid).first()
     if not e:
         raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
-    return e
+    users_by_id = {e.created_by: db.query(User).filter(User.id == e.created_by).first()} if e.created_by else {}
+    return _estimate_dict(e, users_by_id)
 
 
 @router.post("/estimates")
@@ -388,14 +450,15 @@ def create_estimate(data: EstimateCreate, db: Session = Depends(get_db), current
         db.add(ei)
     db.commit()
     db.refresh(e)
-    return e
+    return _estimate_dict(e, {current.id: current})
 
 
 @router.put("/estimates/{eid}")
-def update_estimate(eid: int, data: EstimateCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_estimate(eid: int, data: EstimateCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
     e = db.query(Estimate).filter(Estimate.id == eid).first()
     if not e:
         raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
+    _require_estimate_manager(e, current)
     items = data.items
     for field, val in data.dict(exclude={"items"}, exclude_none=True).items():
         setattr(e, field, val)
@@ -404,7 +467,30 @@ def update_estimate(eid: int, data: EstimateCreate, db: Session = Depends(get_db
         ei = EstimateItem(**item.dict(), estimate_id=e.id)
         db.add(ei)
     db.commit()
-    return e
+    db.refresh(e)
+    users_by_id = {e.created_by: db.query(User).filter(User.id == e.created_by).first()} if e.created_by else {}
+    return _estimate_dict(e, users_by_id)
+
+
+@router.delete("/estimates/{eid}")
+def delete_estimate(eid: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    e = db.query(Estimate).filter(Estimate.id == eid).first()
+    if not e:
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
+    _require_estimate_manager(e, current)
+    file_paths = [
+        row.file_path
+        for row in db.query(EstimateAttachment).filter(EstimateAttachment.estimate_id == eid).all()
+    ]
+    db.delete(e)
+    db.commit()
+    for file_path in file_paths:
+        if file_path and os.path.isfile(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+    return {"ok": True}
 
 
 # ── 계약 ──────────────────────────────────────────
@@ -440,6 +526,7 @@ def upload_estimate_attachment(
     estimate = db.query(Estimate).filter(Estimate.id == eid).first()
     if not estimate:
         raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
+    _require_estimate_manager(estimate, current)
     original_name = os.path.basename(file.filename or "attachment")
     ext = os.path.splitext(original_name)[1]
     stored_name = f"{uuid.uuid4().hex}{ext}"
@@ -482,10 +569,14 @@ def download_estimate_attachment(attachment_id: int, db: Session = Depends(get_d
 
 
 @router.delete("/estimate-attachments/{attachment_id}")
-def delete_estimate_attachment(attachment_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def delete_estimate_attachment(attachment_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
     row = db.query(EstimateAttachment).filter(EstimateAttachment.id == attachment_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+    estimate = db.query(Estimate).filter(Estimate.id == row.estimate_id).first()
+    if not estimate:
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다.")
+    _require_estimate_manager(estimate, current)
     file_path = row.file_path
     db.delete(row)
     db.commit()

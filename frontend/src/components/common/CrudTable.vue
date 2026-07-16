@@ -23,6 +23,7 @@
       :row-key="rowKey"
       size="middle"
       :scroll="{ x: scrollX }"
+      :custom-row="customRow"
       @change="$emit('tableChange', $event)"
     
         :sticky="{ offsetHeader: 56 }">
@@ -47,6 +48,7 @@ const props = defineProps({
   hideCreate: Boolean,
   scrollX: { type: Number, default: 1000 },
   pagination: { type: [Object, Boolean], default: () => ({ pageSize: 20, showSizeChanger: true }) },
+  customRow: Function,
 })
 defineEmits(['create', 'tableChange'])
 

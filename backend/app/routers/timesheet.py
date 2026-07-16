@@ -111,6 +111,17 @@ def _current_employee(db: Session, current) -> Employee | None:
     return db.query(Employee).filter(Employee.name == current.name).first()
 
 
+def _employee_labor_type(db: Session, employee_id: int) -> str:
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    user = None
+    if employee and employee.emp_code:
+        user = db.query(User).filter(User.employee_code == employee.emp_code).first()
+    if not user and employee and employee.name:
+        user = db.query(User).filter(User.name == employee.name).first()
+    labor_type = user.labor_type if user else None
+    return labor_type if labor_type in {"판관", "원가"} else "원가"
+
+
 def _descendant_department_ids(db: Session, department_id: int | None) -> set[int]:
     if not department_id:
         return set()
@@ -275,8 +286,10 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
         db.flush()
 
     total = 0
+    labor_type = _employee_labor_type(db, data.employee_id)
     for i, e in enumerate(data.entries):
         entry_data = _normalize_entry_data(e.model_dump())
+        entry_data["labor_type"] = labor_type
         entry_data["sort_order"] = i
         entry = TimesheetEntry(**entry_data, timesheet_id=ts.id)
         row_total = sum(float(getattr(entry, f"{d}_hours") or 0) for d in DAYS)

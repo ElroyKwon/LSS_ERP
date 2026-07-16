@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 from io import BytesIO
 from urllib.parse import quote
@@ -447,6 +448,8 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
     old_employee_code = effective_employee_code(user)
     if data.employee_code is not None:
         employee_code = data.employee_code.strip() or None
+        if employee_code and len(employee_code) > 20:
+            raise HTTPException(status_code=400, detail="사원번호는 20자 이하로 입력해 주세요.")
         if employee_code and db.query(User).filter(User.employee_code == employee_code, User.id != user_id).first():
             raise HTTPException(status_code=400, detail="이미 사용 중인 사원번호입니다.")
         data.employee_code = employee_code
@@ -466,8 +469,12 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
             old_employee.emp_code = new_employee_code
         elif old_employee and new_employee and old_employee.id != new_employee.id:
             old_employee.is_active = False
-    sync_employee_for_user(db, user)
-    db.commit()
+    try:
+        sync_employee_for_user(db, user)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="사원번호가 기존 사용자 또는 사원 정보와 중복됩니다.")
     return {"message": "수정되었습니다."}
 
 

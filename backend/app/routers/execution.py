@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect, or_, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date
@@ -529,7 +529,13 @@ def delete_project(pid: int, db: Session = Depends(get_db), _=Depends(get_curren
                 synchronize_session=False,
             )
 
+        inspector = inspect(db.bind)
         for table_name in ("sales_management_weekly_rows", "timesheet_entries", "vehicle_logs"):
+            if not inspector.has_table(table_name):
+                continue
+            column_names = {column["name"] for column in inspector.get_columns(table_name)}
+            if "project_id" not in column_names:
+                continue
             db.execute(text(f"UPDATE {table_name} SET project_id = NULL WHERE project_id = :pid"), {"pid": pid})
 
         db.delete(p)
@@ -540,6 +546,12 @@ def delete_project(pid: int, db: Session = Depends(get_db), _=Depends(get_curren
         raise HTTPException(
             status_code=409,
             detail="프로젝트를 참조하는 데이터가 있어 삭제할 수 없습니다. 연결된 자료를 먼저 확인해 주세요.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"프로젝트 삭제 중 DB 오류가 발생했습니다: {exc.__class__.__name__}",
         ) from exc
 
 

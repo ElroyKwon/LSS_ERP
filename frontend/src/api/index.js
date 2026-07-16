@@ -96,6 +96,7 @@ export const salesApi = {
   getEstimate: (id) => api.get(`/estimates/${id}`),
   createEstimate: (d) => api.post('/estimates', d),
   updateEstimate: (id, d) => api.put(`/estimates/${id}`, d),
+  deleteEstimate: (id) => api.delete(`/estimates/${id}`),
   getEstimateAttachments: (id) => api.get(`/estimates/${id}/attachments`),
   uploadEstimateAttachment: (id, formData) => api.post(`/estimates/${id}/attachments`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

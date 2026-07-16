@@ -5,7 +5,8 @@
       :columns="columns"
       :data="items"
       :loading="loading"
-      :scroll-x="2380"
+      :scroll-x="2660"
+      :custom-row="estimateRowEvents"
       create-label="견적 등록"
       @create="openDrawer(null)"
     >
@@ -22,9 +23,24 @@
         <template v-if="amountColumnKeys.includes(column.key)">
           <span class="num-cell">{{ formatAmount(record[column.key]) }}</span>
         </template>
+        <template v-else-if="column.key === 'project_name'">
+          <a-button type="link" class="title-link" @click.stop="openDrawer(record, 'view')">
+            {{ record.project_name || '-' }}
+          </a-button>
+        </template>
         <template v-else-if="column.key === 'action'">
           <a-space>
-            <a-button size="small" type="link" @click="openDrawer(record)">수정</a-button>
+            <a-button v-if="canManageEstimate(record)" size="small" type="link" @click.stop="openDrawer(record, 'edit')">수정</a-button>
+            <a-popconfirm
+              v-if="canManageEstimate(record)"
+              title="견적을 삭제하시겠습니까?"
+              ok-text="삭제"
+              ok-type="danger"
+              cancel-text="취소"
+              @confirm="deleteEstimate(record)"
+            >
+              <a-button size="small" type="link" danger @click.stop>삭제</a-button>
+            </a-popconfirm>
           </a-space>
         </template>
       </template>
@@ -32,13 +48,13 @@
 
     <a-modal :mask-closable="false"
       v-model:open="drawerOpen"
-      :title="editItem ? '견적 수정' : '견적 등록'"
+      :title="modalTitle"
       :width="840"
       wrap-class-name="estimate-editor-modal"
       :body-style="{ paddingBottom: '76px' }"
     
       centered>
-      <a-form ref="formRef" :model="form" layout="vertical" class="estimate-form">
+      <a-form ref="formRef" :model="form" layout="vertical" class="estimate-form" :disabled="viewOnly">
         <a-divider orientation="left">기본 정보</a-divider>
         <a-row :gutter="16">
           <a-col :span="12">
@@ -160,6 +176,7 @@
 
         <a-divider orientation="left">첨부파일</a-divider>
         <a-upload
+          v-if="!viewOnly"
           v-model:file-list="pendingFiles"
           :before-upload="beforeUpload"
           multiple
@@ -179,7 +196,7 @@
             <a-list-item>
               <template #actions>
                 <a-button type="link" size="small" @click="downloadAttachment(item)">다운로드</a-button>
-                <a-popconfirm title="첨부파일을 삭제하시겠습니까?" @confirm="deleteAttachment(item)">
+                <a-popconfirm v-if="!viewOnly" title="첨부파일을 삭제하시겠습니까?" @confirm="deleteAttachment(item)">
                   <a-button type="link" size="small" danger>삭제</a-button>
                 </a-popconfirm>
               </template>
@@ -194,8 +211,8 @@
 
       <template #footer>
         <div class="drawer-footer">
-          <a-button @click="drawerOpen = false">취소</a-button>
-          <a-button type="primary" :loading="saving" @click="handleSave">저장</a-button>
+          <a-button @click="drawerOpen = false">{{ viewOnly ? '닫기' : '취소' }}</a-button>
+          <a-button v-if="!viewOnly" type="primary" :loading="saving" @click="handleSave">저장</a-button>
         </div>
       </template>
     </a-modal>
@@ -208,16 +225,19 @@ import { message } from 'ant-design-vue'
 import { UploadOutlined } from '@ant-design/icons-vue'
 import CrudTable from '@/components/common/CrudTable.vue'
 import { salesApi, masterApi } from '@/api'
+import { useAuthStore } from '@/store/auth'
 
 const ESTIMATE_META_MARKER = '\n---estimate-meta---\n'
 const now = new Date()
 
 const items = ref([])
+const auth = useAuthStore()
 const overheadRates = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const drawerOpen = ref(false)
 const editItem = ref(null)
+const viewOnly = ref(false)
 const search = ref('')
 const formRef = ref()
 const attachments = ref([])
@@ -238,6 +258,8 @@ const columns = [
   { title: '발주예정일', dataIndex: 'expected_order_date', width: 120, align: 'center' },
   { title: '납기', dataIndex: 'delivery_date', width: 120, align: 'center' },
   { title: '견적일자', dataIndex: 'estimate_date', width: 120, align: 'center' },
+  { title: '작성자', dataIndex: 'creator_name', width: 120, align: 'center' },
+  { title: '작성일시', dataIndex: 'created_at', width: 160, align: 'center' },
   { title: '경쟁사', dataIndex: 'competitor', width: 150, align: 'center', ellipsis: true },
   { title: '견적가', key: 'estimate_price', dataIndex: 'estimate_price', width: 140, align: 'right' },
   { title: '매출원가', key: 'sales_cost', dataIndex: 'sales_cost', width: 140, align: 'right' },
@@ -254,6 +276,11 @@ const overheadRate = computed(() => {
 
 const calculatedOverhead = computed(() => Math.round(toNumber(form.estimate_price) * overheadRate.value / 100))
 const calculatedProfit = computed(() => toNumber(form.estimate_price) - toNumber(form.sales_cost) - calculatedOverhead.value)
+const modalTitle = computed(() => {
+  if (viewOnly.value) return '견적 상세'
+  return editItem.value ? '견적 수정' : '견적 등록'
+})
+const currentUserId = computed(() => auth.user?.id ?? auth.user?.user_id ?? null)
 
 function createEmptyForm() {
   return {
@@ -337,8 +364,22 @@ async function load() {
   }
 }
 
-function openDrawer(item) {
+function canManageEstimate(item) {
+  const ownerId = item?.created_by ?? null
+  if (auth.isAdmin) return true
+  if (currentUserId.value === null || ownerId === null) return false
+  return Number(ownerId) === Number(currentUserId.value)
+}
+
+function estimateRowEvents(record) {
+  return {
+    onClick: () => openDrawer(record, 'view'),
+  }
+}
+
+function openDrawer(item, mode = 'edit') {
   editItem.value = item
+  viewOnly.value = !!item && mode === 'view'
   Object.assign(form, createEmptyForm())
   attachments.value = []
   pendingFiles.value = []
@@ -407,6 +448,7 @@ function buildPayload() {
 }
 
 async function handleSave() {
+  if (viewOnly.value) return
   try {
     await formRef.value.validate()
     saving.value = true
@@ -427,6 +469,19 @@ async function handleSave() {
     message.error(e.response?.data?.detail || '저장 중 오류가 발생했습니다.')
   } finally {
     saving.value = false
+  }
+}
+
+async function deleteEstimate(item) {
+  try {
+    await salesApi.deleteEstimate(item.id)
+    message.success('견적이 삭제되었습니다.')
+    if (editItem.value?.id === item.id) {
+      drawerOpen.value = false
+    }
+    await load()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '삭제 중 오류가 발생했습니다.')
   }
 }
 
@@ -492,6 +547,8 @@ onMounted(load)
 <style scoped>
 .page-wrap { display: flex; flex-direction: column; gap: 16px; }
 .num-cell { display: block; text-align: right; }
+.title-link { padding: 0; height: auto; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-wrap :deep(.ant-table-row) { cursor: pointer; }
 .field-hint { color: #8c8c8c; font-size: 12px; font-weight: 400; }
 .attachment-list { margin-top: 10px; border: 1px solid #f0f0f0; border-radius: 6px; }
 .drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }

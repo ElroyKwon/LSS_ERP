@@ -208,6 +208,10 @@ PROJECT_COLUMNS = {
     "sales_indirect_cost": "NUMERIC(18, 2) DEFAULT 0",
 }
 
+PROJECT_COLUMN_TYPE_UPDATES = {
+    "region": "VARCHAR(300)",
+}
+
 MASTER_INDEXES = {
     "companies": [
         ("idx_companies_active_name", "is_active, company_name"),
@@ -295,6 +299,20 @@ def ensure_accounting_columns(engine):
     _ensure_columns(engine, "accounts_payable", ACCOUNTS_PAYABLE_COLUMNS)
 
 
+def ensure_project_column_types(engine):
+    if engine.dialect.name != "postgresql":
+        return
+    inspector = inspect(engine)
+    if "projects" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("projects")}
+    with engine.begin() as conn:
+        for column_name, ddl_type in PROJECT_COLUMN_TYPE_UPDATES.items():
+            if column_name in existing:
+                conn.execute(text(f"ALTER TABLE projects ALTER COLUMN {column_name} TYPE {ddl_type}"))
+
+
 def ensure_execution_columns(engine):
     _ensure_columns(engine, "projects", PROJECT_COLUMNS)
     _ensure_columns(engine, "project_plans", PROJECT_PLAN_COLUMNS)
+    ensure_project_column_types(engine)

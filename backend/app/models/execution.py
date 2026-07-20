@@ -31,7 +31,7 @@ class Project(Base):
     pm_name         = Column(String(100))
     pm_employee_code = Column(String(20))
     pm_dept         = Column(String(100))
-    region          = Column(String(100))
+    region          = Column(String(300))
     excel_data_json = Column(Text)
     notes           = Column(Text)
     created_by      = Column(Integer, ForeignKey("users.id"))

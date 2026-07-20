@@ -215,6 +215,54 @@ def list_timesheet_employees(db: Session = Depends(get_db), current=Depends(get_
     ]
 
 
+@router.get("/timesheets/common-projects")
+def search_common_timesheet_projects(
+    q: Optional[str] = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    keyword = (q or "").strip()
+    limit = max(1, min(limit, 50))
+    query = (
+        db.query(TimesheetEntry.project_name)
+        .join(Timesheet, Timesheet.id == TimesheetEntry.timesheet_id)
+        .filter(TimesheetEntry.project_name.isnot(None))
+        .filter(TimesheetEntry.project_name != "")
+        .filter(
+            (TimesheetEntry.project_source == "공통")
+            | (TimesheetEntry.project_id.is_(None))
+        )
+    )
+
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        query = query.filter(Timesheet.employee_id.in_(allowed_ids))
+    if keyword:
+        query = query.filter(TimesheetEntry.project_name.ilike(f"%{keyword}%"))
+
+    rows = (
+        query.group_by(TimesheetEntry.project_name)
+        .order_by(sqlfunc.max(Timesheet.updated_at).desc(), TimesheetEntry.project_name.asc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "value": row.project_name,
+            "label": row.project_name,
+            "project_name": row.project_name,
+            "project_source": "공통",
+            "source": "공통",
+            "id": None,
+        }
+        for row in rows
+        if row.project_name
+    ]
+
+
 # ── 주간 타임시트 목록 ──────────────────────────────────────────
 @router.get("/timesheets")
 def list_timesheets(

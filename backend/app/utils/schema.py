@@ -251,6 +251,34 @@ def _ensure_indexes(engine, index_map):
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns})"))
 
 
+def ensure_security_tables(engine):
+    id_ddl = "SERIAL PRIMARY KEY"
+    created_at_ddl = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+    if engine.dialect.name == "sqlite":
+        id_ddl = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        created_at_ddl = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id {id_ddl},
+                name VARCHAR(100) NOT NULL,
+                token_hash VARCHAR(64) NOT NULL UNIQUE,
+                token_prefix VARCHAR(20) NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                scopes JSON,
+                expires_at TIMESTAMP,
+                last_used_at TIMESTAMP,
+                revoked_at TIMESTAMP,
+                created_by INTEGER REFERENCES users(id),
+                created_at {created_at_ddl}
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens (token_hash)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_prefix ON api_tokens (token_prefix)"))
+
+
 def ensure_master_columns(engine):
     _ensure_columns(engine, "users", USER_COLUMNS)
     _ensure_columns(engine, "user_registrations", USER_REGISTRATION_COLUMNS)

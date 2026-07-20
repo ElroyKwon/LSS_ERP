@@ -6,13 +6,15 @@ from jose import JWTError, jwt
 import base64
 import hmac
 import re
+from datetime import datetime
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models.common import User
+from ..models.common import ApiToken, User
 from ..models.execution import Project
 from ..models.master import Employee
 from .permissions import can_access, is_public_api, resolve_api_permission
+from .auth import hash_api_token
 
 
 def _error(status_code: int, detail: str) -> JSONResponse:
@@ -66,7 +68,16 @@ def _current_user_from_request(request: Request) -> User | None:
         if user_id is None:
             return None
     except JWTError:
-        return None
+        db = SessionLocal()
+        try:
+            row = db.query(ApiToken).filter(ApiToken.token_hash == hash_api_token(token)).first()
+            if not row or row.revoked_at is not None:
+                return None
+            if row.expires_at is not None and row.expires_at < datetime.utcnow():
+                return None
+            return db.query(User).filter(User.id == row.user_id, User.is_active == True).first()
+        finally:
+            db.close()
 
     db = SessionLocal()
     try:

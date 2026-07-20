@@ -44,6 +44,24 @@ class User(Base):
     department = relationship("Department", back_populates="users")
 
 
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    token_prefix = Column(String(20), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    scopes = Column(JSON)
+    expires_at = Column(DateTime)
+    last_used_at = Column(DateTime)
+    revoked_at = Column(DateTime)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+
 class UserRegistration(Base):
     __tablename__ = "user_registrations"
     id = Column(Integer, primary_key=True, index=True)

@@ -2,7 +2,7 @@
   <div class="page-wrap">
     <a-tabs v-model:activeKey="activeTab" class="main-tabs">
       
-      <a-tab-pane key="company-calendar" tab="전사 월간 일정">
+      <a-tab-pane key="company-calendar" tab="전사 일정(외근·출장)">
         <div class="calendar-nav">
           <div style="display: flex; align-items: center; gap: 10px;">
             <a-button @click="prevCompanyMonth"><LeftOutlined /></a-button>
@@ -64,7 +64,7 @@
           </div>
         </a-modal>
 
-        <a-modal v-model:open="isCompanyModalOpen" title="전사 월간 일정 등록" @ok="handleCompanySubmit" @cancel="closeCompanyModal" ok-text="등록" cancel-text="취소">
+        <a-modal v-model:open="isCompanyModalOpen" title="전사 일정(외근·출장) 등록" @ok="handleCompanySubmit" @cancel="closeCompanyModal" ok-text="등록" cancel-text="취소">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
               <a-input v-model:value="newCompanySchedule.content" placeholder="예: 전사 정기 미팅, 현장 작업" />
@@ -95,7 +95,7 @@
         </a-modal>
       </a-tab-pane>
 
-      <a-tab-pane key="refresh-calendar" tab="전사 휴가 일정">
+      <a-tab-pane key="refresh-calendar" tab="전사 일정(휴가)">
         <div class="calendar-nav">
           <div style="display: flex; align-items: center; gap: 10px;">
             <a-button @click="prevRefreshMonth"><LeftOutlined /></a-button>
@@ -157,7 +157,7 @@
           </div>
         </a-modal>
 
-        <a-modal v-model:open="isRefreshModalOpen" title="전사 휴가 일정 등록" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" ok-text="등록" cancel-text="취소">
+        <a-modal v-model:open="isRefreshModalOpen" title="전사 일정(휴가) 등록" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" ok-text="등록" cancel-text="취소">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
               <a-input v-model:value="newRefreshSchedule.content" placeholder="예: 여름휴가, OOO 매니저 연차" />
@@ -180,8 +180,10 @@
             <a-form-item label="일정 유형">
               <a-select v-model:value="newRefreshSchedule.type">
                 <a-select-option value="#bae7ff">연차 (연파랑)</a-select-option>
-                <a-select-option value="#1890ff">시간연차 (파랑)</a-select-option>
-                <a-select-option value="#bfbfbf">기타 (회색)</a-select-option>
+                <a-select-option value="#1890ff">대체휴가 (파랑)</a-select-option>
+                <a-select-option value="#bfbfbf">하계휴가 (회색)</a-select-option>
+                <a-select-option value="#ff7a45">병가 (주황)</a-select-option>
+                <a-select-option value="#d9d9d9">기타 (연회색)</a-select-option>
               </a-select>
             </a-form-item>
           </a-form>

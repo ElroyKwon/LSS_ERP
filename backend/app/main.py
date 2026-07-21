@@ -14,9 +14,16 @@ from .config import settings
 from .database import engine, Base
 from .models import *  # noqa: register all models
 from .utils.authorization import enforce_api_permissions
-from .utils.schema import ensure_accounting_columns, ensure_execution_columns, ensure_master_columns
+from .utils.schema import (
+    ensure_accounting_columns,
+    ensure_execution_columns,
+    ensure_master_columns,
+    ensure_management_columns,
+    ensure_project_column_types,
+    ensure_security_tables,
+)
 
-from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule
+from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule, ai
 
 # Development convenience. Production deployments should run Alembic migrations
 # and set AUTO_CREATE_SCHEMA=false to keep schema changes explicit.
@@ -25,6 +32,9 @@ if settings.AUTO_CREATE_SCHEMA:
     ensure_master_columns(engine)
     ensure_accounting_columns(engine)
     ensure_execution_columns(engine)
+ensure_security_tables(engine)
+ensure_project_column_types(engine)
+ensure_management_columns(engine)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -61,6 +71,7 @@ app.include_router(vehicle.router)
 app.include_router(opinion.router)
 app.include_router(holiday.router)
 app.include_router(schedule.router)
+app.include_router(ai.router)
 
 
 

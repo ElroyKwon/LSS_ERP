@@ -91,7 +91,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="editorOpen"
       :title="editItem ? '거래처 수정' : '거래처 신규 등록'"
       width="720px"
@@ -397,7 +397,7 @@
       </div>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="lookupOpen"
       :title="lookupTitle"
       width="520px"
@@ -416,7 +416,7 @@
         :columns="lookupColumns"
         :data-source="lookupRows"
         :loading="lookupLoading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         row-key="code"
         size="small"
         :custom-row="record => ({ onDblclick: () => selectLookup(record) })"
@@ -430,7 +430,7 @@
       </a-table>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="businessStatusModal.open"
       title="국세청 휴폐업 조회 결과"
       ok-text="확인"
@@ -449,7 +449,7 @@
       </a-descriptions>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="apiKeyModal.open"
       title="외부 API 인증키 확인"
       ok-text="인증키 저장"
@@ -655,6 +655,7 @@ const tablePagination = computed(() => ({
   pageSize: pagination.pageSize,
   total: pagination.total,
   showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
   showTotal: total => `총 ${total.toLocaleString()}건`,
 }))
 

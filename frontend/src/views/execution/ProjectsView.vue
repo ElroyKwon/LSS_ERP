@@ -140,11 +140,12 @@
         :columns="columns"
         :data-source="filtered"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="orderTablePagination"
         row-key="id"
         size="middle"
         :scroll="{ x: 3000 }"
         :row-class-name="rowClass"
+        @change="handleOrderTableChange"
         @row-click="(record) => handleRowClick(record)"
       
         :sticky="{ offsetHeader: 56 }">
@@ -213,12 +214,13 @@
             :columns="salesPlanColumns"
             :data-source="salesPlanRows"
             :loading="loading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="salesPlanTablePagination"
             row-key="id"
             size="small"
             :scroll="{ x: salesPlanScrollX }"
             bordered
             class="sales-plan-table"
+            @change="handleSalesPlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -302,12 +304,13 @@
             :columns="purchasePlanColumns"
             :data-source="purchasePlanRows"
             :loading="loading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="purchasePlanTablePagination"
             row-key="id"
             size="small"
             :scroll="{ x: purchasePlanScrollX }"
             bordered
             class="sales-plan-table"
+            @change="handlePurchasePlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -370,11 +373,13 @@
     </a-tabs>
 
     <!-- ── 등록/수정 Drawer ── -->
-    <a-modal v-model:open="drawerOpen"
+    <a-modal :open="drawerOpen"
               :title="editItem ? '프로젝트 수정' : '프로젝트 등록'"
               width="840"
               wrap-class-name="project-editor-modal"
               :body-style="{ paddingBottom: '72px' }"
+              :mask-closable="false"
+              @cancel="closeProjectEditor"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef">
 
@@ -672,7 +677,15 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="담당 PM" name="pm_name">
-              <a-input v-model:value="form.pm_name" placeholder="PM 성명" />
+              <a-select
+                v-model:value="form.pm_employee_code"
+                allow-clear
+                show-search
+                placeholder="PM 선택"
+                :options="employeeOptions"
+                option-filter-prop="searchText"
+                @change="onPmEmployeeChange"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -709,7 +722,7 @@
       <template #footer>
         <div style="text-align:right">
           <a-space>
-            <a-button @click="drawerOpen = false">취소</a-button>
+            <a-button @click="closeProjectEditor">취소</a-button>
             <a-button type="primary" :loading="saving" @click="handleSave">저장</a-button>
           </a-space>
         </div>
@@ -717,6 +730,7 @@
     </a-modal>
 
     <a-modal
+      :mask-closable="false"
       v-model:open="businessCategoryModalOpen"
       title="사업구분 관리"
       width="460px"
@@ -781,6 +795,18 @@ const COST_META_KEYS = [
   'sales_domestic_material_note', 'sales_overseas_material_note', 'sales_outsourcing_note',
   'sales_labor_note', 'sales_expense_note', 'sales_direct_cost_note',
   'sales_indirect_note', 'sales_cost_total_note', 'pre_tax_profit_note',
+]
+const COST_DB_AMOUNT_KEYS = [
+  'contract_material_cost', 'contract_labor_cost',
+  'sales_domestic_material_cost', 'sales_overseas_material_cost', 'sales_outsourcing_cost',
+  'sales_labor_cost', 'sales_expense_cost', 'sales_indirect_cost',
+]
+const COST_NOTE_KEYS = COST_META_KEYS.filter(key => key.endsWith('_note'))
+const PROJECT_REQUIREMENT_KEYS = [
+  'business_division', 'team_name', 'business_category', 'spg',
+  'sales_manager', 'execution_manager', 'collection_manager',
+  'revenue_type', 'work_type', 'collection_terms', 'warranty_period',
+  'special_relation', 'employment_insurance', 'industrial_accident_insurance',
 ]
 const costAmountColumnKeys = [
   'contract_material_cost', 'contract_labor_cost', 'contract_detail_total',
@@ -890,6 +916,7 @@ const salesProgressOptions = [
 const items     = ref([])
 const companies = ref([])
 const departments = ref([])
+const employees = ref([])
 const orgYear = new Date().getFullYear()
 const receivables = ref([])
 const previousSalesPlanRows = ref([])
@@ -910,6 +937,34 @@ const excelInput = ref()
 const selectedId = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
+const projectEditorSnapshot = ref('')
+const TABLE_PAGE_SIZE_OPTIONS = ['10', '20', '50', '100']
+const createTablePagination = () => reactive({
+  current: 1,
+  pageSize: 20,
+  showSizeChanger: true,
+  pageSizeOptions: TABLE_PAGE_SIZE_OPTIONS,
+})
+const orderTablePagination = createTablePagination()
+const salesPlanTablePagination = createTablePagination()
+const purchasePlanTablePagination = createTablePagination()
+
+function updateTablePagination(target, pagination) {
+  target.current = pagination.current || 1
+  target.pageSize = pagination.pageSize || target.pageSize
+}
+
+function handleOrderTableChange(pagination) {
+  updateTablePagination(orderTablePagination, pagination)
+}
+
+function handleSalesPlanTableChange(pagination) {
+  updateTablePagination(salesPlanTablePagination, pagination)
+}
+
+function handlePurchasePlanTableChange(pagination) {
+  updateTablePagination(purchasePlanTablePagination, pagination)
+}
 
 const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
 const canAccessSalesPurchaseTabs = computed(() =>
@@ -963,6 +1018,15 @@ const filtered = computed(() => items.value.filter(d => {
 }))
 
 // ── 통계 카드 ──
+function keepPaginationInRange(pagination, total) {
+  const maxPage = Math.max(1, Math.ceil(total / pagination.pageSize))
+  if (pagination.current > maxPage) pagination.current = maxPage
+}
+
+watch(filtered, rows => keepPaginationInRange(orderTablePagination, rows.length))
+watch(salesPlanRows, rows => keepPaginationInRange(salesPlanTablePagination, rows.length))
+watch(purchasePlanRows, rows => keepPaginationInRange(purchasePlanTablePagination, rows.length))
+
 const statsCards = computed(() => {
   const all = items.value
   return [
@@ -1286,6 +1350,28 @@ function normalizeCostMeta(source = {}) {
     acc[key] = key.endsWith('_note') ? (value || '') : toNumber(value)
     return acc
   }, {})
+}
+
+function mergeCostMeta(req = {}, item = {}) {
+  const merged = normalizeCostMeta(req)
+  COST_DB_AMOUNT_KEYS.forEach((key) => {
+    const itemValue = toNumber(item?.[key])
+    if (itemValue || req?.[key] === undefined || req?.[key] === null) {
+      merged[key] = itemValue
+    }
+  })
+  COST_NOTE_KEYS.forEach((key) => {
+    merged[key] = req?.[key] || item?.[key] || ''
+  })
+  return merged
+}
+
+function projectMetaValue(req = {}, item = {}, key, fallback = '') {
+  const reqValue = req?.[key]
+  if (reqValue !== undefined && reqValue !== null && reqValue !== '') return reqValue
+  const itemValue = item?.[key]
+  if (itemValue !== undefined && itemValue !== null && itemValue !== '') return itemValue
+  return fallback
 }
 
 function calculateCostTotals(source = {}) {
@@ -1826,6 +1912,7 @@ const emptyForm = {
   contract_amount: 0, contract_rate: 0,
   contract_start: null, contract_end: null,
   construct_start: null, construct_end: null,
+  pm_employee_code: null,
   pm_name: '', pm_dept: '', region: '', notes: '',
   business_division: undefined, team_name: '', business_category: undefined, spg: undefined,
   sales_manager: '', execution_manager: '', collection_manager: '',
@@ -1855,6 +1942,17 @@ const departmentOptions = computed(() =>
       shortLabel: dept.name,
       deptType: dept.dept_type,
       rootName: dept.rootName,
+    }))
+)
+
+const employeeOptions = computed(() =>
+  employees.value
+    .filter(emp => emp.is_active !== false)
+    .map(emp => ({
+      value: emp.emp_code,
+      label: `${emp.name} (${emp.emp_code})${emp.department_name ? ` - ${emp.department_name}` : ''}`,
+      searchText: `${emp.name} ${emp.emp_code} ${emp.department_name || ''}`,
+      employee: emp,
     }))
 )
 
@@ -1991,14 +2089,14 @@ function buildNotes() {
     special_relation: form.special_relation,
     employment_insurance: form.employment_insurance,
     industrial_accident_insurance: form.industrial_accident_insurance,
-    ...normalizeCostMeta(form),
+    ...Object.fromEntries(COST_NOTE_KEYS.map(key => [key, form[key] || ''])),
   }
   return `${form.notes || ''}${REQ_MARKER}${JSON.stringify(req)}`
 }
 
 function withRequirementMeta(item) {
   const { memo, req } = splitNotes(item.notes)
-  const costMeta = normalizeCostMeta(req)
+  const costMeta = mergeCostMeta(req, item)
   return {
     ...item,
     notes: memo,
@@ -2036,11 +2134,26 @@ function toPayload() {
     contract_end: form.contract_end,
     construct_start: form.construct_start,
     construct_end: form.construct_end,
+    pm_employee_code: form.pm_employee_code,
     pm_name: form.pm_name,
     pm_dept: form.pm_dept,
     region: form.region,
+    ...Object.fromEntries(COST_DB_AMOUNT_KEYS.map(key => [key, toNumber(form[key])])),
     notes: buildNotes(),
   }
+}
+
+function projectEditorState() {
+  return JSON.stringify(toPayload())
+}
+
+function isProjectEditorDirty() {
+  return drawerOpen.value && projectEditorSnapshot.value && projectEditorState() !== projectEditorSnapshot.value
+}
+
+function closeProjectEditor() {
+  drawerOpen.value = false
+  projectEditorSnapshot.value = ''
 }
 
 // 발주처 자동완성: 등록된 거래처 목록 제안 (직접 입력도 허용)
@@ -2076,9 +2189,34 @@ function onTeamChange(value) {
   }
 }
 
+function onPmEmployeeChange(value, option) {
+  const employee = option?.employee || employees.value.find(emp => emp.emp_code === value)
+  if (!employee) {
+    form.pm_employee_code = null
+    form.pm_name = ''
+    return
+  }
+  form.pm_employee_code = employee.emp_code
+  form.pm_name = employee.name
+  if (employee.department_name) form.pm_dept = employee.department_name
+}
+
+function findUniqueEmployeeCodeByName(name) {
+  const value = String(name || '').trim()
+  if (!value) return null
+  const matches = employees.value.filter(emp => emp.name === value)
+  return matches.length === 1 ? matches[0].emp_code : null
+}
+
 function openDrawer(item) {
   editItem.value = item
-  const { memo, req } = splitNotes(item?.notes)
+  const { memo, req: parsedReq } = splitNotes(item?.notes)
+  const req = item
+    ? PROJECT_REQUIREMENT_KEYS.reduce((acc, key) => {
+      acc[key] = projectMetaValue(parsedReq, item, key)
+      return acc
+    }, { ...parsedReq })
+    : parsedReq
   Object.assign(form, item ? {
     project_no:      item.project_no     ?? '',
     project_name:    item.project_name,
@@ -2093,26 +2231,28 @@ function openDrawer(item) {
     contract_end:    item.contract_end    ?? null,
     construct_start: item.construct_start ?? null,
     construct_end:   item.construct_end   ?? null,
+    pm_employee_code: item.pm_employee_code ?? findUniqueEmployeeCodeByName(item.pm_name),
     pm_name:         item.pm_name ?? '',
     pm_dept:         item.pm_dept ?? '',
     region:          item.region  ?? '',
     notes:           memo ?? '',
-    business_division: req.business_division || undefined,
-    team_name: req.team_name || '',
-    business_category: req.business_category || undefined,
-    spg: req.spg || undefined,
-    sales_manager: req.sales_manager || '',
-    execution_manager: req.execution_manager || '',
-    collection_manager: req.collection_manager || '',
-    revenue_type: req.revenue_type || undefined,
-    work_type: req.work_type || undefined,
-    collection_terms: req.collection_terms || '',
-    warranty_period: req.warranty_period || '',
-    special_relation: req.special_relation || 'x',
+    business_division: projectMetaValue(req, item, 'business_division', undefined),
+    team_name: projectMetaValue(req, item, 'team_name', ''),
+    business_category: projectMetaValue(req, item, 'business_category', undefined),
+    spg: projectMetaValue(req, item, 'spg', undefined),
+    sales_manager: projectMetaValue(req, item, 'sales_manager', ''),
+    execution_manager: projectMetaValue(req, item, 'execution_manager', ''),
+    collection_manager: projectMetaValue(req, item, 'collection_manager', ''),
+    revenue_type: projectMetaValue(req, item, 'revenue_type', undefined),
+    work_type: projectMetaValue(req, item, 'work_type', undefined),
+    collection_terms: projectMetaValue(req, item, 'collection_terms', ''),
+    warranty_period: projectMetaValue(req, item, 'warranty_period', ''),
+    special_relation: projectMetaValue(req, item, 'special_relation', 'x'),
     employment_insurance: Boolean(req.employment_insurance),
     industrial_accident_insurance: Boolean(req.industrial_accident_insurance),
-    ...normalizeCostMeta(req),
+    ...mergeCostMeta(req, item),
   } : emptyForm)
+  projectEditorSnapshot.value = projectEditorState()
   drawerOpen.value = true
 }
 
@@ -2127,7 +2267,7 @@ async function handleSave() {
       await executionApi.createProject(toPayload())
       message.success('등록되었습니다.')
     }
-    drawerOpen.value = false
+    closeProjectEditor()
     await load()
   } catch (e) {
     if (e?.errorFields) return
@@ -2151,10 +2291,11 @@ async function handleDelete(id) {
 async function load() {
   loading.value = true
   try {
-    const [proj, co, dept, recv, salesPlan, previousSalesPlan, purchasePlan, previousPurchasePlan] = await Promise.all([
+    const [proj, co, dept, emp, recv, salesPlan, previousSalesPlan, purchasePlan, previousPurchasePlan] = await Promise.all([
       executionApi.getProjects(),
       masterApi.getCompanies(),
       masterApi.getDepartments({ org_year: orgYear, include_inactive: false, tree: true }),
+      masterApi.getEmployees(),
       managementApi.getReceivables(),
       executionApi.getProjectSalesPlans(orgYear),
       executionApi.getProjectSalesPlans(orgYear - 1),
@@ -2165,6 +2306,7 @@ async function load() {
     items.value     = proj.data.map(withRequirementMeta)
     companies.value = co.data
     departments.value = dept.data || []
+    employees.value = emp.data || []
     receivables.value = recv.data?.items || []
     salesPlanRows.value = (salesPlan.data || []).map(normalizeSalesPlanRow)
     previousSalesPlanRows.value = (previousSalesPlan.data || []).map(normalizeSalesPlanRow)

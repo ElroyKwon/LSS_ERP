@@ -37,10 +37,17 @@ HARDCODED_COMPANY_ID = os.getenv("GOOGLE_CUSTOM_CALENDAR_COMPANY_ID")
 FILE_NAME_REFRESH = os.getenv("GOOGLE_CUSTOM_KEY_REFRESH_NAME")
 HARDCODED_REFRESH_CALENDAR_ID = os.getenv("GOOGLE_CUSTOM_CALENDAR_REFRESH_ID")
 
-if env_credentials_dir:
-    CREDENTIALS_DIR = str((BASE_DIR / env_credentials_dir).resolve())
-else:
-    CREDENTIALS_DIR = None
+def _resolve_credentials_dir(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    normalized = value.strip().replace("\\", os.sep).replace("/", os.sep)
+    path = Path(normalized)
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return str(path.resolve())
+
+
+CREDENTIALS_DIR = _resolve_credentials_dir(env_credentials_dir)
 
 _google_services_cache: Dict[str, Tuple[any, str]] = {}
 
@@ -61,6 +68,12 @@ def get_calendar_config_and_service(category: str):
     else:
         json_path = os.path.join(CREDENTIALS_DIR, FILE_NAME_WORK or "")
         calendar_id = HARDCODED_COMPANY_ID
+
+    if not calendar_id:
+        raise HTTPException(
+            status_code=500,
+            detail=f"'{category}' 캘린더 ID 환경 변수가 정의되지 않았습니다."
+        )
         
     if not json_path or not os.path.exists(json_path):
         raise HTTPException(

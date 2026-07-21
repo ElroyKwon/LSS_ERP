@@ -7,16 +7,26 @@ from datetime import date, datetime, timedelta
 from ..database import get_db
 from ..models.timesheet import Timesheet, TimesheetEntry
 from ..models.master import Employee, OverheadRate
+from ..models.common import Department, User
 from ..models.execution import Project
 from ..models.purchase import CostInput
 from ..utils.auth import get_current_user
 from ..utils import to_kst, to_kst_date
+from ..utils.permissions import is_system_admin, normalize_role
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["타임시트"])
 
-WORK_TYPES = ["설계", "시공", "PM", "영업", "관리", "연차", "교육", "공통", "기타"]
+WORK_TYPES = [
+    "공통 > 연차", "공통 > 교육", "공통 > 행사", "공통 > 기타",
+    "영업 > 설계", "영업 > 견적", "영업 > 제안서", "영업 > 미팅", "영업 > 기타",
+    "실행 > 현장관리", "실행 > 시운전", "실행 > 안전관리", "실행 > 유지보수", "실행 > 업무지원",
+    "실행 > 하자처리(유상)", "실행 > 하자처리(무상)", "실행 > 기타",
+    "경영지원 > 구매", "경영지원 > 총무", "경영지원 > 인사", "경영지원 > 회계",
+    "경영지원 > 자금", "경영지원 > 공시", "경영지원 > 기타",
+]
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+PROJECT_SOURCES = {"실행", "영업", "공통"}
 
 
 def _week_of(d: date):
@@ -31,9 +41,10 @@ def _entry_dict(e: TimesheetEntry) -> dict:
         "id": e.id, "sort_order": e.sort_order,
         "project_id":   e.project_id,
         "project_name": e.project_name or (e.project.project_name if e.project else None),
+        "project_source": e.project_source or ("실행" if e.project_id else "공통"),
         "spg":          e.spg or "에너지",
         "labor_type":   e.labor_type or "원가",
-        "work_type":    e.work_type or "기타",
+        "work_type":    e.work_type or "공통 > 기타",
         **{f"{d}_hours": float(getattr(e, f"{d}_hours") or 0) for d in DAYS},
         "row_total": total, "notes": e.notes,
     }
@@ -60,13 +71,109 @@ def _ts_dict(ts: Timesheet, include_entries=True) -> dict:
     return d
 
 
+def _employee_dict(emp: Employee, labor_type: str | None = None) -> dict:
+    return {
+        "id": emp.id,
+        "emp_code": emp.emp_code,
+        "name": emp.name,
+        "department_id": emp.department_id,
+        "department_name": emp.department.name if emp.department else emp.department_name,
+        "department": emp.department_name,
+        "position": emp.position,
+        "job_title": emp.job_title,
+        "email": emp.email,
+        "labor_type": labor_type or "원가",
+        "is_active": emp.is_active,
+    }
+
+
+def _normalize_entry_data(entry_data: dict) -> dict:
+    source = (entry_data.get("project_source") or "").strip()
+    if source not in PROJECT_SOURCES:
+        source = "실행" if entry_data.get("project_id") else "공통"
+
+    project_name = (entry_data.get("project_name") or "").strip()
+    if project_name == "연차":
+        entry_data["project_id"] = None
+        source = "공통"
+        entry_data["project_name"] = "연차"
+        entry_data["work_type"] = "공통 > 연차"
+
+    entry_data["project_source"] = source
+    return entry_data
+
+
+def _current_employee(db: Session, current) -> Employee | None:
+    if current.employee_code:
+        emp = db.query(Employee).filter(Employee.emp_code == current.employee_code).first()
+        if emp:
+            return emp
+    return db.query(Employee).filter(Employee.name == current.name).first()
+
+
+def _employee_labor_type(db: Session, employee_id: int) -> str:
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    user = None
+    if employee and employee.emp_code:
+        user = db.query(User).filter(User.employee_code == employee.emp_code).first()
+    if not user and employee and employee.name:
+        user = db.query(User).filter(User.name == employee.name).first()
+    labor_type = user.labor_type if user else None
+    return labor_type if labor_type in {"판관", "원가"} else "원가"
+
+
+def _descendant_department_ids(db: Session, department_id: int | None) -> set[int]:
+    if not department_id:
+        return set()
+    ids = {department_id}
+    frontier = [department_id]
+    while frontier:
+        child_rows = db.query(Department.id).filter(
+            Department.parent_id.in_(frontier),
+            Department.is_active == True,
+        ).all()
+        children = [row.id for row in child_rows if row.id not in ids]
+        ids.update(children)
+        frontier = children
+    return ids
+
+
+def _allowed_employee_ids(db: Session, current) -> set[int] | None:
+    if is_system_admin(current.role):
+        return None
+
+    current_emp = _current_employee(db, current)
+    role = normalize_role(current.role)
+    scope_department_id = current.department_id or (current_emp.department_id if current_emp else None)
+    if role.endswith("_manager") and scope_department_id:
+        department_ids = _descendant_department_ids(db, scope_department_id)
+        if department_ids:
+            rows = db.query(Employee.id).filter(
+                Employee.is_active == True,
+                Employee.department_id.in_(department_ids),
+            ).all()
+            scoped_ids = {row.id for row in rows}
+            if current_emp:
+                scoped_ids.add(current_emp.id)
+            return scoped_ids
+
+    return {current_emp.id} if current_emp else set()
+
+
+def _require_employee_access(employee_id: int, db: Session, current) -> None:
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None and employee_id not in allowed_ids:
+        raise HTTPException(status_code=403, detail="해당 직원의 타임시트를 조회할 권한이 없습니다.")
+
+
 # ── Pydantic 스키마 ──────────────────────────────────────────
 class EntryIn(BaseModel):
     project_id:   Optional[int]  = None
     project_name: Optional[str]  = None
+    project_source: str           = "공통"
     spg:          str             = "에너지"
     labor_type:   str             = "원가"
-    work_type:    str             = "기타"
+    work_type:    str             = "공통 > 기타"
     mon_hours:    Decimal         = Decimal(0)
     tue_hours:    Decimal         = Decimal(0)
     wed_hours:    Decimal         = Decimal(0)
@@ -89,6 +196,73 @@ class RejectIn(BaseModel):
     reason: Optional[str] = None
 
 
+@router.get("/timesheets/employees")
+def list_timesheet_employees(db: Session = Depends(get_db), current=Depends(get_current_user)):
+    allowed_ids = _allowed_employee_ids(db, current)
+    q = db.query(Employee).filter(Employee.is_active == True)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        q = q.filter(Employee.id.in_(allowed_ids))
+    rows = q.order_by(Employee.name.asc(), Employee.id.asc()).all()
+    user_by_code = {
+        user.employee_code: user
+        for user in db.query(User).filter(User.employee_code.isnot(None)).all()
+    }
+    return [
+        _employee_dict(row, user_by_code.get(row.emp_code).labor_type if user_by_code.get(row.emp_code) else None)
+        for row in rows
+    ]
+
+
+@router.get("/timesheets/common-projects")
+def search_common_timesheet_projects(
+    q: Optional[str] = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    keyword = (q or "").strip()
+    limit = max(1, min(limit, 50))
+    query = (
+        db.query(TimesheetEntry.project_name)
+        .join(Timesheet, Timesheet.id == TimesheetEntry.timesheet_id)
+        .filter(TimesheetEntry.project_name.isnot(None))
+        .filter(TimesheetEntry.project_name != "")
+        .filter(
+            (TimesheetEntry.project_source == "공통")
+            | (TimesheetEntry.project_id.is_(None))
+        )
+    )
+
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        query = query.filter(Timesheet.employee_id.in_(allowed_ids))
+    if keyword:
+        query = query.filter(TimesheetEntry.project_name.ilike(f"%{keyword}%"))
+
+    rows = (
+        query.group_by(TimesheetEntry.project_name)
+        .order_by(sqlfunc.max(Timesheet.updated_at).desc(), TimesheetEntry.project_name.asc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "value": row.project_name,
+            "label": row.project_name,
+            "project_name": row.project_name,
+            "project_source": "공통",
+            "source": "공통",
+            "id": None,
+        }
+        for row in rows
+        if row.project_name
+    ]
+
+
 # ── 주간 타임시트 목록 ──────────────────────────────────────────
 @router.get("/timesheets")
 def list_timesheets(
@@ -99,7 +273,14 @@ def list_timesheets(
     current=Depends(get_current_user),
 ):
     q = db.query(Timesheet)
-    if employee_id: q = q.filter(Timesheet.employee_id == employee_id)
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        q = q.filter(Timesheet.employee_id.in_(allowed_ids))
+    if employee_id:
+        _require_employee_access(employee_id, db, current)
+        q = q.filter(Timesheet.employee_id == employee_id)
     if week_start:  q = q.filter(Timesheet.week_start  == week_start)
     if status:      q = q.filter(Timesheet.status       == status)
     rows = q.order_by(Timesheet.week_start.desc()).all()
@@ -114,6 +295,7 @@ def get_week_timesheet(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    _require_employee_access(employee_id, db, _)
     monday, sunday = _week_of(week_start)
     ts = db.query(Timesheet).filter(
         Timesheet.employee_id == employee_id,
@@ -130,6 +312,7 @@ def get_week_timesheet(
 @router.post("/timesheets")
 def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
                    current=Depends(get_current_user)):
+    _require_employee_access(data.employee_id, db, current)
     monday, sunday = _week_of(data.week_start)
     ts = db.query(Timesheet).filter(
         Timesheet.employee_id == data.employee_id,
@@ -151,8 +334,10 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
         db.flush()
 
     total = 0
+    labor_type = _employee_labor_type(db, data.employee_id)
     for i, e in enumerate(data.entries):
-        entry_data = e.model_dump()
+        entry_data = _normalize_entry_data(e.model_dump())
+        entry_data["labor_type"] = labor_type
         entry_data["sort_order"] = i
         entry = TimesheetEntry(**entry_data, timesheet_id=ts.id)
         row_total = sum(float(getattr(entry, f"{d}_hours") or 0) for d in DAYS)
@@ -228,9 +413,15 @@ def reject_timesheet(tid: int, data: RejectIn, db: Session = Depends(get_db),
 # ── 팀 현황 (당주 제출 현황) ──────────────────────────────────
 @router.get("/timesheets/team-status")
 def team_status(week_start: date, db: Session = Depends(get_db),
-                _=Depends(get_current_user)):
+                current=Depends(get_current_user)):
     monday, sunday = _week_of(week_start)
-    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    allowed_ids = _allowed_employee_ids(db, current)
+    employee_q = db.query(Employee).filter(Employee.is_active == True)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        employee_q = employee_q.filter(Employee.id.in_(allowed_ids))
+    employees = employee_q.all()
     submitted = {
         ts.employee_id: ts
         for ts in db.query(Timesheet).filter(Timesheet.week_start == monday).all()
@@ -254,7 +445,7 @@ def team_status(week_start: date, db: Session = Depends(get_db),
 @router.get("/timesheets/stats")
 def timesheet_stats(employee_id: Optional[int] = None,
                     year: Optional[int] = None, month: Optional[int] = None,
-                    db: Session = Depends(get_db), _=Depends(get_current_user)):
+                    db: Session = Depends(get_db), current=Depends(get_current_user)):
     now = datetime.now()
     y = year or now.year; m = month or now.month
     q = db.query(Timesheet).filter(
@@ -262,8 +453,20 @@ def timesheet_stats(employee_id: Optional[int] = None,
         sqlfunc.extract("month", Timesheet.week_start) == m,
         Timesheet.status == "승인",
     )
-    if employee_id: q = q.filter(Timesheet.employee_id == employee_id)
-    sheets = q.all()
+    allowed_ids = _allowed_employee_ids(db, current)
+    if allowed_ids is not None:
+        if not allowed_ids:
+            sheets = []
+        else:
+            q = q.filter(Timesheet.employee_id.in_(allowed_ids))
+            if employee_id:
+                _require_employee_access(employee_id, db, current)
+                q = q.filter(Timesheet.employee_id == employee_id)
+            sheets = q.all()
+    else:
+        if employee_id:
+            q = q.filter(Timesheet.employee_id == employee_id)
+        sheets = q.all()
 
     proj_hours = {}
     for ts in sheets:

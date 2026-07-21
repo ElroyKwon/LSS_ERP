@@ -31,7 +31,7 @@
         :columns="columns"
         :data-source="settings"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }"
         row-key="user_id"

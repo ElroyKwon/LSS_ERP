@@ -90,6 +90,11 @@
           의견 청취
         </a-menu-item>
 
+        <a-menu-item v-if="canRead('/ai-assistant')" key="/ai-assistant">
+          <template #icon><RobotOutlined /></template>
+          AI 업무비서
+        </a-menu-item>
+
         <!-- 설정 (관리자) -->
         <a-sub-menu key="system" v-if="canReadAny(['/system/users', '/system/departments', '/system/notices', '/system/opinion-notifications'])">
           <template #icon>
@@ -172,7 +177,7 @@
     </a-layout>
   </a-layout>
 
-  <a-modal
+  <a-modal :mask-closable="false"
     v-model:open="noticePopupOpen"
     title="공지사항 안내"
     width="640px"
@@ -202,7 +207,7 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   DatabaseOutlined, ShopOutlined, AppstoreOutlined,
   FundOutlined, ClockCircleOutlined, CarOutlined, SettingOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, MessageOutlined,PropertySafetyOutlined,ScheduleOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, MessageOutlined,PropertySafetyOutlined,ScheduleOutlined, RobotOutlined,
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/store/auth'
 import { authApi, masterApi } from '@/api'
@@ -292,6 +297,7 @@ const pageNames = {
   '/management/payable': '채무관리',
   '/timesheet':   '타임시트',
   '/calendar':   '전사일정',  
+  '/ai-assistant': 'AI 업무비서',
   '/vehicle-log': '차량일지',
   '/opinion-listening': '의견 청취',
   '/system/users': '사용자 관리',
@@ -307,6 +313,7 @@ const sectionMap = {
   '/management': '경영',
   '/timesheet':   '타임시트',
   '/calendar':   '전사일정',
+  '/ai-assistant': 'AI 업무비서',
   '/vehicle-log': '차량일지',
   '/opinion-listening': '의견 청취',
   '/system':      '설정',

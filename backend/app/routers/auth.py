@@ -1,18 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from ..database import get_db
-from ..models.common import Department, OpinionNotificationSetting, User, UserRegistration
+from ..models.common import ApiToken, Department, OpinionNotificationSetting, User, UserRegistration
 from ..config import settings
 from ..services.email_service import EmailNotConfiguredError, send_email
 from ..services.user_employee_sync import sync_employee_for_user
-from ..utils.auth import verify_password, create_access_token, get_current_user, hash_password
+from ..utils.auth import create_access_token, create_api_token_value, get_current_user, hash_api_token, hash_password, verify_password
 from ..utils.permissions import ROLE_OPTIONS, is_system_admin, normalize_role, validate_role
 from ..utils import to_kst
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from typing import List, Optional
 
 router = APIRouter(prefix="/api/auth", tags=["인증"])
 logger = logging.getLogger(__name__)
@@ -27,6 +27,46 @@ class TokenResponse(BaseModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    user_id: Optional[int] = None
+    scopes: List[str] = Field(default_factory=lambda: ["timesheet:read", "timesheet:write"])
+    expires_days: Optional[int] = Field(default=365, ge=1, le=3650)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str):
+        return value.strip()
+
+
+class ApiTokenCreateResponse(BaseModel):
+    id: int
+    name: str
+    token: str
+    token_prefix: str
+    user_id: int
+    scopes: List[str]
+    expires_at: Optional[str]
+    message: str
+
+
+def _api_token_dict(row: ApiToken):
+    return {
+        "id": row.id,
+        "name": row.name,
+        "token_prefix": row.token_prefix,
+        "user_id": row.user_id,
+        "user_name": row.user.name if row.user else None,
+        "scopes": row.scopes or [],
+        "expires_at": to_kst(row.expires_at),
+        "last_used_at": to_kst(row.last_used_at),
+        "revoked_at": to_kst(row.revoked_at),
+        "created_by": row.created_by,
+        "created_at": to_kst(row.created_at),
+        "is_active": row.revoked_at is None and (row.expires_at is None or row.expires_at >= datetime.utcnow()),
+    }
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -48,6 +88,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             "name": user.name,
             "role": normalize_role(user.role),
             "email": user.email,
+            "labor_type": user.labor_type or "원가",
         },
     }
 
@@ -61,6 +102,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         "role": normalize_role(current_user.role),
         "email": current_user.email,
         "position": current_user.position,
+        "labor_type": current_user.labor_type or "원가",
         "role_options": ROLE_OPTIONS,
     }
 
@@ -76,6 +118,63 @@ def change_password(req: PasswordChangeRequest, current_user: User = Depends(get
 
 
 # ── 회원가입 신청 ──────────────────────────────────────────
+@router.get("/api-tokens")
+def list_api_tokens(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    rows = db.query(ApiToken).order_by(ApiToken.created_at.desc(), ApiToken.id.desc()).all()
+    return [_api_token_dict(row) for row in rows]
+
+
+@router.post("/api-tokens", response_model=ApiTokenCreateResponse)
+def create_api_token(data: ApiTokenCreate, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+
+    user_id = data.user_id or current.id
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="토큰을 발급할 활성 사용자를 찾을 수 없습니다.")
+
+    token = create_api_token_value()
+    expires_at = datetime.utcnow() + timedelta(days=data.expires_days) if data.expires_days else None
+    row = ApiToken(
+        name=data.name,
+        token_hash=hash_api_token(token),
+        token_prefix=token[:16],
+        user_id=user.id,
+        scopes=data.scopes,
+        expires_at=expires_at,
+        created_by=current.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "name": row.name,
+        "token": token,
+        "token_prefix": row.token_prefix,
+        "user_id": row.user_id,
+        "scopes": row.scopes or [],
+        "expires_at": to_kst(row.expires_at),
+        "message": "토큰은 지금 한 번만 표시됩니다. 반드시 별도 보관하세요.",
+    }
+
+
+@router.delete("/api-tokens/{token_id}")
+def revoke_api_token(token_id: int, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="API 토큰을 찾을 수 없습니다.")
+    if row.revoked_at is None:
+        row.revoked_at = datetime.utcnow()
+        db.commit()
+    return {"message": "API 토큰이 폐기되었습니다."}
+
+
 class RegistrationCreate(BaseModel):
     username: str = Field(..., min_length=4)
     password: str = Field(..., min_length=6)
@@ -108,6 +207,7 @@ class RejectRequest(BaseModel):
 class ApproveRegistrationRequest(BaseModel):
     role: str
     department_id: Optional[int] = None
+    labor_type: str = "원가"
 
 
 def _reg_dict(r):
@@ -288,6 +388,7 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
         role = validate_role(data.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    labor_type = data.labor_type if data.labor_type in {"판관", "원가"} else "원가"
     department = None
     if not data.department_id:
         raise HTTPException(status_code=400, detail="가입 승인 시 확정 부서를 선택해야 합니다.")
@@ -316,6 +417,7 @@ def approve_registration(rid: int, data: ApproveRegistrationRequest, db: Session
         department_id=department.id if department else None,
         position=reg.position,
         role=role,
+        labor_type=labor_type,
         is_active=True,
     )
     db.add(user)

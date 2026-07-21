@@ -122,7 +122,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="editorOpen"
       :title="editItem ? '자재 수정' : '자재 신규 등록'"
       width="900px"
@@ -348,11 +348,11 @@
       </div>
     </a-modal>
 
-    <a-modal v-model:open="lookupOpen" title="품목군 조회" width="480px" :footer="null">
+    <a-modal :mask-closable="false" v-model:open="lookupOpen" title="품목군 조회" width="480px" :footer="null">
       <a-table
         :columns="lookupColumns"
         :data-source="lookupRows"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         row-key="code"
         size="small"
         :custom-row="record => ({ onDblclick: () => selectLookup(record) })"
@@ -510,6 +510,7 @@ const tablePagination = computed(() => ({
   pageSize: pagination.pageSize,
   total: pagination.total,
   showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
   showTotal: total => `총 ${total.toLocaleString()}건`,
 }))
 

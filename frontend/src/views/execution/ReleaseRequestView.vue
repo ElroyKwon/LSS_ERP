@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }"
+               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
                row-key="id" size="middle" :scroll="{ x: 950 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -57,7 +57,7 @@
       </a-table>
     </a-card>
 
-    <a-modal v-model:open="modalOpen" :title="editItem ? '출고 요청 수정' : '출고 요청 등록'"
+    <a-modal :mask-closable="false" v-model:open="modalOpen" :title="editItem ? '출고 요청 수정' : '출고 요청 등록'"
              :width="760" wrap-class-name="release-request-modal"
              @ok="handleSave" :confirm-loading="saving" ok-text="저장" cancel-text="취소">
       <a-form :model="form" layout="vertical" ref="formRef" class="release-request-form">
@@ -114,7 +114,7 @@
               </a-button>
             </div>
             <a-table :columns="materialColumns" :data-source="form.release_items"
-                     row-key="uid" size="small" :pagination="{ pageSize: 20, showSizeChanger: true }" class="material-table"
+                     row-key="uid" size="small" :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" class="material-table"
         :sticky="{ offsetHeader: 56 }">
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'no'">{{ index + 1 }}</template>

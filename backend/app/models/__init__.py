@@ -3,6 +3,7 @@ from .common import (
     Department,
     AuditLog,
     UserRegistration,
+    ApiToken,
     Notice,
     OpinionPost,
     OpinionAttachment,
@@ -21,7 +22,7 @@ from .timesheet import Timesheet, TimesheetEntry
 from .vehicle import Vehicle, VehicleLog
 
 __all__ = [
-    "User", "Department", "AuditLog", "UserRegistration", "Notice",
+    "User", "Department", "AuditLog", "UserRegistration", "ApiToken", "Notice",
     "OpinionPost", "OpinionAttachment", "OpinionNotificationSetting",
     "Company", "Site", "CostCode", "AccountCode", "Material", "UnitPrice", "Employee", "OverheadRate",
     "Estimate", "EstimateItem", "EstimateAttachment", "DesignRequest", "SalesManagementWeeklyRow",

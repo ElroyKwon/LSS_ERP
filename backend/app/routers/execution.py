@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect, or_, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date
@@ -15,7 +15,7 @@ from ..models.execution import (
     PurchaseContract, ReleaseRequest, SalesBill, APBill,
 )
 from ..models.accounting import AccountsReceivable, AccountsPayable
-from ..models.master import Company, Material
+from ..models.master import Company, Employee, Material
 from ..utils.auth import get_current_user
 from ..utils import to_kst_date, to_kst
 from ..utils.excel_import import (
@@ -34,10 +34,29 @@ router = APIRouter(prefix="/api", tags=["실행"])
 CONTRACT_FORMS = ["원도급", "하도급", "공동도급", "위탁", "기타"]
 CONTRACT_TYPES = ["국내", "국외"]
 STATUSES       = ["미진행", "진행중", "완료"]
+STATUS_ALIASES = {
+    "진행": "진행중",
+    "진행 중": "진행중",
+    "종료": "완료",
+    "종료됨": "완료",
+    "완료됨": "완료",
+}
 PROJECT_REQ_MARKER = "\n---프로젝트리스트요구사항---\n"
 AP_BILL_REQ_MARKER = "\n---매입청구요구사항---\n"
 PURCHASE_CONTRACT_REQ_MARKER = "\n---구매계약요구사항---\n"
 DEFAULT_BUSINESS_CATEGORIES = ["빌딩", "DC", "BAS", "E&M", "O&M", "DR", "FEMS리스", "SE", "솔루션", "CS", "스테콤", "SCADA"]
+
+
+PROJECT_REQ_FIELDS = [
+    "business_division", "team_name", "business_category", "spg",
+    "sales_manager", "execution_manager", "collection_manager",
+    "revenue_type", "work_type", "collection_terms", "warranty_period",
+    "special_relation", "employment_insurance", "industrial_accident_insurance",
+    "contract_material_note", "contract_labor_note", "contract_total_note",
+    "sales_domestic_material_note", "sales_overseas_material_note", "sales_outsourcing_note",
+    "sales_labor_note", "sales_expense_note", "sales_direct_cost_note",
+    "sales_indirect_note", "sales_cost_total_note", "pre_tax_profit_note",
+]
 
 
 def _json_meta(notes: Optional[str], marker: str) -> dict:
@@ -85,6 +104,47 @@ def _valid_customer_class(value: Optional[str]) -> str:
     return value if value in ["특수관계자", "대리점", "일반"] else "일반"
 
 
+def _normalize_project_status(value: Optional[str]) -> str:
+    status = str(value or "").strip()
+    status = STATUS_ALIASES.get(status, status)
+    return status if status in STATUSES else STATUSES[0]
+
+
+def _project_status_filter_values(value: Optional[str]) -> list[str]:
+    status = _normalize_project_status(value)
+    values = [status]
+    values.extend(alias for alias, normalized in STATUS_ALIASES.items() if normalized == status)
+    return values
+
+
+def _employee_by_code(db: Session, employee_code: Optional[str]) -> Optional[Employee]:
+    code = str(employee_code or "").strip()
+    if not code:
+        return None
+    return db.query(Employee).filter(Employee.emp_code == code).first()
+
+
+def _employee_code_for_name(db: Session, name: Optional[str]) -> Optional[str]:
+    value = str(name or "").strip()
+    if not value:
+        return None
+    matches = db.query(Employee).filter(Employee.name == value).all()
+    return matches[0].emp_code if len(matches) == 1 else None
+
+
+def _resolve_project_pm(db: Session, payload: dict) -> None:
+    employee = _employee_by_code(db, payload.get("pm_employee_code"))
+    if employee:
+        payload["pm_employee_code"] = employee.emp_code
+        if not payload.get("pm_name"):
+            payload["pm_name"] = employee.name
+        if not payload.get("pm_dept"):
+            payload["pm_dept"] = employee.department_name
+        return
+
+    payload["pm_employee_code"] = _employee_code_for_name(db, payload.get("pm_name"))
+
+
 class ProjectCreate(BaseModel):
     project_no:      Optional[str]     = None
     project_name:    str
@@ -95,18 +155,28 @@ class ProjectCreate(BaseModel):
     status:          str               = "미진행"
     contract_amount: Decimal           = Decimal(0)
     contract_rate:   Decimal           = Decimal(0)
+    contract_material_cost: Decimal    = Decimal(0)
+    contract_labor_cost: Decimal       = Decimal(0)
+    sales_domestic_material_cost: Decimal = Decimal(0)
+    sales_overseas_material_cost: Decimal = Decimal(0)
+    sales_outsourcing_cost: Decimal    = Decimal(0)
+    sales_labor_cost: Decimal          = Decimal(0)
+    sales_expense_cost: Decimal        = Decimal(0)
+    sales_indirect_cost: Decimal       = Decimal(0)
     contract_start:  Optional[date]    = None
     contract_end:    Optional[date]    = None
     construct_start: Optional[date]    = None
     construct_end:   Optional[date]    = None
     pm_name:         Optional[str]     = None
+    pm_employee_code: Optional[str]    = None
     pm_dept:         Optional[str]     = None
     region:          Optional[str]     = None
     notes:           Optional[str]     = None
 
 
 def _proj_dict(p: Project) -> dict:
-    return {
+    req = _project_req(p)
+    result = {
         "id":             p.id,
         "project_no":     p.project_no,
         "project_name":   p.project_name,
@@ -114,19 +184,31 @@ def _proj_dict(p: Project) -> dict:
         "client_name":    p.client_name or (p.client.company_name if p.client else None),
         "contract_form":  p.contract_form,
         "contract_type":  p.contract_type,
-        "status":         p.status,
+        "status":         _normalize_project_status(p.status),
         "contract_amount": float(p.contract_amount or 0),
         "contract_rate":  float(p.contract_rate or 0),
+        "contract_material_cost": float(p.contract_material_cost or 0),
+        "contract_labor_cost": float(p.contract_labor_cost or 0),
+        "sales_domestic_material_cost": float(p.sales_domestic_material_cost or 0),
+        "sales_overseas_material_cost": float(p.sales_overseas_material_cost or 0),
+        "sales_outsourcing_cost": float(p.sales_outsourcing_cost or 0),
+        "sales_labor_cost": float(p.sales_labor_cost or 0),
+        "sales_expense_cost": float(p.sales_expense_cost or 0),
+        "sales_indirect_cost": float(p.sales_indirect_cost or 0),
         "contract_start": to_kst_date(p.contract_start),
         "contract_end":   to_kst_date(p.contract_end),
         "construct_start": to_kst_date(p.construct_start),
         "construct_end":  to_kst_date(p.construct_end),
         "pm_name":        p.pm_name,
+        "pm_employee_code": p.pm_employee_code,
         "pm_dept":        p.pm_dept,
         "region":         p.region,
         "notes":          p.notes,
         "created_at":     to_kst(p.created_at),
     }
+    for field in PROJECT_REQ_FIELDS:
+        result[field] = req.get(field)
+    return result
 
 
 def _excel_response(content: bytes, filename: str):
@@ -263,7 +345,7 @@ def list_projects(
 ):
     q = db.query(Project)
     if status:
-        q = q.filter(Project.status == status)
+        q = q.filter(Project.status.in_(_project_status_filter_values(status)))
     if contract_form:
         q = q.filter(Project.contract_form == contract_form)
     if contract_type:
@@ -292,7 +374,10 @@ def list_projects(
 @router.post("/projects")
 def create_project(data: ProjectCreate, db: Session = Depends(get_db),
                    current=Depends(get_current_user)):
-    p = Project(**data.dict(), created_by=current.id)
+    payload = data.dict()
+    payload["status"] = _normalize_project_status(payload.get("status"))
+    _resolve_project_pm(db, payload)
+    p = Project(**payload, created_by=current.id)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -345,8 +430,16 @@ def import_projects_excel(
                 "client_name": client_name,
                 "contract_form": row.get("contract_form") or CONTRACT_FORMS[0],
                 "contract_type": row.get("contract_type") or CONTRACT_TYPES[0],
-                "status": row.get("status") or STATUSES[0],
+                "status": _normalize_project_status(row.get("status")),
                 "contract_amount": to_decimal_value(row.get("contract_amount"), Decimal(0)) or Decimal(0),
+                "contract_material_cost": to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or Decimal(0),
+                "contract_labor_cost": to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or Decimal(0),
+                "sales_domestic_material_cost": to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or Decimal(0),
+                "sales_overseas_material_cost": Decimal(0),
+                "sales_outsourcing_cost": Decimal(0),
+                "sales_labor_cost": to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or Decimal(0),
+                "sales_expense_cost": Decimal(0),
+                "sales_indirect_cost": Decimal(0),
                 "contract_start": to_date_value(row.get("contract_start")),
                 "construct_end": to_date_value(row.get("construct_end")),
                 "pm_name": row.get("execution_manager") or row.get("sales_manager"),
@@ -354,6 +447,7 @@ def import_projects_excel(
                 "region": row.get("site_address"),
                 "excel_data_json": json.dumps(raw_excel, ensure_ascii=False, default=str),
             }
+            _resolve_project_pm(db, payload)
             req = {
                 "business_division": row.get("business_division"),
                 "team_name": row.get("team_name"),
@@ -367,11 +461,6 @@ def import_projects_excel(
                 "collection_terms": row.get("collection_terms"),
                 "warranty_period": row.get("warranty_period"),
                 "special_relation": row.get("special_relation"),
-                "contract_material_cost": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
-                "contract_labor_cost": float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0),
-                "sales_domestic_material_cost": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
-                "sales_material_cost_total": float(to_decimal_value(row.get("sales_material_cost_total"), Decimal(0)) or 0),
-                "sales_labor_cost": float(to_decimal_value(row.get("sales_labor_cost"), Decimal(0)) or 0),
                 "_excel_raw": raw_excel,
             }
             payload["notes"] = PROJECT_REQ_MARKER + json.dumps(req, ensure_ascii=False, default=str)
@@ -409,7 +498,10 @@ def update_project(pid: int, data: ProjectCreate, db: Session = Depends(get_db),
     p = db.query(Project).filter(Project.id == pid).first()
     if not p:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
-    for field, val in data.dict().items():
+    payload = data.dict()
+    payload["status"] = _normalize_project_status(payload.get("status"))
+    _resolve_project_pm(db, payload)
+    for field, val in payload.items():
         setattr(p, field, val)
     db.commit()
     db.refresh(p)
@@ -437,7 +529,13 @@ def delete_project(pid: int, db: Session = Depends(get_db), _=Depends(get_curren
                 synchronize_session=False,
             )
 
+        inspector = inspect(db.bind)
         for table_name in ("sales_management_weekly_rows", "timesheet_entries", "vehicle_logs"):
+            if not inspector.has_table(table_name):
+                continue
+            column_names = {column["name"] for column in inspector.get_columns(table_name)}
+            if "project_id" not in column_names:
+                continue
             db.execute(text(f"UPDATE {table_name} SET project_id = NULL WHERE project_id = :pid"), {"pid": pid})
 
         db.delete(p)
@@ -448,6 +546,12 @@ def delete_project(pid: int, db: Session = Depends(get_db), _=Depends(get_curren
         raise HTTPException(
             status_code=409,
             detail="프로젝트를 참조하는 데이터가 있어 삭제할 수 없습니다. 연결된 자료를 먼저 확인해 주세요.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"프로젝트 삭제 중 DB 오류가 발생했습니다: {exc.__class__.__name__}",
         ) from exc
 
 

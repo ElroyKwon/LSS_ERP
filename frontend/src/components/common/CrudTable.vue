@@ -23,6 +23,7 @@
       :row-key="rowKey"
       size="middle"
       :scroll="{ x: scrollX }"
+      :custom-row="customRow"
       @change="$emit('tableChange', $event)"
     
         :sticky="{ offsetHeader: 56 }">
@@ -46,7 +47,8 @@ const props = defineProps({
   createLabel: { type: String, default: '신규 등록' },
   hideCreate: Boolean,
   scrollX: { type: Number, default: 1000 },
-  pagination: { type: [Object, Boolean], default: () => ({ pageSize: 20, showSizeChanger: true }) },
+  pagination: { type: [Object, Boolean], default: () => ({ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }) },
+  customRow: Function,
 })
 defineEmits(['create', 'tableChange'])
 

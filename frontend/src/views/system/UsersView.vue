@@ -64,13 +64,16 @@
             :columns="userColumns"
             :data-source="users"
             :loading="userLoading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
-            row-key="id" size="middle" :scroll="{ x: 1190 }"
+            :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+            row-key="id" size="middle" :scroll="{ x: 1290 }"
           
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'role'">
                 <a-tag :color="getRoleColor(record.role)">{{ getRoleLabel(record.role) }}</a-tag>
+              </template>
+              <template v-if="column.key === 'labor_type'">
+                <a-tag :color="record.labor_type === '판관' ? 'purple' : 'blue'">{{ record.labor_type || '원가' }}</a-tag>
               </template>
               <template v-if="column.key === 'is_active'">
                 <a-tag :color="record.is_active ? 'green' : 'default'">
@@ -110,7 +113,7 @@
             :columns="regColumns"
             :data-source="displayRegistrations"
             :loading="regLoading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
             row-key="id" size="middle" :scroll="{ x: 1160 }"
           
         :sticky="{ offsetHeader: 56 }">
@@ -152,7 +155,7 @@
     </a-card>
 
     <!-- 사용자 등록/수정 모달 -->
-    <a-modal v-model:open="modalOpen" :title="editItem ? '사용자 수정' : '사용자 등록'"
+    <a-modal :mask-closable="false" v-model:open="modalOpen" :title="editItem ? '사용자 수정' : '사용자 등록'"
              width="560px" @ok="handleSave" :confirm-loading="saving" ok-text="저장" cancel-text="취소">
       <a-form :model="form" layout="vertical" ref="formRef" style="margin-top:8px">
         <a-row :gutter="16">
@@ -208,6 +211,11 @@
               <a-select v-model:value="form.role" :options="roleOptions" />
             </a-form-item>
           </a-col>
+          <a-col :span="12">
+            <a-form-item label="원가구분" name="labor_type">
+              <a-select v-model:value="form.labor_type" :options="laborTypeOptions" />
+            </a-form-item>
+          </a-col>
           <a-col :span="12" v-if="editItem">
             <a-form-item label="계정 상태" name="is_active">
               <a-select v-model:value="form.is_active">
@@ -221,7 +229,7 @@
     </a-modal>
 
     <!-- 가입 승인 권한 지정 모달 -->
-    <a-modal v-model:open="approveOpen" title="가입 승인"
+    <a-modal :mask-closable="false" v-model:open="approveOpen" title="가입 승인"
              width="440px" @ok="handleApprove" :confirm-loading="approving"
              ok-text="권한 부여 후 승인" cancel-text="취소">
       <div style="margin:16px 0 12px">
@@ -230,6 +238,9 @@
       <a-form layout="vertical">
         <a-form-item label="권한" required>
           <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
+        </a-form-item>
+        <a-form-item label="원가구분" required>
+          <a-select v-model:value="approveLaborType" :options="laborTypeOptions" placeholder="원가구분 선택" />
         </a-form-item>
         <a-alert
           v-if="approveTarget?.department"
@@ -253,7 +264,7 @@
     </a-modal>
 
     <!-- 거절 사유 모달 -->
-    <a-modal v-model:open="rejectOpen" title="가입 신청 거절" width="440px"
+    <a-modal :mask-closable="false" v-model:open="rejectOpen" title="가입 신청 거절" width="440px"
              @ok="handleReject" :confirm-loading="rejecting"
              ok-text="거절 처리" :ok-button-props="{ danger: true }" cancel-text="취소">
       <div style="margin:16px 0 8px">
@@ -294,10 +305,14 @@ const editItem   = ref(null)
 const formRef    = ref()
 const form = reactive({
   username: '', name: '', password: '', new_password: '',
-  employee_code: '', email: '', role: 'sales_staff', position: '', department_id: null, is_active: true,
+  employee_code: '', email: '', role: 'sales_staff', labor_type: '원가', position: '', department_id: null, is_active: true,
 })
 
 const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
+const laborTypeOptions = [
+  { value: '원가', label: '원가' },
+  { value: '판관', label: '판관' },
+]
 const departmentOptions = computed(() =>
   departments.value.map(dept => ({
     value: dept.id,
@@ -318,6 +333,7 @@ const userColumns = [
   { title: '직위',     dataIndex: 'position',        width: 120, align: 'center' },
   { title: '이메일',   dataIndex: 'email',           width: 220, align: 'center', ellipsis: true },
   { title: '권한',     key: 'role',                  width: 120, align: 'center' },
+  { title: '원가구분', key: 'labor_type',            width: 100, align: 'center' },
   { title: '상태',     key: 'is_active',             width: 90,  align: 'center' },
   { title: '관리',     key: 'action',                width: 130, align: 'center', fixed: 'right' },
 ]
@@ -336,7 +352,7 @@ function openModal(item) {
   editItem.value = item
   Object.assign(form, item
     ? { ...item, password: '', new_password: '' }
-    : { username: '', name: '', password: '', new_password: '', employee_code: '', email: '', role: 'sales_staff', position: '', department_id: null, is_active: true }
+    : { username: '', name: '', password: '', new_password: '', employee_code: '', email: '', role: 'sales_staff', labor_type: '원가', position: '', department_id: null, is_active: true }
   )
   modalOpen.value = true
 }
@@ -382,6 +398,7 @@ const approveOpen   = ref(false)
 const approving     = ref(false)
 const approveTarget = ref(null)
 const approveRole   = ref('sales_staff')
+const approveLaborType = ref('원가')
 const approveDepartmentId = ref(null)
 
 const regStatusColor = { pending: 'orange', rejected: 'red' }
@@ -425,6 +442,7 @@ async function loadRegistrations() {
 function openApproveModal(record) {
   approveTarget.value = record
   approveRole.value = 'sales_staff'
+  approveLaborType.value = '원가'
   const department = departments.value.find(dept => dept.name === record.department || dept.path_name === record.department)
   approveDepartmentId.value = department?.id || null
   approveOpen.value = true
@@ -443,6 +461,7 @@ async function handleApprove() {
   try {
     await authApi.approveRegistration(approveTarget.value.id, {
       role: approveRole.value,
+      labor_type: approveLaborType.value,
       department_id: approveDepartmentId.value,
     })
     await loadUsers()

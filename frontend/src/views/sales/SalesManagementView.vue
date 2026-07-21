@@ -47,7 +47,7 @@
         :columns="columns"
         :data-source="rows"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: tableScrollX }"
         row-key="id"
         size="small"

@@ -74,7 +74,7 @@
     <!-- 월별 P&L 상세 테이블 -->
     <a-card :bordered="false" class="dash-card" title="월별 손익 상세">
       <template #extra><span class="card-extra">단위: 백만원</span></template>
-      <a-table :columns="detailCols" :data-source="detailRows" :pagination="{ pageSize: 20, showSizeChanger: true }"
+      <a-table :columns="detailCols" :data-source="detailRows" :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
                size="small" row-key="month" :scroll="{ x: 1000 }"
                :row-class-name="r => r.month === month ? 'row-current' : ''"
         :sticky="{ offsetHeader: 56 }">

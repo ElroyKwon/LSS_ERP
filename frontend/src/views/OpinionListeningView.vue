@@ -56,7 +56,7 @@
         :columns="visibleColumns"
         :data-source="opinions"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: 1120 }"
         :sticky="{ offsetHeader: 56 }"
         row-key="id"
@@ -94,7 +94,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="editorOpen"
       :title="editingId ? '의견 수정' : '의견 등록'"
       width="760px"
@@ -126,7 +126,7 @@
       </a-form>
     </a-modal>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="detailOpen"
       title="의견 상세"
       width="760"
@@ -149,8 +149,11 @@
         <a-list v-else class="attachment-list" :data-source="selected.attachments" size="small">
           <template #renderItem="{ item }">
             <a-list-item>
-              <a :href="`/api/opinion-attachments/${item.id}/download`" target="_blank">{{ item.original_name }}</a>
+              <a-button type="link" class="attachment-link" @click="openAttachment(item)">
+                {{ item.original_name }}
+              </a-button>
               <template #actions>
+                <a-button type="link" size="small" @click="downloadAttachment(item)">다운로드</a-button>
                 <a-popconfirm title="첨부파일을 삭제하시겠습니까?" @confirm="deleteAttachment(item.id)">
                   <a-button type="link" danger size="small">삭제</a-button>
                 </a-popconfirm>
@@ -161,14 +164,32 @@
 
         <a-divider orientation="left">답변</a-divider>
         <div v-if="selected.answer" class="answer-box">
-          <div class="detail-meta">{{ selected.answerer_name || '-' }} · {{ selected.answered_at || '-' }}</div>
+          <div class="answer-header">
+            <div class="detail-meta">{{ selected.answerer_name || '-' }} · {{ selected.answered_at || '-' }}</div>
+            <a-space v-if="auth.isAdmin" size="small">
+              <a-button type="text" size="small" title="답변 수정" @click="startAnswerEdit">
+                <template #icon><EditOutlined /></template>
+              </a-button>
+              <a-popconfirm
+                title="관리자 답변을 삭제하시겠습니까?"
+                ok-text="삭제"
+                ok-type="danger"
+                cancel-text="취소"
+                @confirm="deleteAnswer"
+              >
+                <a-button type="text" danger size="small" title="답변 삭제">
+                  <template #icon><DeleteOutlined /></template>
+                </a-button>
+              </a-popconfirm>
+            </a-space>
+          </div>
           <div class="detail-content">{{ selected.answer }}</div>
         </div>
         <a-empty v-else description="답변 없음" />
 
         <template v-if="auth.isAdmin">
           <a-divider orientation="left">관리자 답변</a-divider>
-          <a-textarea v-model:value="answerText" :rows="6" />
+          <a-textarea v-model:value="answerText" :rows="6" placeholder="새 답변을 입력하세요." />
           <div class="drawer-footer">
             <a-button type="primary" :loading="answerSaving" @click="saveAnswer">답변 저장</a-button>
           </div>
@@ -178,12 +199,12 @@
         <div class="detail-footer">
           <a-space>
             <a-button @click="detailOpen = false">닫기</a-button>
-            <a-button v-if="selected" @click="openEditFromDetail">
+            <a-button v-if="canEditSelectedOpinion" @click="openEditFromDetail">
               <template #icon><EditOutlined /></template>
               수정
             </a-button>
             <a-popconfirm
-              v-if="selected"
+              v-if="canDeleteSelectedOpinion"
               title="의견 글을 삭제하시겠습니까?"
               ok-text="삭제"
               ok-type="danger"
@@ -207,11 +228,26 @@
         </div>
       </template>
     </a-modal>
+
+    <a-modal :mask-closable="false"
+      v-model:open="pdfPreviewOpen"
+      :title="pdfPreviewTitle"
+      :width="pdfPreviewWidth"
+      :body-style="{ padding: '12px' }"
+      :footer="null"
+      destroy-on-close
+      @cancel="closePdfPreview"
+    >
+      <div class="pdf-preview-shell" :style="{ height: `${pdfPreviewHeight}px` }">
+        <iframe v-if="pdfPreviewUrl" class="pdf-preview-frame" :src="pdfPreviewUrl" />
+        <div class="pdf-preview-resizer" title="크기 조절" @pointerdown="startPdfResize" />
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   CheckCircleOutlined,
@@ -236,8 +272,14 @@ const editingId = ref(null)
 const selected = ref(null)
 const pendingFiles = ref([])
 const answerText = ref('')
+const pdfPreviewOpen = ref(false)
+const pdfPreviewUrl = ref('')
+const pdfPreviewTitle = ref('')
+const pdfPreviewWidth = ref(1100)
+const pdfPreviewHeight = ref(720)
 const filters = reactive({ search: '', status: undefined })
 const form = reactive({ title: '', content: '' })
+let stopPdfResize = null
 
 const columns = [
   { title: '상태', key: 'status', width: 110, align: 'center' },
@@ -253,6 +295,27 @@ const columns = [
 const visibleColumns = computed(() => columns.filter(column => column.key !== 'action'))
 const waitingCount = computed(() => opinions.value.filter(row => row.status !== 'answered').length)
 const answeredCount = computed(() => opinions.value.filter(row => row.status === 'answered').length)
+const currentUserId = computed(() => auth.user?.id ?? auth.user?.user_id ?? null)
+const currentUserName = computed(() => auth.user?.name || '')
+const canEditSelectedOpinion = computed(() => canEditOpinion(selected.value))
+const canDeleteSelectedOpinion = computed(() => canDeleteOpinion(selected.value))
+
+function isOpinionOwner(row) {
+  if (!row) return false
+  const ownerId = row.created_by ?? row.creator_id ?? null
+  if (currentUserId.value !== null && ownerId !== null) {
+    return Number(ownerId) === Number(currentUserId.value)
+  }
+  return !!currentUserName.value && row.creator_name === currentUserName.value
+}
+
+function canEditOpinion(row) {
+  return isOpinionOwner(row)
+}
+
+function canDeleteOpinion(row) {
+  return isOpinionOwner(row) || auth.isAdmin
+}
 
 async function load() {
   loading.value = true
@@ -282,6 +345,10 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  if (!canEditOpinion(row)) {
+    message.warning('등록한 사용자만 수정할 수 있습니다.')
+    return
+  }
   editingId.value = row.id
   form.title = row.title || ''
   form.content = row.content || ''
@@ -299,7 +366,7 @@ async function openDetail(row) {
   try {
     const res = await opinionApi.getOpinion(row.id)
     selected.value = res.data
-    answerText.value = res.data.answer || ''
+    answerText.value = ''
     detailOpen.value = true
   } catch (error) {
     message.error(error.response?.data?.detail || '의견 상세를 불러오지 못했습니다.')
@@ -376,6 +443,11 @@ async function removeSelectedOpinion() {
   await removeOpinion(selected.value.id)
 }
 
+function startAnswerEdit() {
+  if (!selected.value?.answer) return
+  answerText.value = selected.value.answer
+}
+
 async function saveAnswer() {
   if (!selected.value) return
   if (!answerText.value.trim()) {
@@ -386,11 +458,27 @@ async function saveAnswer() {
   try {
     const res = await opinionApi.answerOpinion(selected.value.id, { answer: answerText.value.trim() })
     selected.value = res.data
-    answerText.value = res.data.answer || ''
+    answerText.value = ''
     message.success('답변이 저장되었습니다.')
     await load()
   } catch (error) {
     message.error(error.response?.data?.detail || '답변 저장에 실패했습니다.')
+  } finally {
+    answerSaving.value = false
+  }
+}
+
+async function deleteAnswer() {
+  if (!selected.value) return
+  answerSaving.value = true
+  try {
+    const res = await opinionApi.deleteAnswer(selected.value.id)
+    selected.value = res.data
+    answerText.value = ''
+    message.success('답변이 삭제되었습니다.')
+    await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '답변 삭제에 실패했습니다.')
   } finally {
     answerSaving.value = false
   }
@@ -407,7 +495,123 @@ async function deleteAttachment(id) {
   }
 }
 
+function attachmentFileName(attachment) {
+  return attachment?.original_name || attachment?.filename || 'attachment'
+}
+
+function isPdfAttachment(attachment, blob) {
+  const contentType = String(blob?.type || attachment?.content_type || '').toLowerCase()
+  const fileName = attachmentFileName(attachment).toLowerCase()
+  return contentType.includes('pdf') || fileName.endsWith('.pdf')
+}
+
+function revokePdfPreviewUrl() {
+  if (pdfPreviewUrl.value) {
+    URL.revokeObjectURL(pdfPreviewUrl.value)
+    pdfPreviewUrl.value = ''
+  }
+}
+
+function closePdfPreview() {
+  stopPdfResizeTracking()
+  revokePdfPreviewUrl()
+  pdfPreviewOpen.value = false
+  pdfPreviewTitle.value = ''
+}
+
+function clampSize(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function resetPdfPreviewSize() {
+  const viewportWidth = window.innerWidth || 1280
+  const viewportHeight = window.innerHeight || 900
+  pdfPreviewWidth.value = clampSize(Math.floor(viewportWidth * 0.8), 720, Math.floor(viewportWidth * 0.96))
+  pdfPreviewHeight.value = clampSize(Math.floor(viewportHeight * 0.74), 480, Math.floor(viewportHeight * 0.86))
+}
+
+function stopPdfResizeTracking() {
+  if (stopPdfResize) {
+    stopPdfResize()
+    stopPdfResize = null
+  }
+}
+
+function startPdfResize(event) {
+  event.preventDefault()
+  event.stopPropagation()
+  stopPdfResizeTracking()
+
+  const startX = event.clientX
+  const startY = event.clientY
+  const startWidth = pdfPreviewWidth.value
+  const startHeight = pdfPreviewHeight.value
+
+  const handleMove = (moveEvent) => {
+    const maxWidth = Math.floor((window.innerWidth || 1280) * 0.96)
+    const maxHeight = Math.floor((window.innerHeight || 900) * 0.86)
+    pdfPreviewWidth.value = clampSize(startWidth + moveEvent.clientX - startX, 640, maxWidth)
+    pdfPreviewHeight.value = clampSize(startHeight + moveEvent.clientY - startY, 420, maxHeight)
+  }
+
+  const handleUp = () => stopPdfResizeTracking()
+  window.addEventListener('pointermove', handleMove)
+  window.addEventListener('pointerup', handleUp, { once: true })
+  stopPdfResize = () => {
+    window.removeEventListener('pointermove', handleMove)
+    window.removeEventListener('pointerup', handleUp)
+  }
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function openAttachment(attachment) {
+  try {
+    const res = await opinionApi.downloadAttachment(attachment.id)
+    const blob = new Blob([res.data], {
+      type: res.headers?.['content-type'] || attachment.content_type || 'application/octet-stream',
+    })
+    const fileName = attachmentFileName(attachment)
+    if (isPdfAttachment(attachment, blob)) {
+      revokePdfPreviewUrl()
+      resetPdfPreviewSize()
+      pdfPreviewUrl.value = URL.createObjectURL(blob)
+      pdfPreviewTitle.value = fileName
+      pdfPreviewOpen.value = true
+      return
+    }
+    message.info('PDF 파일만 미리보기가 가능합니다. 다운로드 버튼을 사용하세요.')
+  } catch (error) {
+    message.error(error.response?.data?.detail || '첨부파일을 열 수 없습니다.')
+  }
+}
+
+async function downloadAttachment(attachment) {
+  try {
+    const res = await opinionApi.downloadAttachment(attachment.id)
+    const blob = new Blob([res.data], {
+      type: res.headers?.['content-type'] || attachment.content_type || 'application/octet-stream',
+    })
+    downloadBlob(blob, attachmentFileName(attachment))
+  } catch (error) {
+    message.error(error.response?.data?.detail || '첨부파일을 다운로드할 수 없습니다.')
+  }
+}
+
 onMounted(load)
+onBeforeUnmount(() => {
+  closePdfPreview()
+  stopPdfResizeTracking()
+})
 </script>
 
 <style scoped>
@@ -432,7 +636,21 @@ onMounted(load)
 .detail-meta { display: flex; align-items: center; gap: 8px; color: #8c8c8c; font-size: 12px; }
 .detail-content { white-space: pre-wrap; line-height: 1.7; color: #1a2535; }
 .answer-box { padding: 12px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; }
+.answer-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .attachment-list { border: 1px solid #f0f0f0; border-radius: 8px; }
+.attachment-link { height: auto; padding: 0; text-align: left; white-space: normal; }
+.pdf-preview-shell { position: relative; width: 100%; min-width: 0; min-height: 420px; overflow: hidden; }
+.pdf-preview-frame { width: 100%; height: 100%; border: 0; display: block; }
+.pdf-preview-resizer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 45%, #bfbfbf 45%, #bfbfbf 55%, transparent 55%),
+    linear-gradient(135deg, transparent 62%, #8c8c8c 62%, #8c8c8c 72%, transparent 72%);
+}
 .drawer-footer { display: none; }
 .detail-footer { display: flex; justify-content: flex-end; }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }

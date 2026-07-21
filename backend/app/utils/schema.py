@@ -125,6 +125,7 @@ EMPLOYEE_COLUMNS = {
 
 USER_COLUMNS = {
     "employee_code": "VARCHAR(20)",
+    "labor_type": "VARCHAR(20) DEFAULT '원가'",
 }
 
 
@@ -144,6 +145,7 @@ DEPARTMENT_COLUMNS = {
 
 
 TIMESHEET_ENTRY_COLUMNS = {
+    "project_source": "VARCHAR(20) DEFAULT '공통'",
     "spg": "VARCHAR(20)",
     "labor_type": "VARCHAR(20)",
 }
@@ -195,6 +197,23 @@ PROJECT_PLAN_COLUMNS = {
 
 PROJECT_COLUMNS = {
     "excel_data_json": "TEXT",
+    "pm_employee_code": "VARCHAR(20)",
+    "contract_material_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "contract_labor_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_domestic_material_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_overseas_material_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_outsourcing_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_labor_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_expense_cost": "NUMERIC(18, 2) DEFAULT 0",
+    "sales_indirect_cost": "NUMERIC(18, 2) DEFAULT 0",
+}
+
+MANAGEMENT_SALES_BUSINESS_PLAN_COLUMNS = {
+    "row_key": "VARCHAR(120)",
+}
+
+PROJECT_COLUMN_TYPE_UPDATES = {
+    "region": "VARCHAR(300)",
 }
 
 MASTER_INDEXES = {
@@ -240,6 +259,34 @@ def _ensure_indexes(engine, index_map):
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns})"))
 
 
+def ensure_security_tables(engine):
+    id_ddl = "SERIAL PRIMARY KEY"
+    created_at_ddl = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+    if engine.dialect.name == "sqlite":
+        id_ddl = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        created_at_ddl = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id {id_ddl},
+                name VARCHAR(100) NOT NULL,
+                token_hash VARCHAR(64) NOT NULL UNIQUE,
+                token_prefix VARCHAR(20) NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                scopes JSON,
+                expires_at TIMESTAMP,
+                last_used_at TIMESTAMP,
+                revoked_at TIMESTAMP,
+                created_by INTEGER REFERENCES users(id),
+                created_at {created_at_ddl}
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens (token_hash)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_prefix ON api_tokens (token_prefix)"))
+
+
 def ensure_master_columns(engine):
     _ensure_columns(engine, "users", USER_COLUMNS)
     _ensure_columns(engine, "user_registrations", USER_REGISTRATION_COLUMNS)
@@ -256,6 +303,50 @@ def ensure_accounting_columns(engine):
     _ensure_columns(engine, "accounts_payable", ACCOUNTS_PAYABLE_COLUMNS)
 
 
+def ensure_management_columns(engine):
+    table_name = "management_sales_business_plan_rows"
+    inspector = inspect(engine)
+    if table_name not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns(table_name)}
+    _ensure_columns(engine, table_name, MANAGEMENT_SALES_BUSINESS_PLAN_COLUMNS)
+    with engine.begin() as conn:
+        if "business_type" in existing:
+            conn.execute(text(f"""
+                UPDATE {table_name}
+                SET row_key = business_type
+                WHERE (row_key IS NULL OR row_key = '')
+                  AND business_type IS NOT NULL
+                  AND business_type <> ''
+            """))
+        legacy_expr = "CONCAT('legacy:', id)" if engine.dialect.name == "postgresql" else "'legacy:' || id"
+        conn.execute(text(f"""
+            UPDATE {table_name}
+            SET row_key = {legacy_expr}
+            WHERE row_key IS NULL OR row_key = ''
+        """))
+        if engine.dialect.name == "postgresql":
+            conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN row_key SET NOT NULL"))
+            if "business_type" in existing:
+                conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN business_type DROP NOT NULL"))
+        conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS uq_management_sales_business_plan_rows_year_key ON {table_name} (plan_year, row_key)"))
+
+
+def ensure_project_column_types(engine):
+    if engine.dialect.name != "postgresql":
+        return
+    inspector = inspect(engine)
+    if "projects" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("projects")}
+    with engine.begin() as conn:
+        for column_name, ddl_type in PROJECT_COLUMN_TYPE_UPDATES.items():
+            if column_name in existing:
+                conn.execute(text(f"ALTER TABLE projects ALTER COLUMN {column_name} TYPE {ddl_type}"))
+
+
 def ensure_execution_columns(engine):
     _ensure_columns(engine, "projects", PROJECT_COLUMNS)
     _ensure_columns(engine, "project_plans", PROJECT_PLAN_COLUMNS)
+    ensure_project_column_types(engine)

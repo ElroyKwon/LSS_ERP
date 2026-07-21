@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }"
+               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
                row-key="id" size="middle" :scroll="{ x: 1280 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -63,7 +63,7 @@
       </a-table>
     </a-card>
 
-    <a-modal v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
+    <a-modal :mask-closable="false" v-model:open="drawerOpen" :title="editItem ? '청구 수정' : '청구 등록'"
               width="960" wrap-class-name="sales-billing-modal" :body-style="{ paddingBottom:'72px' }"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef">
@@ -148,7 +148,7 @@
               </a-button>
             </div>
             <a-table :columns="relatedPurchaseColumns" :data-source="form.related_purchases"
-                     row-key="uid" size="small" :pagination="{ pageSize: 20, showSizeChanger: true }" class="related-purchase-table"
+                     row-key="uid" size="small" :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" class="related-purchase-table"
         :sticky="{ offsetHeader: 56 }">
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'vendor_name'">

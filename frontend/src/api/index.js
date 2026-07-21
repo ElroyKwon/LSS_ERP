@@ -96,6 +96,7 @@ export const salesApi = {
   getEstimate: (id) => api.get(`/estimates/${id}`),
   createEstimate: (d) => api.post('/estimates', d),
   updateEstimate: (id, d) => api.put(`/estimates/${id}`, d),
+  deleteEstimate: (id) => api.delete(`/estimates/${id}`),
   getEstimateAttachments: (id) => api.get(`/estimates/${id}/attachments`),
   uploadEstimateAttachment: (id, formData) => api.post(`/estimates/${id}/attachments`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -189,10 +190,12 @@ export const opinionApi = {
   updateOpinion: (id, d) => api.put(`/opinions/${id}`, d),
   deleteOpinion: (id) => api.delete(`/opinions/${id}`),
   answerOpinion: (id, d) => api.put(`/opinions/${id}/answer`, d),
+  deleteAnswer: (id) => api.delete(`/opinions/${id}/answer`),
   uploadAttachment: (id, formData) => api.post(`/opinions/${id}/attachments`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 180000,
   }),
+  downloadAttachment: (id) => api.get(`/opinion-attachments/${id}/download`, { responseType: 'blob' }),
   deleteAttachment: (id) => api.delete(`/opinion-attachments/${id}`),
   getNotificationSettings: () => api.get('/opinion-notification-settings'),
   updateNotificationSetting: (userId, d) => api.put(`/opinion-notification-settings/${userId}`, d),
@@ -200,6 +203,8 @@ export const opinionApi = {
 
 // Timesheet
 export const timesheetApi = {
+  getEmployees: () => api.get('/timesheets/employees'),
+  searchCommonProjects: (p) => api.get('/timesheets/common-projects', { params: p }),
   getList:     (p) => api.get('/timesheets', { params: p }),
   getWeek:     (empId, weekStart) => api.get('/timesheets/week', { params: { employee_id: empId, week_start: weekStart } }),
   save:        (d) => api.post('/timesheets', d),
@@ -233,4 +238,12 @@ export const managementApi = {
 // Dashboard
 export const forecastApi = {
   getDashboard: (p) => api.get('/dashboard', { params: p }),
+}
+
+// AI Assistant
+export const aiApi = {
+  getTools: () => api.get('/ai/tools'),
+  chat: (d) => api.post('/ai/chat', d),
+  listMcpTools: () => api.get('/mcp/tools'),
+  callMcp: (d) => api.post('/mcp', d),
 }

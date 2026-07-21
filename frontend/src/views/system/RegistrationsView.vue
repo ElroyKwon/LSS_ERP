@@ -65,7 +65,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }"
+               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
                row-key="id" size="middle" :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -91,7 +91,7 @@
     </a-card>
 
     <!-- 거절 사유 모달 -->
-    <a-modal v-model:open="rejectOpen" title="가입 신청 거절" width="440px"
+    <a-modal :mask-closable="false" v-model:open="rejectOpen" title="가입 신청 거절" width="440px"
              @ok="handleReject" :confirm-loading="rejecting" ok-text="거절 처리" :ok-button-props="{ danger: true }" cancel-text="취소">
       <div style="margin: 16px 0 8px">
         <strong>{{ rejectTarget?.name }}</strong> ({{ rejectTarget?.username }}) 님의 가입 신청을 거절합니다.
@@ -105,7 +105,7 @@
     </a-modal>
 
     <!-- 가입 승인 권한 지정 모달 -->
-    <a-modal v-model:open="approveOpen" title="가입 승인" width="440px"
+    <a-modal :mask-closable="false" v-model:open="approveOpen" title="가입 승인" width="440px"
              @ok="handleApprove" :confirm-loading="approving"
              ok-text="권한 부여 후 승인" cancel-text="취소">
       <div style="margin: 16px 0 12px">
@@ -114,6 +114,9 @@
       <a-form layout="vertical">
         <a-form-item label="권한" required>
           <a-select v-model:value="approveRole" :options="roleOptions" placeholder="권한 선택" />
+        </a-form-item>
+        <a-form-item label="원가구분" required>
+          <a-select v-model:value="approveLaborType" :options="laborTypeOptions" placeholder="원가구분 선택" />
         </a-form-item>
         <a-alert
           v-if="approveTarget?.department"
@@ -158,9 +161,14 @@ const approveOpen = ref(false)
 const approving = ref(false)
 const approveTarget = ref(null)
 const approveRole = ref('sales_staff')
+const approveLaborType = ref('원가')
 const approveDepartmentId = ref(null)
 const departments = ref([])
 const roleOptions = ROLE_OPTIONS.map(({ value, label }) => ({ value, label }))
+const laborTypeOptions = [
+  { value: '원가', label: '원가' },
+  { value: '판관', label: '판관' },
+]
 const departmentOptions = computed(() =>
   departments.value.map(dept => ({
     value: dept.id,
@@ -202,6 +210,7 @@ async function load() {
 function openApproveModal(record) {
   approveTarget.value = record
   approveRole.value = 'sales_staff'
+  approveLaborType.value = '원가'
   const department = departments.value.find(dept => dept.name === record.department || dept.path_name === record.department)
   approveDepartmentId.value = department?.id || null
   approveOpen.value = true
@@ -220,6 +229,7 @@ async function handleApprove() {
   try {
     await authApi.approveRegistration(approveTarget.value.id, {
       role: approveRole.value,
+      labor_type: approveLaborType.value,
       department_id: approveDepartmentId.value,
     })
     message.success(`${approveTarget.value.name} 님의 가입이 승인되었습니다.`)

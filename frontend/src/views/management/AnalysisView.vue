@@ -45,7 +45,7 @@
         :columns="tableColumns(tab)"
         :data-source="tableRows(tab)"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: tableScrollXValue(tab), y: 620 }"
         row-key="row_key"
         size="small"
@@ -97,7 +97,7 @@
         :columns="summaryColumns"
         :data-source="businessDivisionSummaryRows"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: summaryTableScrollX }"
         row-key="business_division"
         size="small"
@@ -121,7 +121,7 @@
         :columns="businessGroupSummaryColumns"
         :data-source="businessGroupSummaryRows"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: businessGroupSummaryTableScrollX }"
         row-key="business_category"
         size="small"
@@ -287,7 +287,12 @@ const businessDivisionOptions = computed(() => {
     .filter(dept => ['office', 'business', 'division'].includes(dept.dept_type))
     .map(dept => dept.name)
     .filter(name => name && !EXCLUDED_SUMMARY_DIVISIONS.has(name))
-  return [...new Set(topLevel)]
+  if (topLevel.length) return [...new Set(topLevel)]
+
+  const rowDivisions = rows.value
+    .map(row => row.business_division)
+    .filter(name => name && !EXCLUDED_SUMMARY_DIVISIONS.has(name))
+  return [...new Set(rowDivisions)]
 })
 
 const businessCategoryOptions = computed(() => {
@@ -482,24 +487,56 @@ function markDirty() {
   dirty.value = true
 }
 
+function apiErrorMessage(error, fallback) {
+  return error?.response?.data?.detail || fallback || error?.message
+}
+
 async function load() {
   loading.value = true
   try {
-    const [res, revenueRes, deptRes, categoryRes] = await Promise.all([
+    const [salesResult, revenueResult] = await Promise.allSettled([
       managementApi.getSalesPlanAnalysis(selectedYear.value, selectedMonthNo.value),
       managementApi.getRevenuePlanAnalysis(selectedYear.value, selectedMonthNo.value),
+    ])
+
+    if (salesResult.status === 'fulfilled') {
+      analysis.value = salesResult.value.data
+      rows.value = (salesResult.value.data?.rows || []).map(normalizeRow)
+    } else {
+      analysis.value = null
+      rows.value = []
+      message.error(apiErrorMessage(salesResult.reason, '경영분석(수주) 데이터를 불러오지 못했습니다.'))
+    }
+
+    if (revenueResult.status === 'fulfilled') {
+      revenueAnalysis.value = revenueResult.value.data
+      revenueRows.value = (revenueResult.value.data?.rows || []).map(normalizeRow)
+    } else {
+      revenueAnalysis.value = null
+      revenueRows.value = []
+      message.error(apiErrorMessage(revenueResult.reason, '경영분석(매출) 데이터를 불러오지 못했습니다.'))
+    }
+
+    const [deptResult, categoryResult] = await Promise.allSettled([
       masterApi.getDepartments({ org_year: selectedYear.value, include_inactive: false, tree: true }),
       executionApi.getProjectBusinessCategories(),
     ])
-    analysis.value = res.data
-    rows.value = (res.data?.rows || []).map(normalizeRow)
-    revenueAnalysis.value = revenueRes.data
-    revenueRows.value = (revenueRes.data?.rows || []).map(normalizeRow)
-    departments.value = deptRes.data || []
-    businessCategories.value = Array.isArray(categoryRes.data) ? categoryRes.data : []
+
+    if (deptResult.status === 'fulfilled') {
+      departments.value = deptResult.value.data || []
+    } else {
+      departments.value = []
+      message.warning(apiErrorMessage(deptResult.reason, '부서 정보를 불러오지 못해 경영분석 데이터 기준으로 요약합니다.'))
+    }
+
+    if (categoryResult.status === 'fulfilled') {
+      businessCategories.value = Array.isArray(categoryResult.value.data) ? categoryResult.value.data : []
+    } else {
+      businessCategories.value = []
+      message.warning(apiErrorMessage(categoryResult.reason, '사업구분 정보를 불러오지 못해 기본 항목으로 요약합니다.'))
+    }
+
     dirty.value = false
-  } catch (error) {
-    message.error(error.response?.data?.detail || '경영분석 데이터를 불러오지 못했습니다.')
   } finally {
     loading.value = false
   }

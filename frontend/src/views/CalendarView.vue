@@ -40,7 +40,7 @@
           </a-calendar>
         </a-card>	
 
-        <a-modal v-model:open="isCompanyDetailModalOpen" :title="`${selectedCompanyDate} 일정 상세`" :footer="null">
+        <a-modal :mask-closable="false" v-model:open="isCompanyDetailModalOpen" :title="`${selectedCompanyDate} 일정 상세`" :footer="null">
           <div style="margin-top: 16px;">
             <a-list item-layout="horizontal" :data-source="companyDetailList">
               <template #renderItem="{ item }">
@@ -133,7 +133,7 @@
           </a-calendar>
         </a-card>	
 
-        <a-modal v-model:open="isRefreshDetailModalOpen" :title="`${selectedRefreshDate} 휴가 상세`" :footer="null">
+        <a-modal :mask-closable="false" v-model:open="isRefreshDetailModalOpen" :title="`${selectedRefreshDate} 휴가 상세`" :footer="null">
           <div style="margin-top: 16px;">
             <a-list item-layout="horizontal" :data-source="refreshDetailList">
               <template #renderItem="{ item }">
@@ -203,6 +203,11 @@ import { useAuthStore } from '@/store/auth'
 
 const auth = useAuthStore()
 const activeTab = ref('company-calendar')
+
+function getScheduleErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail
+  return detail ? `${fallback} (${detail})` : fallback
+}
 
 // ══════════════════════════════════════════════════
 // 탭 1: 전사 월간 일정 데이터 및 로직
@@ -281,7 +286,7 @@ function handleCompanyPanelChange(value) {
 
 function getCompanyListData(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
-  const list = companySchedules.value.filter(item => {
+  const list = [...companySchedules.value, ...refreshSchedules.value].filter(item => {
     if (item.start_date && item.end_date) {
       return dateStr >= item.start_date && dateStr <= item.end_date
     }
@@ -318,7 +323,7 @@ async function loadCompanyCalendarData() {
     })
   } catch (error) {
     console.error('전사 일정 조회 실패:', error)
-    message.error('전사 월간 일정을 불러오지 못했습니다.')
+    message.error(getScheduleErrorMessage(error, '전사 월간 일정을 불러오지 못했습니다.'))
   }
 }
 
@@ -375,7 +380,7 @@ async function handleCompanySubmit() {
 function openCompanyDetailModal(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
   selectedCompanyDate.value = currentDate.format('YYYY년 MM월 DD일')
-  companyDetailList.value = companySchedules.value.filter(item => {
+  companyDetailList.value = [...companySchedules.value, ...refreshSchedules.value].filter(item => {
     if (item.start_date && item.end_date) {
       return dateStr >= item.start_date && dateStr <= item.end_date
     }
@@ -498,7 +503,7 @@ async function loadRefreshCalendarData() {
     })
   } catch (error) {
     console.error('휴가 일정 조회 실패:', error)
-    message.error('전사 휴가 일정을 불러오지 못했습니다.')
+    message.error(getScheduleErrorMessage(error, '전사 휴가 일정을 불러오지 못했습니다.'))
   }
 }
 

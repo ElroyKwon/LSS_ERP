@@ -131,7 +131,7 @@
       </a-row>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="drawerOpen"
       :title="editItem ? '부서 수정' : '부서 추가'"
       width="520"

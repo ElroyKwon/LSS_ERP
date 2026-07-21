@@ -65,7 +65,7 @@
         :columns="columns"
         :data-source="filteredItems"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         row-key="id"
         size="middle"
         :scroll="{ x: 2180 }"
@@ -102,7 +102,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="drawerOpen"
       :title="editItem ? '직원 수정' : '직원 등록'"
       width="560"

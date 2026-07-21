@@ -5,11 +5,16 @@ from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 import base64
 import hmac
+import re
+from datetime import datetime
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models.common import User
+from ..models.common import ApiToken, User
+from ..models.execution import Project
+from ..models.master import Employee
 from .permissions import can_access, is_public_api, resolve_api_permission
+from .auth import hash_api_token
 
 
 def _error(status_code: int, detail: str) -> JSONResponse:
@@ -63,11 +68,44 @@ def _current_user_from_request(request: Request) -> User | None:
         if user_id is None:
             return None
     except JWTError:
-        return None
+        db = SessionLocal()
+        try:
+            row = db.query(ApiToken).filter(ApiToken.token_hash == hash_api_token(token)).first()
+            if not row or row.revoked_at is not None:
+                return None
+            if row.expires_at is not None and row.expires_at < datetime.utcnow():
+                return None
+            return db.query(User).filter(User.id == row.user_id, User.is_active == True).first()
+        finally:
+            db.close()
 
     db = SessionLocal()
     try:
         return db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
+    finally:
+        db.close()
+
+
+def _is_project_pm_update_allowed(request: Request, user: User) -> bool:
+    if request.method.upper() != "PUT":
+        return False
+    match = re.fullmatch(r"/api/projects/(\d+)", request.url.path)
+    if not match:
+        return False
+
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == int(match.group(1))).first()
+        employee_code = (user.employee_code or "").strip()
+        if not project or not employee_code:
+            return False
+        if project.pm_employee_code:
+            return project.pm_employee_code == employee_code
+
+        if not project.pm_name:
+            return False
+        matches = db.query(Employee).filter(Employee.name == project.pm_name).all()
+        return len(matches) == 1 and matches[0].emp_code == employee_code
     finally:
         db.close()
 
@@ -88,6 +126,8 @@ async def enforce_api_permissions(request: Request, call_next):
         return _error(status.HTTP_401_UNAUTHORIZED, "인증 정보가 유효하지 않습니다.")
 
     if not can_access(user.role, permission.menu_path, permission.action):
+        if permission.menu_path == "/execution/projects" and _is_project_pm_update_allowed(request, user):
+            return await call_next(request)
         return _error(status.HTTP_403_FORBIDDEN, "해당 기능을 사용할 권한이 없습니다.")
 
     return await call_next(request)

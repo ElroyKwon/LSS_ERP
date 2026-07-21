@@ -19,6 +19,25 @@ router = APIRouter(prefix="/api", tags=["경영"])
 APPROVED_SALES_BILL_STATUS = "승인"
 
 CATEGORIES = ["매출목표", "재료비", "노무비", "외주비", "경비", "판관비", "기타"]
+PROJECT_STATUS_ALIASES = {
+    "진행": "진행중",
+    "진행 중": "진행중",
+    "종료": "완료",
+    "종료됨": "완료",
+    "완료됨": "완료",
+}
+
+
+def _normalize_project_status(value: Optional[str]) -> str:
+    status = str(value or "").strip()
+    return PROJECT_STATUS_ALIASES.get(status, status)
+
+
+def _project_status_filter_values(value: str) -> list[str]:
+    normalized = _normalize_project_status(value)
+    values = [normalized]
+    values.extend(alias for alias, status in PROJECT_STATUS_ALIASES.items() if status == normalized)
+    return values
 
 
 # ══════════════════════════════════════════════════════
@@ -159,13 +178,13 @@ def management_sales_plan_analysis(
     week1_rows = _analysis_source_map(db, week1_start)
     week4_rows = _analysis_source_map(db, week4_start)
     plan_rows = _business_plan_map(db, target_year)
-    row_keys = sorted(set(plan_rows.keys()) | set(week1_rows.keys()) | set(week4_rows.keys()))
+    row_keys = _combined_row_keys(plan_rows, week1_rows, week4_rows)
 
     result_rows = []
     for row_key in row_keys:
         source = week4_rows.get(row_key) or week1_rows.get(row_key) or plan_rows.get(row_key) or {}
         plan = plan_rows.get(row_key, {})
-        plan_months = plan.get("business_plan_months") or {}
+        plan_months = _safe_dict(plan.get("business_plan_months"))
         result_rows.append({
             "row_key": row_key,
             "business_division": source.get("business_division") or plan.get("business_division") or "",
@@ -178,9 +197,9 @@ def management_sales_plan_analysis(
             "domestic_overseas": source.get("domestic_overseas") or plan.get("domestic_overseas") or "",
             "special_relation": source.get("special_relation") or plan.get("special_relation") or "",
             "business_plan": {
-                "total": float(plan.get("business_plan_total") or 0),
+                "total": _safe_float(plan.get("business_plan_total")),
                 "months": {
-                    str(month_no): float(plan_months.get(str(month_no)) or 0)
+                    str(month_no): _safe_float(plan_months.get(str(month_no)))
                     for month_no in range(1, 13)
                 },
             },
@@ -254,13 +273,13 @@ def management_revenue_plan_analysis(
     sales_week4 = _analysis_source_map(db, week4_start)
     order_week1 = _project_revenue_source_map(db, target_year, week1_start)
     order_week4 = _project_revenue_source_map(db, target_year, week4_start)
-    row_keys = sorted(set(sales_week1.keys()) | set(sales_week4.keys()) | set(order_week1.keys()) | set(order_week4.keys()))
+    row_keys = _combined_row_keys(sales_week1, sales_week4, order_week1, order_week4)
 
     result_rows = []
     for row_key in row_keys:
         source = order_week4.get(row_key) or order_week1.get(row_key) or sales_week4.get(row_key) or sales_week1.get(row_key) or {}
         plan = _find_business_plan(plan_rows, source)
-        plan_months = plan.get("business_plan_months") or {}
+        plan_months = _safe_dict(plan.get("business_plan_months"))
         is_order = row_key.startswith("order:")
         result_rows.append({
             "row_key": row_key,
@@ -275,9 +294,9 @@ def management_revenue_plan_analysis(
             "domestic_overseas": source.get("domestic_overseas") or plan.get("domestic_overseas") or "",
             "special_relation": source.get("special_relation") or plan.get("special_relation") or "",
             "business_plan": {
-                "total": float(plan.get("business_plan_total") or 0),
+                "total": _safe_float(plan.get("business_plan_total")),
                 "months": {
-                    str(month_no): float(plan_months.get(str(month_no)) or 0)
+                    str(month_no): _safe_float(plan_months.get(str(month_no)))
                     for month_no in range(1, 13)
                 },
             },
@@ -321,7 +340,7 @@ def management_analysis(year: Optional[int] = None,
         monthly.append({"month": m, "revenue": float(rev), "orders": float(orders), "cost": float(cost)})
 
     # 프로젝트별 수익성
-    projects = db.query(Project).filter(Project.status == "진행중").all()
+    projects = db.query(Project).filter(Project.status.in_(_project_status_filter_values("진행중"))).all()
     proj_pl = []
     for p in projects:
         rev = float(db.query(sqlfunc.sum(SalesBill.bill_amount)).filter(
@@ -331,7 +350,7 @@ def management_analysis(year: Optional[int] = None,
         proj_pl.append({
             "id": p.id, "project_no": p.project_no, "project_name": p.project_name,
             "client_name": p.client_name, "contract_amount": float(p.contract_amount or 0),
-            "status": p.status, "pm_name": p.pm_name,
+            "status": _normalize_project_status(p.status), "pm_name": p.pm_name,
         })
 
     # YTD 요약
@@ -415,6 +434,25 @@ def _decode_json_dict(value: str) -> dict:
         return {}
 
 
+def _safe_float(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text or text in {"-", "—", "–"}:
+        return 0.0
+    for token in (",", " ", "₩", "원", "KRW", "krw"):
+        text = text.replace(token, "")
+    if text.endswith("%"):
+        text = text[:-1]
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
+
 def _sales_analysis_row_key(row: dict) -> str:
     if row.get("sales_no"):
         return str(row.get("sales_no"))
@@ -435,16 +473,33 @@ def _month_values(row: dict, prefix: str) -> dict:
     total = 0.0
     for month in range(1, 13):
         key = f"{prefix}_{month}월"
-        value = float(row.get(key) or 0)
+        value = _safe_float(row.get(key))
         values[str(month)] = value
         total += value
     return {"total": total, "months": values}
 
 
+def _normalize_row_key(value) -> str:
+    text = str(value or "").strip()
+    return text if text and text.lower() != "none" else ""
+
+
+def _safe_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _combined_row_keys(*maps: dict) -> List[str]:
+    keys = set()
+    for item in maps:
+        keys.update(_normalize_row_key(key) for key in item.keys())
+    return sorted((key for key in keys if key), key=str)
+
+
 def _plan_row_dict(row: ManagementSalesBusinessPlanRow) -> dict:
     data = _decode_json_dict(row.data_json)
-    data["row_key"] = row.row_key
+    data["row_key"] = _normalize_row_key(row.row_key)
     data["plan_year"] = row.plan_year
+    data["business_plan_months"] = _safe_dict(data.get("business_plan_months"))
     return data
 
 
@@ -452,7 +507,12 @@ def _business_plan_map(db: Session, plan_year: int) -> dict:
     rows = db.query(ManagementSalesBusinessPlanRow).filter(
         ManagementSalesBusinessPlanRow.plan_year == plan_year
     ).all()
-    return {row.row_key: _plan_row_dict(row) for row in rows}
+    result = {}
+    for row in rows:
+        row_key = _normalize_row_key(row.row_key)
+        if row_key:
+            result[row_key] = _plan_row_dict(row)
+    return result
 
 
 def _analysis_source_map(db: Session, week_start: date) -> dict:
@@ -530,7 +590,7 @@ def _plan_data_month_values(row: dict, year: int) -> dict:
     year_data = (row.get("planData") or {}).get(str(year)) or (row.get("planData") or {}).get(year) or {}
     for month in range(1, 13):
         month_data = year_data.get(str(month)) or year_data.get(month) or {}
-        value = float(month_data.get("revenue_plan") or 0)
+        value = _safe_float(month_data.get("revenue_plan"))
         values[str(month)] = value
         total += value
     return {"total": total, "months": values}

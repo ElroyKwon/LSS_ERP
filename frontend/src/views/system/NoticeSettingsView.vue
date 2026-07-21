@@ -76,7 +76,7 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <a-modal :mask-closable="false"
       v-model:open="drawerOpen"
       :title="editingId ? '공지사항 수정' : '공지사항 등록'"
       width="620px"

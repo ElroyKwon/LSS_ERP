@@ -51,7 +51,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }" row-key="id" size="middle"
+               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" row-key="id" size="middle"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['labor_rate','overhead_rate','profit_rate'].includes(column.key)">
@@ -65,7 +65,7 @@
     </a-card>
 
     <!-- 등록/수정 모달 -->
-    <a-modal v-model:open="modalOpen" :title="editItem ? '비율 수정' : '비율 신규 등록'"
+    <a-modal :mask-closable="false" v-model:open="modalOpen" :title="editItem ? '비율 수정' : '비율 신규 등록'"
              width="440px" @ok="handleSave" :confirm-loading="saving" ok-text="저장" cancel-text="취소">
       <a-form :model="form" layout="vertical" ref="formRef" style="margin-top:8px">
         <a-row :gutter="16">

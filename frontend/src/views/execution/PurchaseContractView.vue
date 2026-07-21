@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ pageSize: 20, showSizeChanger: true }"
+               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
                row-key="id" size="middle" :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -56,7 +56,7 @@
       </a-table>
     </a-card>
 
-    <a-modal v-model:open="drawerOpen" :title="editItem ? '구매 발주서 수정' : '구매 발주서 등록'"
+    <a-modal :mask-closable="false" v-model:open="drawerOpen" :title="editItem ? '구매 발주서 수정' : '구매 발주서 등록'"
               :width="945" wrap-class-name="purchase-contract-modal" :body-style="{ paddingBottom:'72px' }"
       centered>
       <a-form :model="form" layout="vertical" ref="formRef" class="order-form">

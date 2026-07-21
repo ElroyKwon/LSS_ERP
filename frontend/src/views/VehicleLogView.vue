@@ -56,7 +56,7 @@
           </template>
 
           <a-table :columns="logCols" :data-source="logs" :loading="logsLoading"
-                   :pagination="{ pageSize: 20, showSizeChanger: true }"
+                   :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
                    row-key="id" size="middle" :scroll="{ x: 1100 }"
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -108,7 +108,7 @@
             <a-card :bordered="false" class="dash-card" title="차량별 현황">
               <template #extra><span class="card-extra">{{ month }}월 기준</span></template>
               <a-table :columns="vehicleStatCols" :data-source="stats?.by_vehicle || []"
-                       :pagination="{ pageSize: 20, showSizeChanger: true }" size="small" row-key="plate_no"
+                       :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" size="small" row-key="plate_no"
         :sticky="{ offsetHeader: 56 }">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'distance'">
@@ -140,7 +140,7 @@
           </template>
 
           <a-table :columns="vehicleCols" :data-source="vehicles" :loading="vehiclesLoading"
-                   :pagination="{ pageSize: 20, showSizeChanger: true }" row-key="id" size="middle" :scroll="{ x: 1000 }"
+                   :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" row-key="id" size="middle" :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'insurance_exp'">

@@ -65,7 +65,7 @@
         :columns="columns"
         :data-source="filteredItems"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         row-key="id"
         size="middle"
         :scroll="{ x: 2180 }"

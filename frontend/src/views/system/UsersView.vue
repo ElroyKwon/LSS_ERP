@@ -64,7 +64,7 @@
             :columns="userColumns"
             :data-source="users"
             :loading="userLoading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
             row-key="id" size="middle" :scroll="{ x: 1290 }"
           
         :sticky="{ offsetHeader: 56 }">
@@ -113,7 +113,7 @@
             :columns="regColumns"
             :data-source="displayRegistrations"
             :loading="regLoading"
-            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
             row-key="id" size="middle" :scroll="{ x: 1160 }"
           
         :sticky="{ offsetHeader: 56 }">

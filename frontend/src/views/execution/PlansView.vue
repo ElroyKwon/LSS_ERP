@@ -119,7 +119,7 @@
           :columns="getPlanColumns(section.key)"
           :data-source="section.rows"
           :loading="planLoading"
-          :pagination="{ pageSize: 20, showSizeChanger: true }"
+          :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
           row-key="key"
           size="small"
           :scroll="{ x: tableScrollX }"

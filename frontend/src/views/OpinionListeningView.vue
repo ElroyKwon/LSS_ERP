@@ -56,7 +56,7 @@
         :columns="visibleColumns"
         :data-source="opinions"
         :loading="loading"
-        :pagination="{ pageSize: 20, showSizeChanger: true }"
+        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
         :scroll="{ x: 1120 }"
         :sticky="{ offsetHeader: 56 }"
         row-key="id"

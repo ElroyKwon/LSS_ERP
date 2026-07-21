@@ -197,9 +197,9 @@ def management_sales_plan_analysis(
             "domestic_overseas": source.get("domestic_overseas") or plan.get("domestic_overseas") or "",
             "special_relation": source.get("special_relation") or plan.get("special_relation") or "",
             "business_plan": {
-                "total": float(plan.get("business_plan_total") or 0),
+                "total": _safe_float(plan.get("business_plan_total")),
                 "months": {
-                    str(month_no): float(plan_months.get(str(month_no)) or 0)
+                    str(month_no): _safe_float(plan_months.get(str(month_no)))
                     for month_no in range(1, 13)
                 },
             },
@@ -294,9 +294,9 @@ def management_revenue_plan_analysis(
             "domestic_overseas": source.get("domestic_overseas") or plan.get("domestic_overseas") or "",
             "special_relation": source.get("special_relation") or plan.get("special_relation") or "",
             "business_plan": {
-                "total": float(plan.get("business_plan_total") or 0),
+                "total": _safe_float(plan.get("business_plan_total")),
                 "months": {
-                    str(month_no): float(plan_months.get(str(month_no)) or 0)
+                    str(month_no): _safe_float(plan_months.get(str(month_no)))
                     for month_no in range(1, 13)
                 },
             },
@@ -434,6 +434,25 @@ def _decode_json_dict(value: str) -> dict:
         return {}
 
 
+def _safe_float(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text or text in {"-", "—", "–"}:
+        return 0.0
+    for token in (",", " ", "₩", "원", "KRW", "krw"):
+        text = text.replace(token, "")
+    if text.endswith("%"):
+        text = text[:-1]
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
+
 def _sales_analysis_row_key(row: dict) -> str:
     if row.get("sales_no"):
         return str(row.get("sales_no"))
@@ -454,7 +473,7 @@ def _month_values(row: dict, prefix: str) -> dict:
     total = 0.0
     for month in range(1, 13):
         key = f"{prefix}_{month}월"
-        value = float(row.get(key) or 0)
+        value = _safe_float(row.get(key))
         values[str(month)] = value
         total += value
     return {"total": total, "months": values}
@@ -549,7 +568,7 @@ def _plan_data_month_values(row: dict, year: int) -> dict:
     year_data = (row.get("planData") or {}).get(str(year)) or (row.get("planData") or {}).get(year) or {}
     for month in range(1, 13):
         month_data = year_data.get(str(month)) or year_data.get(month) or {}
-        value = float(month_data.get("revenue_plan") or 0)
+        value = _safe_float(month_data.get("revenue_plan"))
         values[str(month)] = value
         total += value
     return {"total": total, "months": values}

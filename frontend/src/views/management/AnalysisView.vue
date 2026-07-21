@@ -488,7 +488,7 @@ function markDirty() {
 }
 
 function apiErrorMessage(error, fallback) {
-  return error?.response?.data?.detail || error?.message || fallback
+  return error?.response?.data?.detail || fallback || error?.message
 }
 
 async function load() {

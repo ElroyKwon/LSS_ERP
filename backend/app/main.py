@@ -18,6 +18,7 @@ from .utils.schema import (
     ensure_accounting_columns,
     ensure_execution_columns,
     ensure_master_columns,
+    ensure_management_columns,
     ensure_project_column_types,
     ensure_security_tables,
 )
@@ -33,6 +34,7 @@ if settings.AUTO_CREATE_SCHEMA:
     ensure_execution_columns(engine)
 ensure_security_tables(engine)
 ensure_project_column_types(engine)
+ensure_management_columns(engine)
 
 app = FastAPI(
     title=settings.APP_NAME,

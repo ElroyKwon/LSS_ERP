@@ -208,6 +208,10 @@ PROJECT_COLUMNS = {
     "sales_indirect_cost": "NUMERIC(18, 2) DEFAULT 0",
 }
 
+MANAGEMENT_SALES_BUSINESS_PLAN_COLUMNS = {
+    "row_key": "VARCHAR(120)",
+}
+
 PROJECT_COLUMN_TYPE_UPDATES = {
     "region": "VARCHAR(300)",
 }
@@ -297,6 +301,36 @@ def ensure_master_columns(engine):
 def ensure_accounting_columns(engine):
     _ensure_columns(engine, "accounts_receivable", ACCOUNTS_RECEIVABLE_COLUMNS)
     _ensure_columns(engine, "accounts_payable", ACCOUNTS_PAYABLE_COLUMNS)
+
+
+def ensure_management_columns(engine):
+    table_name = "management_sales_business_plan_rows"
+    inspector = inspect(engine)
+    if table_name not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns(table_name)}
+    _ensure_columns(engine, table_name, MANAGEMENT_SALES_BUSINESS_PLAN_COLUMNS)
+    with engine.begin() as conn:
+        if "business_type" in existing:
+            conn.execute(text(f"""
+                UPDATE {table_name}
+                SET row_key = business_type
+                WHERE (row_key IS NULL OR row_key = '')
+                  AND business_type IS NOT NULL
+                  AND business_type <> ''
+            """))
+        legacy_expr = "CONCAT('legacy:', id)" if engine.dialect.name == "postgresql" else "'legacy:' || id"
+        conn.execute(text(f"""
+            UPDATE {table_name}
+            SET row_key = {legacy_expr}
+            WHERE row_key IS NULL OR row_key = ''
+        """))
+        if engine.dialect.name == "postgresql":
+            conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN row_key SET NOT NULL"))
+            if "business_type" in existing:
+                conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN business_type DROP NOT NULL"))
+        conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS uq_management_sales_business_plan_rows_year_key ON {table_name} (plan_year, row_key)"))
 
 
 def ensure_project_column_types(engine):

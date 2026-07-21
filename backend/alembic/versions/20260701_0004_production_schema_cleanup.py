@@ -229,14 +229,14 @@ def upgrade():
         CREATE TABLE IF NOT EXISTS management_sales_business_plan_rows (
             id SERIAL PRIMARY KEY,
             plan_year INTEGER NOT NULL,
-            business_type VARCHAR(100) NOT NULL,
+            row_key VARCHAR(120) NOT NULL,
             data_json TEXT NOT NULL,
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         )
     """)
-    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_management_sales_business_plan_rows_year_type ON management_sales_business_plan_rows (plan_year, business_type)")
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_management_sales_business_plan_rows_year_key ON management_sales_business_plan_rows (plan_year, row_key)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_management_sales_business_plan_rows_id ON management_sales_business_plan_rows (id)")
 
 

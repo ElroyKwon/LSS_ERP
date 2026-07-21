@@ -178,13 +178,13 @@ def management_sales_plan_analysis(
     week1_rows = _analysis_source_map(db, week1_start)
     week4_rows = _analysis_source_map(db, week4_start)
     plan_rows = _business_plan_map(db, target_year)
-    row_keys = sorted(set(plan_rows.keys()) | set(week1_rows.keys()) | set(week4_rows.keys()))
+    row_keys = _combined_row_keys(plan_rows, week1_rows, week4_rows)
 
     result_rows = []
     for row_key in row_keys:
         source = week4_rows.get(row_key) or week1_rows.get(row_key) or plan_rows.get(row_key) or {}
         plan = plan_rows.get(row_key, {})
-        plan_months = plan.get("business_plan_months") or {}
+        plan_months = _safe_dict(plan.get("business_plan_months"))
         result_rows.append({
             "row_key": row_key,
             "business_division": source.get("business_division") or plan.get("business_division") or "",
@@ -273,13 +273,13 @@ def management_revenue_plan_analysis(
     sales_week4 = _analysis_source_map(db, week4_start)
     order_week1 = _project_revenue_source_map(db, target_year, week1_start)
     order_week4 = _project_revenue_source_map(db, target_year, week4_start)
-    row_keys = sorted(set(sales_week1.keys()) | set(sales_week4.keys()) | set(order_week1.keys()) | set(order_week4.keys()))
+    row_keys = _combined_row_keys(sales_week1, sales_week4, order_week1, order_week4)
 
     result_rows = []
     for row_key in row_keys:
         source = order_week4.get(row_key) or order_week1.get(row_key) or sales_week4.get(row_key) or sales_week1.get(row_key) or {}
         plan = _find_business_plan(plan_rows, source)
-        plan_months = plan.get("business_plan_months") or {}
+        plan_months = _safe_dict(plan.get("business_plan_months"))
         is_order = row_key.startswith("order:")
         result_rows.append({
             "row_key": row_key,
@@ -479,10 +479,27 @@ def _month_values(row: dict, prefix: str) -> dict:
     return {"total": total, "months": values}
 
 
+def _normalize_row_key(value) -> str:
+    text = str(value or "").strip()
+    return text if text and text.lower() != "none" else ""
+
+
+def _safe_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _combined_row_keys(*maps: dict) -> List[str]:
+    keys = set()
+    for item in maps:
+        keys.update(_normalize_row_key(key) for key in item.keys())
+    return sorted((key for key in keys if key), key=str)
+
+
 def _plan_row_dict(row: ManagementSalesBusinessPlanRow) -> dict:
     data = _decode_json_dict(row.data_json)
-    data["row_key"] = row.row_key
+    data["row_key"] = _normalize_row_key(row.row_key)
     data["plan_year"] = row.plan_year
+    data["business_plan_months"] = _safe_dict(data.get("business_plan_months"))
     return data
 
 
@@ -490,7 +507,12 @@ def _business_plan_map(db: Session, plan_year: int) -> dict:
     rows = db.query(ManagementSalesBusinessPlanRow).filter(
         ManagementSalesBusinessPlanRow.plan_year == plan_year
     ).all()
-    return {row.row_key: _plan_row_dict(row) for row in rows}
+    result = {}
+    for row in rows:
+        row_key = _normalize_row_key(row.row_key)
+        if row_key:
+            result[row_key] = _plan_row_dict(row)
+    return result
 
 
 def _analysis_source_map(db: Session, week_start: date) -> dict:

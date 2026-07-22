@@ -319,8 +319,8 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
     all_counts: dict[str, int] = {}
     for emp in employees:
         sheets = sheets_by_employee.get(emp.id, [])
-        status = "작성중" if sheets else "미작성"
         total_hours = sum(_num(sheet.total_hours) for sheet in sheets)
+        status = "작성중" if total_hours > 0 else "미작성"
         all_counts[status] = all_counts.get(status, 0) + 1
         if status_filter and status != status_filter:
             continue

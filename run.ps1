@@ -59,8 +59,14 @@ if (-not (Test-Path $PYTHON)) {
 Write-OK "venv OK"
 
 Write-Step "Checking packages..."
-& $PIP install -r (Join-Path $BACKEND "requirements.txt") -q --no-warn-script-location 2>$null
-if ($LASTEXITCODE -ne 0) { Write-Fail "pip failed"; Read-Host "Enter"; exit 1 }
+$pipLog = Join-Path $BASE ".pip-install.log"
+& $PYTHON -m pip install -r (Join-Path $BACKEND "requirements.txt") -q --no-warn-script-location *> $pipLog
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "pip failed"
+    if (Test-Path $pipLog) { Get-Content $pipLog -Tail 20 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray } }
+    Read-Host "Enter"; exit 1
+}
+Remove-Item $pipLog -Force -ErrorAction SilentlyContinue
 Write-OK "packages OK"
 
 if (-not (Test-Path (Join-Path $FRONTEND "node_modules"))) {
@@ -95,7 +101,7 @@ Write-Host ""
 
 try {
     Push-Location $BACKEND
-    & $UVICORN app.main:app --host 0.0.0.0 --port $PORT
+    & $PYTHON -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
     Kill-Port $PORT

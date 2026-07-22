@@ -1,3 +1,6 @@
+import asyncio
+from datetime import datetime, timedelta
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,9 +14,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .config import settings
-from .database import engine, Base
+from .database import engine, Base, SessionLocal
 from .models import *  # noqa: register all models
 from .utils.authorization import enforce_api_permissions
+from .services.holiday_sync import list_holidays, sync_holidays_for_year
 from .utils.schema import (
     ensure_accounting_columns,
     ensure_execution_columns,
@@ -73,9 +77,45 @@ app.include_router(holiday.router)
 app.include_router(schedule.router)
 app.include_router(ai.router)
 
+def _seconds_until_next_sunday(hour: int = 3) -> float:
+    now = datetime.now()
+    days_until_sunday = (6 - now.weekday()) % 7
+    target = now.replace(hour=hour, minute=0, second=0, microsecond=0) + timedelta(days=days_until_sunday)
+    if target <= now:
+        target += timedelta(days=7)
+    return max((target - now).total_seconds(), 60.0)
 
 
-# 프론트엔드 정적 파일 서빙
+async def _sync_holidays_if_empty(year: str) -> None:
+    db = SessionLocal()
+    try:
+        if not list_holidays(db, year):
+            await sync_holidays_for_year(db, year)
+    except Exception as exc:
+        print(f"怨듯쑕??珥덇린 ?숆린???ㅽ뙣({year}): {exc}")
+    finally:
+        db.close()
+
+
+async def _holiday_weekly_sync_loop() -> None:
+    while True:
+        await asyncio.sleep(_seconds_until_next_sunday())
+        year = datetime.now().strftime("%Y")
+        db = SessionLocal()
+        try:
+            await sync_holidays_for_year(db, year)
+        except Exception as exc:
+            print(f"怨듯쑕??二쇨컙 ?숆린???ㅽ뙣({year}): {exc}")
+        finally:
+            db.close()
+
+
+@app.on_event("startup")
+async def start_holiday_weekly_sync() -> None:
+    await _sync_holidays_if_empty(datetime.now().strftime("%Y"))
+    asyncio.create_task(_holiday_weekly_sync_loop())
+
+# ?袁⑥쨴?紐꾨퓦???類ㅼ읅 ???뵬 ??뺥뒅
 FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
 
 

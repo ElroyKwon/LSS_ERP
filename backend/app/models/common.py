@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -141,6 +141,25 @@ class OpinionNotificationSetting(Base):
 
     user = relationship("User", foreign_keys=[user_id])
 
+
+
+class Holiday(Base):
+    __tablename__ = "holidays"
+    __table_args__ = (
+        UniqueConstraint("year", "month", "day", name="uq_holidays_ymd"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(String(4), nullable=False, index=True)
+    month = Column(String(2), nullable=False, index=True)
+    day = Column(String(2), nullable=False, index=True)
+    content = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    @property
+    def date(self) -> str:
+        return f"{self.year}-{self.month}-{self.day}"
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

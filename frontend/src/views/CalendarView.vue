@@ -195,7 +195,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import axios from 'axios'
+import api from '@/api'
 import dayjs from 'dayjs'
 import { message } from 'ant-design-vue'
 import { LeftOutlined, RightOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -235,7 +235,7 @@ async function fetchCompanyHolidayFromServer(year) {
     return
   }
   try {
-    const response = await axios.get('/api/holiday', { params: { year } })
+    const response = await api.get('/holiday', { params: { year } })
     if (response.data && Array.isArray(response.data)) {
       companyHolidayCache.value[year] = response.data
       companyHoliday.value = response.data
@@ -286,7 +286,7 @@ function handleCompanyPanelChange(value) {
 
 function getCompanyListData(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
-  const list = [...companySchedules.value, ...refreshSchedules.value].filter(item => {
+  const list = companySchedules.value.filter(item => {
     if (item.start_date && item.end_date) {
       return dateStr >= item.start_date && dateStr <= item.end_date
     }
@@ -300,7 +300,7 @@ function getCompanyListData(currentDate) {
 
 async function loadCompanyCalendarData() {
   try {
-    const response = await axios.get('/api/schedules', { params: { category: 'company' } }) 
+    const response = await api.get('/schedules', { params: { category: 'company' } }) 
     const events = response.data || []
     companySchedules.value = events.map(item => {
       let timePrefix = ''
@@ -367,7 +367,7 @@ async function handleCompanySubmit() {
       payload.end_time = newCompanySchedule.value.rangeValue[1].format('YYYY-MM-DD HH:mm:ss')
     }
 
-    await axios.post('/api/schedules', payload)
+    await api.post('/schedules', payload)
     message.success('전사 일정 등록이 완료되었습니다.')
     isCompanyModalOpen.value = false
     loadCompanyCalendarData()
@@ -380,7 +380,7 @@ async function handleCompanySubmit() {
 function openCompanyDetailModal(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
   selectedCompanyDate.value = currentDate.format('YYYY년 MM월 DD일')
-  companyDetailList.value = [...companySchedules.value, ...refreshSchedules.value].filter(item => {
+  companyDetailList.value = companySchedules.value.filter(item => {
     if (item.start_date && item.end_date) {
       return dateStr >= item.start_date && dateStr <= item.end_date
     }
@@ -415,7 +415,7 @@ async function fetchRefreshHolidayFromServer(year) {
     return
   }
   try {
-    const response = await axios.get('/api/holiday', { params: { year } })
+    const response = await api.get('/holiday', { params: { year } })
     if (response.data && Array.isArray(response.data)) {
       refreshHolidayCache.value[year] = response.data
       refreshHoliday.value = response.data
@@ -480,7 +480,7 @@ function getRefreshListData(currentDate) {
 
 async function loadRefreshCalendarData() {
   try {
-    const response = await axios.get('/api/schedules', { params: { category: 'refresh' } }) 
+    const response = await api.get('/schedules', { params: { category: 'refresh' } }) 
     const events = response.data || []
     refreshSchedules.value = events.map(item => {
       let timePrefix = ''
@@ -547,7 +547,7 @@ async function handleRefreshSubmit() {
       payload.end_time = newRefreshSchedule.value.rangeValue[1].format('YYYY-MM-DD HH:mm:ss')
     }
 
-    await axios.post('/api/schedules', payload)
+    await api.post('/schedules', payload)
     message.success('전사 휴가 일정 등록이 완료되었습니다.')
     isRefreshModalOpen.value = false
     loadRefreshCalendarData()

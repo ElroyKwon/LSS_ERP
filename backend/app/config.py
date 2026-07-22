@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = ""
     SMTP_FROM_NAME: str = "LSS ERP"
     SMTP_ADMIN_EMAILS: str = ""
+    DATE_SERVICE_KEY: str | None = None
     DATE_SERVIECE_KEY: str | None = None
     google_calendar_key: Optional[str] = None
     GOOGLE_APPLICATION_CREDENTIALS: str | None = None
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
 
 
 
+    @property
+    def holiday_service_key(self) -> str | None:
+        return self.DATE_SERVICE_KEY or self.DATE_SERVIECE_KEY
     @property
     def origins(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

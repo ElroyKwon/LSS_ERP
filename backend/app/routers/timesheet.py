@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func as sqlfunc
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date, datetime, timedelta
 from ..database import get_db
-from ..models.timesheet import Timesheet, TimesheetEntry
+from ..models.timesheet import Timesheet, TimesheetEntry, TimesheetLaborAllocation
 from ..models.master import Employee, OverheadRate
 from ..models.common import Department, User
 from ..models.execution import Project
@@ -27,6 +28,8 @@ WORK_TYPES = [
 ]
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 PROJECT_SOURCES = {"실행", "영업", "공통"}
+TIMESHEET_ADMIN_ROLES = {"system_admin", "accounting_manager"}
+LABOR_ALLOCATION_CATEGORIES = ["급여", "상여", "퇴충"]
 
 
 def _week_of(d: date):
@@ -196,6 +199,62 @@ class RejectIn(BaseModel):
     reason: Optional[str] = None
 
 
+class LaborAllocationRowIn(BaseModel):
+    category: str
+    total_amount: Decimal = Decimal(0)
+    contract_amount: Decimal = Decimal(0)
+    other_amount: Decimal = Decimal(0)
+
+
+class LaborAllocationSaveIn(BaseModel):
+    year: int
+    month: int
+    rows: List[LaborAllocationRowIn] = []
+
+
+def _require_timesheet_admin(current) -> None:
+    if normalize_role(current.role) not in TIMESHEET_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="타임시트 관리자 기능을 사용할 권한이 없습니다.")
+
+
+def _month_bounds(year: int, month: int) -> tuple[date, date]:
+    if year < 2000 or year > 2100:
+        raise HTTPException(status_code=400, detail="연도는 2000~2100 사이여야 합니다.")
+    if month < 1 or month > 12:
+        raise HTTPException(status_code=400, detail="월은 1~12 사이여야 합니다.")
+    start = date(year, month, 1)
+    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return start, next_month - timedelta(days=1)
+
+
+def _allocation_dict(row: TimesheetLaborAllocation) -> dict:
+    return {
+        "category": row.category,
+        "total_amount": float(row.total_amount or 0),
+        "contract_amount": float(row.contract_amount or 0),
+        "other_amount": float(row.other_amount or 0),
+    }
+
+
+def _validate_labor_allocation_amounts(row: LaborAllocationRowIn) -> None:
+    if row.total_amount < 0 or row.contract_amount < 0 or row.other_amount < 0:
+        raise HTTPException(status_code=400, detail="인건비 배부 금액은 음수로 입력할 수 없습니다.")
+
+
+def _project_label(project: Project | None, entry: TimesheetEntry) -> str:
+    if project:
+        return " ".join(part for part in [project.project_no, project.project_name] if part) or project.project_name
+    return entry.project_name or "기타"
+
+
+def _sales_type(project: Project | None, source: str) -> str:
+    if source == "영업":
+        return "영업"
+    if source == "공통":
+        return "공통"
+    return project.contract_type if project and project.contract_type else "-"
+
+
 @router.get("/timesheets/employees")
 def list_timesheet_employees(db: Session = Depends(get_db), current=Depends(get_current_user)):
     allowed_ids = _allowed_employee_ids(db, current)
@@ -261,6 +320,180 @@ def search_common_timesheet_projects(
         for row in rows
         if row.project_name
     ]
+
+
+@router.get("/timesheets/admin-labor")
+def get_timesheet_admin_labor(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    _require_timesheet_admin(current)
+    month_start, month_end = _month_bounds(year, month)
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+
+    saved_allocations = {
+        row.category: _allocation_dict(row)
+        for row in db.query(TimesheetLaborAllocation)
+        .filter(
+            TimesheetLaborAllocation.allocation_year == year,
+            TimesheetLaborAllocation.allocation_month == month,
+        )
+        .all()
+    }
+    allocation_rows = []
+    for category in LABOR_ALLOCATION_CATEGORIES:
+        allocation_rows.append(
+            saved_allocations.get(
+                category,
+                {"category": category, "total_amount": 0, "contract_amount": 0, "other_amount": 0},
+            )
+        )
+    allocation_rows.append({
+        "category": "합계",
+        "total_amount": sum(float(row["total_amount"] or 0) for row in allocation_rows),
+        "contract_amount": sum(float(row["contract_amount"] or 0) for row in allocation_rows),
+        "other_amount": sum(float(row["other_amount"] or 0) for row in allocation_rows),
+    })
+
+    monthly_pools = {
+        row.allocation_month: float(row.total_amount or 0)
+        for row in db.query(
+            TimesheetLaborAllocation.allocation_month,
+            sqlfunc.sum(TimesheetLaborAllocation.total_amount).label("total_amount"),
+        )
+        .filter(TimesheetLaborAllocation.allocation_year == year)
+        .group_by(TimesheetLaborAllocation.allocation_month)
+        .all()
+    }
+
+    sheets = (
+        db.query(Timesheet)
+        .options(joinedload(Timesheet.entries).joinedload(TimesheetEntry.project))
+        .filter(Timesheet.week_start <= year_end, Timesheet.week_end >= year_start)
+        .all()
+    )
+
+    project_rows: dict[str, dict] = {}
+    total_cost_hours_by_month = {m: 0.0 for m in range(1, 13)}
+
+    for sheet in sheets:
+        for entry in sheet.entries:
+            source = entry.project_source or ("실행" if entry.project_id else "공통")
+            project_key = f"{source}::{entry.project_id or entry.project_name or '기타'}"
+            if project_key not in project_rows:
+                project = entry.project
+                project_rows[project_key] = {
+                    "key": project_key,
+                    "project": _project_label(project, entry),
+                    "monthly_cost_hours": 0.0,
+                    "monthly_admin_hours": 0.0,
+                    "cumulative_cost_hours": 0.0,
+                    "cumulative_admin_hours": 0.0,
+                    "sales_type": _sales_type(project, source),
+                    "status": project.status if project else "-",
+                    "labor_total_amount": 0.0,
+                    "monthly_labor": {m: 0.0 for m in range(1, 13)},
+                    "_cost_hours_by_month": {m: 0.0 for m in range(1, 13)},
+                }
+            row = project_rows[project_key]
+            labor_type = entry.labor_type if entry.labor_type in {"원가", "판관"} else "원가"
+
+            for index, day in enumerate(DAYS):
+                hours = float(getattr(entry, f"{day}_hours") or 0)
+                if hours <= 0:
+                    continue
+                work_date = sheet.week_start + timedelta(days=index)
+                if work_date.year != year:
+                    continue
+
+                work_month = work_date.month
+                if labor_type == "원가":
+                    row["_cost_hours_by_month"][work_month] += hours
+                    total_cost_hours_by_month[work_month] += hours
+
+                if month_start <= work_date <= month_end:
+                    if labor_type == "판관":
+                        row["monthly_admin_hours"] += hours
+                    else:
+                        row["monthly_cost_hours"] += hours
+                if year_start <= work_date <= month_end:
+                    if labor_type == "판관":
+                        row["cumulative_admin_hours"] += hours
+                    else:
+                        row["cumulative_cost_hours"] += hours
+
+    for row in project_rows.values():
+        for m in range(1, 13):
+            pool = monthly_pools.get(m, 0.0)
+            total_hours = total_cost_hours_by_month.get(m, 0.0)
+            hours = row["_cost_hours_by_month"].get(m, 0.0)
+            if pool > 0 and total_hours > 0 and hours > 0:
+                row["monthly_labor"][m] = round(pool * hours / total_hours)
+        row["labor_total_amount"] = sum(row["monthly_labor"][m] for m in range(1, month + 1))
+        row.pop("_cost_hours_by_month", None)
+
+    return {
+        "year": year,
+        "month": month,
+        "allocation_rows": allocation_rows,
+        "project_rows": sorted(
+            project_rows.values(),
+            key=lambda item: (item["project"] or ""),
+        ),
+    }
+
+
+@router.post("/timesheets/admin-labor")
+def save_timesheet_admin_labor(
+    data: LaborAllocationSaveIn,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    _require_timesheet_admin(current)
+    _month_bounds(data.year, data.month)
+    incoming = {
+        row.category: row
+        for row in data.rows
+        if row.category in LABOR_ALLOCATION_CATEGORIES
+    }
+    for row in incoming.values():
+        _validate_labor_allocation_amounts(row)
+
+    existing = {
+        row.category: row
+        for row in db.query(TimesheetLaborAllocation)
+        .filter(
+            TimesheetLaborAllocation.allocation_year == data.year,
+            TimesheetLaborAllocation.allocation_month == data.month,
+        )
+        .all()
+    }
+
+    for category in LABOR_ALLOCATION_CATEGORIES:
+        source = incoming.get(category)
+        if not source:
+            continue
+        row = existing.get(category)
+        if not row:
+            row = TimesheetLaborAllocation(
+                allocation_year=data.year,
+                allocation_month=data.month,
+                category=category,
+                created_by=current.id,
+            )
+            db.add(row)
+        row.total_amount = source.total_amount
+        row.contract_amount = source.contract_amount
+        row.other_amount = source.other_amount
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="인건비 배부 금액 저장 중 DB 오류가 발생했습니다.")
+    return get_timesheet_admin_labor(data.year, data.month, db, current)
 
 
 # ── 주간 타임시트 목록 ──────────────────────────────────────────

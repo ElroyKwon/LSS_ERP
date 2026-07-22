@@ -26,6 +26,7 @@ from .utils.schema import (
     ensure_management_columns,
     ensure_project_column_types,
     ensure_security_tables,
+    ensure_timesheet_admin_tables,
 )
 
 from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule, ai
@@ -39,6 +40,7 @@ if settings.AUTO_CREATE_SCHEMA:
     ensure_execution_columns(engine)
 ensure_security_tables(engine)
 ensure_calendar_schedule_tables(engine)
+ensure_timesheet_admin_tables(engine)
 ensure_project_column_types(engine)
 ensure_management_columns(engine)
 

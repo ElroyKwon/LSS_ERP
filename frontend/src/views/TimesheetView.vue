@@ -203,18 +203,6 @@
                       <span>프로젝트</span>
                       <span class="col-resizer" @mousedown.prevent="startColumnResize('project', $event)" />
                     </th>
-                    <th class="col-task resizable-th" :style="columnStyle('task')">
-                      <span>업무 내용</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('task', $event)" />
-                    </th>
-                    <th class="col-labor resizable-th" :style="columnStyle('labor')">
-                      <span>원가 구분</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('labor', $event)" />
-                    </th>
-                    <th class="col-type resizable-th" :style="columnStyle('type')">
-                      <span>작업유형</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('type', $event)" />
-                    </th>
                     <th v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
                       <div class="day-header">
@@ -229,9 +217,6 @@
                   <tr v-for="row in monthlyRows" :key="row.key">
                     <td class="col-source">{{ row.project_source || '공통' }}</td>
                     <td class="col-project text-left" :style="columnStyle('project')">{{ row.project_name || '기타' }}</td>
-                    <td class="col-task text-left" :style="columnStyle('task')">{{ row.notes || '-' }}</td>
-                    <td class="col-labor" :style="columnStyle('labor')">{{ row.labor_type }}</td>
-                    <td class="col-type" :style="columnStyle('type')">{{ displayWorkType(row.work_type) }}</td>
                     <td v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="row.days[d.day] > 0 ? 'num-active' : 'num-zero'">
@@ -241,12 +226,12 @@
                     <td class="col-total num-bold">{{ row.total }}</td>
                   </tr>
                   <tr v-if="monthlyRows.length === 0">
-                    <td :colspan="monthDays.length + 6" class="empty-row">
+                    <td :colspan="monthDays.length + 3" class="empty-row">
                       <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="해당 월의 타임시트 내용이 없습니다." />
                     </td>
                   </tr>
                   <tr class="total-row">
-                    <td colspan="5" class="total-label">일  계</td>
+                    <td colspan="2" class="total-label">일  계</td>
                     <td v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="monthlyDayTotal(d.day) > 0 ? 'num-active' : 'num-zero'">
@@ -315,6 +300,123 @@
             </template>
           </a-table>
         </a-card>
+      </a-tab-pane>
+
+      <!-- ═══════════════════════════════════════════════
+           탭 3: 타임시트 관리자
+      ═══════════════════════════════════════════════ -->
+      <a-tab-pane v-if="canAccessTimesheetAdminTab" key="admin" tab="타임시트(관리자)">
+
+        <div class="week-nav" style="margin-bottom:12px">
+          <a-button @click="prevAdminMonth"><LeftOutlined /></a-button>
+          <span class="week-period">{{ adminMonthLabel }}</span>
+          <a-button @click="nextAdminMonth"><RightOutlined /></a-button>
+          <a-button size="small" @click="goAdminThisMonth" style="margin-left:8px">이번 달</a-button>
+          <div style="flex:1" />
+          <a-button type="primary" :loading="adminLaborSaving" @click="saveAdminLabor">저장</a-button>
+        </div>
+
+        <a-spin :spinning="adminLaborLoading">
+          <a-card :bordered="false" class="table-card admin-labor-card">
+            <div class="admin-section-title">인건비 배부</div>
+            <div class="admin-table-wrap compact">
+              <table class="admin-labor-table">
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>누계 금액</th>
+                    <th>도급</th>
+                    <th>기타</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in editableAllocationRows" :key="row.category" :class="{ 'total-row': row.category === '합계' }">
+                    <td>{{ row.category }}</td>
+                    <td>
+                      <a-input-number
+                        v-if="row.category !== '합계'"
+                        v-model:value="row.total_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        style="width:100%"
+                      />
+                      <span v-else>{{ formatAmount(row.total_amount) }}</span>
+                    </td>
+                    <td>
+                      <a-input-number
+                        v-if="row.category !== '합계'"
+                        v-model:value="row.contract_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        style="width:100%"
+                      />
+                      <span v-else>{{ formatAmount(row.contract_amount) }}</span>
+                    </td>
+                    <td>
+                      <a-input-number
+                        v-if="row.category !== '합계'"
+                        v-model:value="row.other_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        style="width:100%"
+                      />
+                      <span v-else>{{ formatAmount(row.other_amount) }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </a-card>
+
+          <a-card :bordered="false" class="table-card admin-labor-card">
+            <div class="admin-section-title">프로젝트별 인건비</div>
+            <div class="admin-table-wrap">
+              <table class="admin-project-labor-table">
+                <thead>
+                  <tr>
+                    <th rowspan="2">프로젝트</th>
+                    <th colspan="2">월 투입시간</th>
+                    <th colspan="2">누적 투입시간</th>
+                    <th rowspan="2">매출 유형</th>
+                    <th rowspan="2">진행 상태</th>
+                    <th rowspan="2">인건비 합계</th>
+                    <th colspan="12">월별 인건비</th>
+                  </tr>
+                  <tr>
+                    <th>원가</th>
+                    <th>판관</th>
+                    <th>원가</th>
+                    <th>판관</th>
+                    <th v-for="month in MONTH_NUMBERS" :key="month">{{ month }}월</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in adminProjectRows" :key="row.key">
+                    <td class="text-left">{{ row.project }}</td>
+                    <td>{{ formatHours(row.monthly_cost_hours) }}</td>
+                    <td>{{ formatHours(row.monthly_admin_hours) }}</td>
+                    <td>{{ formatHours(row.cumulative_cost_hours) }}</td>
+                    <td>{{ formatHours(row.cumulative_admin_hours) }}</td>
+                    <td>{{ row.sales_type || '-' }}</td>
+                    <td>{{ row.status || '-' }}</td>
+                    <td class="amount-cell">{{ formatAmount(row.labor_total_amount) }}</td>
+                    <td v-for="month in MONTH_NUMBERS" :key="month" class="amount-cell">
+                      {{ formatAmount(row.monthly_labor?.[month] || 0) }}
+                    </td>
+                  </tr>
+                  <tr v-if="adminProjectRows.length === 0">
+                    <td :colspan="20" class="empty-row">
+                      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="인건비 계산 대상 타임시트가 없습니다." />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </a-card>
+        </a-spin>
       </a-tab-pane>
 
     </a-tabs>
@@ -393,15 +495,18 @@ import {
 } from '@ant-design/icons-vue'
 import { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
-import { canAccess } from '@/utils/permissions'
+import { canAccess, normalizeRole } from '@/utils/permissions'
 import { createClientPagination } from '@/utils/pagination'
 
 const clientPagination = createClientPagination()
 const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
 const canSelectTimesheetEmployee = canApproveTimesheet
+const canAccessTimesheetAdminTab = computed(() => ['system_admin', 'accounting_manager'].includes(normalizeRole(auth.user?.role)))
 const PROJECT_SOURCE_TYPES = ['실행', '영업', '공통']
 const LABOR_TYPES = ['판관', '원가']
+const MONTH_NUMBERS = Array.from({ length: 12 }, (_, index) => index + 1)
+const LABOR_ALLOCATION_CATEGORIES = ['급여', '상여', '퇴충']
 const TIMESHEET_COLUMN_WIDTH_KEY = 'lss_erp_timesheet_column_widths'
 const DEFAULT_COLUMN_WIDTHS = {
   project: 220,
@@ -485,6 +590,27 @@ function fmtDate(s, fmt = 'MM/DD') {
   if (fmt === 'MM/DD') return `${d.getMonth()+1}/${String(d.getDate()).padStart(2,'0')}`
   return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
 }
+
+function toNumber(value) {
+  const n = Number(String(value ?? '').replace(/,/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+function formatAmount(value) {
+  const amount = Math.round(toNumber(value))
+  return amount > 0 ? amount.toLocaleString() : '—'
+}
+
+function formatHours(value) {
+  const hours = toNumber(value)
+  return hours > 0 ? Number(hours.toFixed(1)).toLocaleString() : '—'
+}
+
+const amountFormatter = value => {
+  if (value === null || value === undefined || value === '') return ''
+  return `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+const amountParser = value => toNumber(value)
 
 // ══════════════════════════════════════════════════
 // 탭 1: 내 타임시트
@@ -631,7 +757,7 @@ const monthDays = computed(() => {
     }
   })
 })
-const monthTableMinWidth = computed(() => fixedMonthBaseWidth + variableColumnWidth.value + (monthDays.value.length * 54))
+const monthTableMinWidth = computed(() => fixedMonthBaseWidth + columnWidths.value.project + (monthDays.value.length * 54))
 function fmtDate2(s) {
   const d = new Date(s)
   return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
@@ -1081,18 +1207,12 @@ async function loadMonth() {
       ;(sheet.entries || []).forEach(entry => {
         const projectName = entry.project_name || '기타'
         const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
-        const laborType = entry.labor_type || '원가'
-        const workType = serializeWorkType(entry.work_type)
-        const taskNote = entry.notes || ''
-        const key = `${projectSource}::${entry.project_id || projectName}::${taskNote}::${laborType}::${workType}`
+        const key = `${projectSource}::${entry.project_id || projectName}`
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key,
             project_source: projectSource,
             project_name: projectName,
-            notes: taskNote,
-            labor_type: laborType,
-            work_type: displayWorkType(workType),
             days: {},
             total: 0,
           })
@@ -1146,10 +1266,24 @@ const summaryMonthStart = ref(firstDayOfMonth(todayStr))
 const summaryEmpId = ref(null)
 const summaryRows = ref([])
 const summaryLoading = ref(false)
+const adminLaborLoading = ref(false)
+const adminLaborSaving = ref(false)
+const adminMonthStart = ref(firstDayOfMonth(todayStr))
+const allocationRows = ref(LABOR_ALLOCATION_CATEGORIES.map(category => ({
+  category,
+  total_amount: 0,
+  contract_amount: 0,
+  other_amount: 0,
+})))
+const adminProjectRows = ref([])
 
 const summaryMonthEnd = computed(() => lastDayOfMonth(summaryMonthStart.value))
 const summaryMonthLabel = computed(() => {
   const d = new Date(summaryMonthStart.value)
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`
+})
+const adminMonthLabel = computed(() => {
+  const d = new Date(adminMonthStart.value)
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`
 })
 
@@ -1161,6 +1295,26 @@ const summaryStats = computed(() => {
     { key: 'project', label: '투입 프로젝트', value: new Set(all.map(row => row.project_name)).size, unit: '건', color: '#52c41a', cls: 'kpi-green' },
     { key: 'row', label: '통계 행', value: all.length, unit: '건', color: '#595959', cls: '' },
   ]
+})
+
+const editableAllocationRows = computed(() => {
+  const rowsByCategory = new Map(allocationRows.value.map(row => [row.category, row]))
+  const rows = LABOR_ALLOCATION_CATEGORIES.map(category => {
+    const row = rowsByCategory.get(category)
+    return row || { category, total_amount: 0, contract_amount: 0, other_amount: 0 }
+  })
+  rows.push({
+    category: '합계',
+    total_amount: rows.reduce((sum, row) => sum + toNumber(row.total_amount), 0),
+    contract_amount: rows.reduce((sum, row) => sum + toNumber(row.contract_amount), 0),
+    other_amount: rows.reduce((sum, row) => sum + toNumber(row.other_amount), 0),
+  })
+  return rows
+})
+
+const adminYearMonth = computed(() => {
+  const d = new Date(adminMonthStart.value)
+  return { year: d.getFullYear(), month: d.getMonth() + 1 }
 })
 
 const summaryCols = [
@@ -1188,6 +1342,21 @@ function nextSummaryMonth() {
 function goSummaryThisMonth() {
   summaryMonthStart.value = firstDayOfMonth(todayStr)
   loadSummary()
+}
+
+function prevAdminMonth() {
+  adminMonthStart.value = addMonths(adminMonthStart.value, -1)
+  loadAdminLabor()
+}
+
+function nextAdminMonth() {
+  adminMonthStart.value = addMonths(adminMonthStart.value, 1)
+  loadAdminLabor()
+}
+
+function goAdminThisMonth() {
+  adminMonthStart.value = firstDayOfMonth(todayStr)
+  loadAdminLabor()
 }
 
 async function loadSummary() {
@@ -1241,6 +1410,68 @@ async function loadSummary() {
   }
 }
 
+async function loadAdminLabor() {
+  if (!canAccessTimesheetAdminTab.value) return
+  adminLaborLoading.value = true
+  try {
+    const { year, month } = adminYearMonth.value
+    const res = await timesheetApi.getAdminLabor({ year, month })
+    const rows = res.data?.allocation_rows || []
+    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => {
+      const row = rows.find(item => item.category === category) || {}
+      return {
+        category,
+        total_amount: toNumber(row.total_amount),
+        contract_amount: toNumber(row.contract_amount),
+        other_amount: toNumber(row.other_amount),
+      }
+    })
+    adminProjectRows.value = res.data?.project_rows || []
+  } catch (e) {
+    adminProjectRows.value = []
+    message.error(e.response?.data?.detail || '타임시트 관리자 데이터를 불러오지 못했습니다.')
+  } finally {
+    adminLaborLoading.value = false
+  }
+}
+
+async function saveAdminLabor() {
+  if (!canAccessTimesheetAdminTab.value) return
+  adminLaborSaving.value = true
+  try {
+    const { year, month } = adminYearMonth.value
+    const res = await timesheetApi.saveAdminLabor({
+      year,
+      month,
+      rows: LABOR_ALLOCATION_CATEGORIES.map(category => {
+        const row = allocationRows.value.find(item => item.category === category) || {}
+        return {
+          category,
+          total_amount: toNumber(row.total_amount),
+          contract_amount: toNumber(row.contract_amount),
+          other_amount: toNumber(row.other_amount),
+        }
+      }),
+    })
+    const rows = res.data?.allocation_rows || []
+    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => {
+      const row = rows.find(item => item.category === category) || {}
+      return {
+        category,
+        total_amount: toNumber(row.total_amount),
+        contract_amount: toNumber(row.contract_amount),
+        other_amount: toNumber(row.other_amount),
+      }
+    })
+    adminProjectRows.value = res.data?.project_rows || []
+    message.success('인건비 배부 금액을 저장했습니다.')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '인건비 배부 금액 저장에 실패했습니다.')
+  } finally {
+    adminLaborSaving.value = false
+  }
+}
+
 async function loadBase() {
   const [emp, proj] = await Promise.all([
     timesheetApi.getEmployees(),
@@ -1256,7 +1487,7 @@ async function loadBase() {
 
 onMounted(async () => {
   await loadBase()
-  await Promise.all([loadWeek(), loadSummary()])
+  await Promise.all([loadWeek(), loadSummary(), loadAdminLabor()])
 })
 
 onBeforeUnmount(() => {
@@ -1380,6 +1611,70 @@ onBeforeUnmount(() => {
   color: #8c8c8c;
   font-size: 12px;
   line-height: 1.5;
+}
+.admin-labor-card {
+  margin-bottom: 12px;
+}
+.admin-section-title {
+  margin-bottom: 10px;
+  color: #1f1f1f;
+  font-size: 14px;
+  font-weight: 700;
+}
+.admin-table-wrap {
+  overflow-x: auto;
+}
+.admin-table-wrap.compact {
+  max-width: 720px;
+}
+.admin-labor-table,
+.admin-project-labor-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.admin-labor-table th,
+.admin-labor-table td,
+.admin-project-labor-table th,
+.admin-project-labor-table td {
+  border: 1px solid #f0f0f0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  text-align: center;
+}
+.admin-labor-table th,
+.admin-project-labor-table th {
+  background: #fafafa;
+  color: #1f1f1f;
+  font-weight: 700;
+}
+.admin-labor-table {
+  min-width: 640px;
+}
+.admin-labor-table th:first-child,
+.admin-labor-table td:first-child {
+  width: 90px;
+  font-weight: 700;
+}
+.admin-labor-table .total-row td {
+  background: #f7fbff;
+  font-weight: 700;
+}
+.admin-project-labor-table {
+  min-width: 1980px;
+}
+.admin-project-labor-table th:first-child,
+.admin-project-labor-table td:first-child {
+  width: 320px;
+}
+.admin-project-labor-table th:nth-child(n + 2),
+.admin-project-labor-table td:nth-child(n + 2) {
+  width: 90px;
+}
+.admin-project-labor-table .amount-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .ts-grid-wrap { overflow-x: auto; }
 

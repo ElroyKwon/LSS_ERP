@@ -339,6 +339,26 @@ def ensure_calendar_schedule_tables(engine):
     })
 
 
+def ensure_timesheet_admin_tables(engine):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS timesheet_labor_allocations (
+                id SERIAL PRIMARY KEY,
+                allocation_year INTEGER NOT NULL,
+                allocation_month INTEGER NOT NULL,
+                category VARCHAR(20) NOT NULL,
+                total_amount NUMERIC(18, 2) DEFAULT 0,
+                contract_amount NUMERIC(18, 2) DEFAULT 0,
+                other_amount NUMERIC(18, 2) DEFAULT 0,
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_timesheet_labor_allocations_month_category
+                    UNIQUE (allocation_year, allocation_month, category)
+            )
+        """))
+
+
 def ensure_master_columns(engine):
     _ensure_columns(engine, "users", USER_COLUMNS)
     _ensure_columns(engine, "user_registrations", USER_REGISTRATION_COLUMNS)

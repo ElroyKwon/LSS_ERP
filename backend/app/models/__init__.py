@@ -20,7 +20,7 @@ from .purchase import (PurchaseRequest, PurchaseRequestItem, PurchaseOrder, Purc
 from .accounting import (JournalEntry, JournalLine, AccountsReceivable, AccountsPayable,
                           Payment, PaymentItem, PeriodClosing)
 from .management import DeptBudget, ManagementSalesBusinessPlanRow
-from .timesheet import Timesheet, TimesheetEntry
+from .timesheet import Timesheet, TimesheetEntry, TimesheetLaborAllocation
 from .vehicle import Vehicle, VehicleLog
 
 __all__ = [
@@ -35,6 +35,6 @@ __all__ = [
     "JournalEntry", "JournalLine", "AccountsReceivable", "AccountsPayable",
     "Payment", "PaymentItem", "PeriodClosing",
     "DeptBudget", "ManagementSalesBusinessPlanRow",
-    "Timesheet", "TimesheetEntry",
+    "Timesheet", "TimesheetEntry", "TimesheetLaborAllocation",
     "Vehicle", "VehicleLog",
 ]

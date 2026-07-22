@@ -78,10 +78,43 @@ def _timesheet_period_args(normalized: str, filters: dict[str, Any]) -> dict[str
     return args
 
 
+def _period_args_from_message(normalized: str, filters: dict[str, Any]) -> dict[str, Any]:
+    args = _timesheet_period_args(normalized, filters)
+    if filters.get("period_start") and filters.get("period_end"):
+        args["period_start"] = filters["period_start"]
+        args["period_end"] = filters["period_end"]
+    elif filters.get("week_start") and not args.get("week_start"):
+        args["week_start"] = filters["week_start"]
+
+    if any(token in normalized for token in ["오늘", "일간", "하루"]):
+        args["unit"] = "day"
+    elif any(token in normalized for token in ["월간", "이번달", "금월", "이번월", "지난달", "전월"]):
+        args["unit"] = "month"
+    else:
+        args["unit"] = "week"
+    return args
+
+
 def _select_tool(message: str, context: ChatContext) -> tuple[str, dict[str, Any]]:
     text = message.lower()
     normalized = "".join(message.split())
     filters = context.filters or {}
+    if (
+        "전사일정" in message
+        or "일정" in message
+        or "외근" in message
+        or "출장" in message
+        or "휴가" in message
+        or context.route == "/calendar"
+    ):
+        args = _period_args_from_message(normalized, filters)
+        if "외근" in message:
+            args["schedule_type"] = "외근"
+        elif "출장" in message:
+            args["schedule_type"] = "출장"
+        elif "휴가" in message:
+            args["schedule_type"] = "휴가"
+        return "get_schedule_status", args
     if (
         "타임시트" in message
         or any(token in normalized for token in ["미제출", "미작성", "작성중", "작성자", "작성인원", "저장", "저장인원", "입력자", "입력인원", "제출자"])
@@ -181,6 +214,35 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
         suggestions = ["지난주 작성인원 보여줘", "지난주 미작성인원 보여줘", "이번달 타임시트 현황 보여줘"]
         return answer, cards, suggestions
 
+    if tool_name == "get_schedule_status":
+        counts = result.get("counts", {})
+        items = result.get("items", [])
+        period_start = result.get("period_start")
+        period_end = result.get("period_end")
+        period_unit = result.get("period_unit", "주")
+        type_filter = result.get("schedule_type_filter")
+        if type_filter:
+            answer = (
+                f"{period_start} ~ {period_end} {type_filter} 현황입니다. "
+                f"총 {result.get('total_count', 0)}건이 등록되어 있습니다."
+            )
+        else:
+            answer = (
+                f"{period_start} ~ {period_end} 전사일정 {period_unit} 현황입니다. "
+                f"외근 {counts.get('외근', 0)}건, 출장 {counts.get('출장', 0)}건, 휴가 {counts.get('휴가', 0)}건입니다."
+            )
+        if items:
+            answer += " 주요 일정은 " + ", ".join(
+                f"{item.get('user_name')} {item.get('kind')}({item.get('date')})" for item in items[:5]
+            ) + (" 외 추가 일정이 있습니다." if len(items) > 5 else "입니다.")
+        cards = [{
+            "title": "전사일정",
+            "metric": f"{result.get('total_count', 0)}건",
+            "description": f"외근 {counts.get('외근', 0)} · 출장 {counts.get('출장', 0)} · 휴가 {counts.get('휴가', 0)}",
+            "items": items,
+        }]
+        return answer, cards, ["이번 주 외근 현황 보여줘", "이번 주 출장 현황 보여줘", "이번 달 휴가 현황 보여줘"]
+
     if tool_name == "list_waiting_opinions":
         items = result.get("items", [])
         status_filter = result.get("status_filter", "waiting")
@@ -230,11 +292,13 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
     ts_rows = summary.get("timesheet", {}).get("rows", [])
     waiting = summary.get("opinions", {}).get("total_waiting", 0)
     answered = summary.get("opinions", {}).get("total_answered", 0)
+    schedule_counts = summary.get("schedules", {}).get("counts", {})
     active_projects = summary.get("projects", {}).get("active_count", 0)
     project_amount = summary.get("projects", {}).get("total_contract_amount", 0)
     answer = (
         "ERP 운영 요약입니다. "
         f"타임시트는 미작성 {ts_counts.get('미작성', 0)}명, 작성중 {ts_counts.get('작성중', 0)}명입니다. "
+        f"전사일정은 외근 {schedule_counts.get('외근', 0)}건, 출장 {schedule_counts.get('출장', 0)}건, 휴가 {schedule_counts.get('휴가', 0)}건입니다. "
         f"답변 대기 의견은 {waiting}건, 답변 완료 의견은 {answered}건입니다. "
         f"진행 중 프로젝트는 {active_projects}건이고 계약금액 합계는 {project_amount:,.0f}입니다."
     )
@@ -244,6 +308,16 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
             "metric": f"미작성 {ts_counts.get('미작성', 0)}명",
             "description": f"{summary.get('timesheet', {}).get('period_start')} ~ {summary.get('timesheet', {}).get('period_end')}",
             "items": ts_rows,
+        },
+        {
+            "title": "전사일정",
+            "metric": f"{summary.get('schedules', {}).get('total_count', 0)}건",
+            "description": (
+                f"외근 {schedule_counts.get('외근', 0)} · "
+                f"출장 {schedule_counts.get('출장', 0)} · "
+                f"휴가 {schedule_counts.get('휴가', 0)}"
+            ),
+            "items": summary.get("schedules", {}).get("items", []),
         },
         {
             "title": "프로젝트",
@@ -258,7 +332,7 @@ def _summarize_tool_result(tool_name: str, result: dict[str, Any]) -> tuple[str,
             "items": summary.get("opinions", {}).get("items", []),
         },
     ]
-    return answer, cards, ["지난주 미작성인원 보여줘", "답변 대기 의견 보여줘", "진행중 프로젝트 보여줘"]
+    return answer, cards, ["지난주 미작성인원 보여줘", "이번 주 전사일정 현황 보여줘", "답변 대기 의견 보여줘", "진행중 프로젝트 보여줘"]
 
 
 @router.get("/ai/tools")

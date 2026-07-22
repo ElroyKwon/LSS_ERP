@@ -38,10 +38,14 @@
         <div>
           <div class="chat-heading">ERP 운영 업무비서</div>
           <div class="chat-copy">
-            타임시트, 프로젝트, 의견 청취 데이터를 현재 로그인 권한 기준으로 조회합니다.
+            타임시트, 전사일정, 프로젝트, 의견 청취 데이터를 현재 로그인 권한 기준으로 조회합니다.
           </div>
         </div>
         <a-space>
+          <a-button size="small" @click="moveSummaryWeek(-1)">‹</a-button>
+          <a-tag color="blue">{{ summaryWeekLabel }}</a-tag>
+          <a-button size="small" @click="moveSummaryWeek(1)">›</a-button>
+          <a-button size="small" @click="goThisSummaryWeek">이번 주</a-button>
           <a-tag color="blue">조회 전용</a-tag>
           <a-button @click="resetChat">새 대화</a-button>
         </a-space>
@@ -70,7 +74,7 @@
                 </div>
                 <div class="result-card-desc">{{ card.description }}</div>
                 <div v-if="card.items?.length" class="result-items">
-                  <div v-for="(item, index) in card.items" :key="index" class="result-item">
+                  <div v-for="(item, index) in card.items" :key="index" :class="['result-item', resultItemClass(item)]">
                     {{ itemTitle(item) }}
                     <span>{{ itemSub(item) }}</span>
                   </div>
@@ -133,9 +137,10 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import {
   BarChartOutlined,
+  CalendarOutlined,
   ClockCircleOutlined,
   FolderOpenOutlined,
   MessageOutlined,
@@ -150,11 +155,13 @@ const chatBodyRef = ref(null)
 const draft = ref('')
 const loading = ref(false)
 const tools = ref([])
+const summaryWeekStart = ref(mondayOf(new Date()))
 let messageSeq = 1
 
 const presets = [
   { key: 'summary', label: '운영 요약', prompt: '이번 주 ERP 운영 요약해줘', icon: BarChartOutlined },
   { key: 'timesheet', label: '타임시트 미제출', prompt: '이번 주 미제출 타임시트 직원 알려줘', icon: ClockCircleOutlined },
+  { key: 'calendar', label: '전사일정 현황', prompt: '이번 주 전사일정 현황 보여줘', icon: CalendarOutlined },
   { key: 'opinion', label: '의견 답변 대기', prompt: '답변 대기 의견 청취 목록 보여줘', icon: MessageOutlined },
   { key: 'project', label: '프로젝트 검색', prompt: '최근 프로젝트 현황 검색해줘', icon: FolderOpenOutlined },
 ]
@@ -182,8 +189,40 @@ function scrollToBottom() {
   })
 }
 
+function formatLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function mondayOf(date) {
+  const next = new Date(date)
+  const day = next.getDay()
+  next.setDate(next.getDate() - day + (day === 0 ? -6 : 1))
+  return formatLocalDate(next)
+}
+
+function addDays(value, days) {
+  const date = new Date(value)
+  date.setDate(date.getDate() + days)
+  return formatLocalDate(date)
+}
+
+const summaryWeekLabel = computed(() => `${summaryWeekStart.value} ~ ${addDays(summaryWeekStart.value, 6)}`)
+
+function moveSummaryWeek(offset) {
+  summaryWeekStart.value = addDays(summaryWeekStart.value, offset * 7)
+}
+
+function goThisSummaryWeek() {
+  summaryWeekStart.value = mondayOf(new Date())
+}
+
 function itemTitle(item) {
-  return item.employee_name || item.title || item.project_name || item.project_no || '항목'
+  return item.employee_name || item.title || item.project_name || item.project_no || item.content || '항목'
+}
+
+function resultItemClass(item) {
+  if (item.employee_name && item.status === '미작성') return 'timesheet-missing-item'
+  return ''
 }
 
 function formatAmount(value) {
@@ -191,6 +230,10 @@ function formatAmount(value) {
 }
 
 function itemSub(item) {
+  if (item.schedule_type || item.kind) {
+    const period = item.end_date && item.end_date !== item.date ? `${item.date} ~ ${item.end_date}` : item.date
+    return `${item.schedule_type || '-'} · ${item.kind || '-'} · ${item.user_name || '-'} · ${period || '-'}`
+  }
   if (item.employee_name || item.total_hours !== undefined) return `${item.status || '-'} · ${item.total_hours || 0}h`
   if (item.project_name || item.project_no) {
     return `${item.status || '-'} · ${item.client_name || '-'} · PM ${item.pm_name || '-'} · ${formatAmount(item.contract_amount)}`
@@ -221,7 +264,9 @@ async function sendMessage() {
       context: {
         route: '/ai-assistant',
         menu: 'AI 업무비서',
-        filters: {},
+        filters: {
+          week_start: summaryWeekStart.value,
+        },
       },
       history: messages.value.map(row => ({ role: row.role === 'user' ? 'user' : 'assistant', content: row.content })),
     })
@@ -329,6 +374,13 @@ onMounted(loadTools)
 .result-items { border-top: 1px solid #f5f5f5; max-height: 360px; overflow-y: auto; }
 .result-item { padding: 7px 10px; font-size: 12px; border-bottom: 1px solid #f7f7f7; }
 .result-item span { display: block; color: #8c8c8c; margin-top: 2px; }
+.result-item.timesheet-missing-item {
+  background: rgba(255, 229, 153, 0.8);
+  border-left: 3px solid #f5b041;
+}
+.result-item.timesheet-missing-item span {
+  color: #7a5a14;
+}
 .suggestion-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .suggestion-row button {
   border: 1px solid #d9e7ff; background: #f5f9ff; color: #0958d9; border-radius: 999px;

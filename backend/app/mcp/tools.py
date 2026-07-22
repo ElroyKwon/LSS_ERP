@@ -7,7 +7,7 @@ from typing import Any, Callable
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from ..models.common import Department, OpinionPost, User
+from ..models.common import CalendarSchedule, Department, OpinionPost, User
 from ..models.execution import Project
 from ..models.master import Employee
 from ..models.timesheet import Timesheet
@@ -24,6 +24,20 @@ PROJECT_STATUS_ALIASES = {
     "완료됨": "완료",
 }
 PROJECT_STANDARD_STATUSES = {"미진행", "진행중", "완료"}
+COMPANY_SCHEDULE_KIND_BY_COLOR = {
+    "#52c41a": "외근",
+    "#722ed1": "출장",
+    "#fa8c16": "출장",
+}
+REFRESH_SCHEDULE_KIND_BY_COLOR = {
+    "#bae7ff": "연차",
+    "#13c2c2": "반차",
+    "#eb2f96": "반반차",
+    "#1890ff": "대체휴가",
+    "#bfbfbf": "하계휴가",
+    "#ff7a45": "병가",
+    "#d9d9d9": "기타",
+}
 
 
 def _today() -> date:
@@ -33,6 +47,15 @@ def _today() -> date:
 def _week_of(day: date) -> tuple[date, date]:
     monday = day - timedelta(days=day.weekday())
     return monday, monday + timedelta(days=6)
+
+
+def _month_of(day: date) -> tuple[date, date]:
+    start = day.replace(day=1)
+    if start.month == 12:
+        next_month = start.replace(year=start.year + 1, month=1)
+    else:
+        next_month = start.replace(month=start.month + 1)
+    return start, next_month - timedelta(days=1)
 
 
 def _parse_date(value: Any, default: date) -> date:
@@ -55,6 +78,24 @@ def _parse_optional_date(value: Any) -> date | None:
         except ValueError:
             return None
     return None
+
+
+def _period_from_args(args: dict[str, Any]) -> tuple[date, date, str]:
+    period_start = _parse_optional_date(args.get("period_start"))
+    period_end = _parse_optional_date(args.get("period_end"))
+    if period_start and period_end:
+        return period_start, period_end, "기간"
+
+    unit = str(args.get("unit") or "").strip().lower()
+    base_day = _parse_date(args.get("date") or args.get("week_start") or args.get("month"), _today())
+    if unit in {"day", "일", "daily"}:
+        return base_day, base_day, "일"
+    if unit in {"month", "월", "monthly"}:
+        start, end = _month_of(base_day)
+        return start, end, "월"
+
+    start, end = _week_of(base_day)
+    return start, end, "주"
 
 
 def _num(value: Any) -> float:
@@ -174,6 +215,41 @@ def list_tools() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "get_schedule_status",
+            "title": "전사일정 현황",
+            "description": "일/주/월 단위 외근, 출장, 휴가 현황을 DB 기준으로 집계합니다.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "unit": {
+                        "type": "string",
+                        "description": "day, week, month 중 하나입니다. 생략하면 week입니다.",
+                        "default": "week",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "조회 기준일(YYYY-MM-DD).",
+                    },
+                    "week_start": {
+                        "type": "string",
+                        "description": "조회할 주의 시작일(YYYY-MM-DD).",
+                    },
+                    "period_start": {
+                        "type": "string",
+                        "description": "조회 기간 시작일(YYYY-MM-DD).",
+                    },
+                    "period_end": {
+                        "type": "string",
+                        "description": "조회 기간 종료일(YYYY-MM-DD).",
+                    },
+                    "schedule_type": {
+                        "type": "string",
+                        "description": "외근, 출장, 휴가 중 하나로 필터링합니다.",
+                    },
+                },
+            },
+        },
+        {
             "name": "search_projects",
             "title": "프로젝트 검색",
             "description": "프로젝트 번호, 프로젝트명, 거래처명, PM명으로 프로젝트를 검색하고 상태/정렬 조건을 적용합니다.",
@@ -276,6 +352,114 @@ def get_timesheet_team_status(args: dict[str, Any], db: Session, current: User) 
         "status_filter": status_filter,
         "total_hours": round(total_hours, 2),
         "rows": rows,
+    }
+
+
+def _schedule_kind(row: CalendarSchedule) -> str:
+    if row.schedule_kind:
+        return row.schedule_kind
+    if row.category == "refresh":
+        return REFRESH_SCHEDULE_KIND_BY_COLOR.get(row.type, "휴가")
+    return COMPANY_SCHEDULE_KIND_BY_COLOR.get(row.type, "출장")
+
+
+def _schedule_bucket(row: CalendarSchedule) -> str:
+    if row.category == "refresh":
+        return "휴가"
+    kind = _schedule_kind(row)
+    return "외근" if kind == "외근" else "출장"
+
+
+def _schedule_dates(row: CalendarSchedule) -> tuple[date | None, date | None]:
+    start = row.date or (row.start_time.date() if row.start_time else None)
+    end = row.end_date or row.date or (row.end_time.date() if row.end_time else start)
+    return start, end
+
+
+def _overlap_days(start: date | None, end: date | None, period_start: date, period_end: date) -> int:
+    if not start:
+        return 0
+    actual_end = end or start
+    overlap_start = max(start, period_start)
+    overlap_end = min(actual_end, period_end)
+    if overlap_end < overlap_start:
+        return 0
+    return (overlap_end - overlap_start).days + 1
+
+
+def get_schedule_status(args: dict[str, Any], db: Session, current: User) -> dict[str, Any]:
+    period_start, period_end, period_unit = _period_from_args(args)
+    type_filter = str(args.get("schedule_type") or "").strip()
+
+    rows = db.query(CalendarSchedule).filter(
+        CalendarSchedule.date <= period_end,
+        func.coalesce(CalendarSchedule.end_date, CalendarSchedule.date) >= period_start,
+    ).order_by(
+        CalendarSchedule.date.asc().nullslast(),
+        CalendarSchedule.start_time.asc().nullslast(),
+        CalendarSchedule.user_name.asc(),
+        CalendarSchedule.id.asc(),
+    ).all()
+
+    counts = {"외근": 0, "출장": 0, "휴가": 0}
+    kinds: dict[str, int] = {}
+    users: dict[str, dict[str, Any]] = {}
+    daily: dict[str, dict[str, int]] = {}
+    items = []
+
+    for row in rows:
+        bucket = _schedule_bucket(row)
+        if type_filter and bucket != type_filter and _schedule_kind(row) != type_filter:
+            continue
+
+        start, end = _schedule_dates(row)
+        days = _overlap_days(start, end, period_start, period_end)
+        if days <= 0:
+            continue
+
+        kind = _schedule_kind(row)
+        counts[bucket] = counts.get(bucket, 0) + 1
+        kinds[kind] = kinds.get(kind, 0) + 1
+        user_name = row.user_name or "미확인"
+        user_summary = users.setdefault(user_name, {"user_name": user_name, "외근": 0, "출장": 0, "휴가": 0, "total": 0})
+        user_summary[bucket] = user_summary.get(bucket, 0) + 1
+        user_summary["total"] += 1
+
+        current_day = max(start or period_start, period_start)
+        last_day = min(end or current_day, period_end)
+        while current_day <= last_day:
+            day_key = str(current_day)
+            daily.setdefault(day_key, {"외근": 0, "출장": 0, "휴가": 0})
+            daily[day_key][bucket] += 1
+            current_day += timedelta(days=1)
+
+        items.append({
+            "id": row.id,
+            "category": row.category,
+            "schedule_type": bucket,
+            "kind": kind,
+            "content": row.content,
+            "user_name": user_name,
+            "date": str(start) if start else None,
+            "end_date": str(end) if end else None,
+            "days": days,
+            "start_time": row.start_time.isoformat() if row.start_time else None,
+            "end_time": row.end_time.isoformat() if row.end_time else None,
+            "timesheet_project_name": row.timesheet_project_name,
+            "timesheet_project_source": row.timesheet_project_source,
+        })
+
+    return {
+        "period_start": str(period_start),
+        "period_end": str(period_end),
+        "period_unit": period_unit,
+        "schedule_type_filter": type_filter or None,
+        "counts": counts,
+        "kind_counts": kinds,
+        "total_count": len(items),
+        "users": sorted(users.values(), key=lambda item: (-item["total"], item["user_name"])),
+        "daily": [{"date": key, **value} for key, value in sorted(daily.items())],
+        "items": items,
     }
 
 
@@ -396,6 +580,11 @@ def get_operational_summary(args: dict[str, Any], db: Session, current: User) ->
         "period_end": args.get("period_end"),
     }
     timesheet = get_timesheet_team_status(timesheet_args, db, current)
+    schedules = get_schedule_status({
+        "week_start": args.get("week_start"),
+        "period_start": args.get("period_start"),
+        "period_end": args.get("period_end"),
+    }, db, current)
     opinions = list_waiting_opinions({"status": "waiting"}, db, current)
     active_projects = db.query(func.count(Project.id)).filter(
         Project.status.in_(_project_status_filter_values("진행중"))
@@ -414,6 +603,7 @@ def get_operational_summary(args: dict[str, Any], db: Session, current: User) ->
             "rows": timesheet["rows"],
         },
         "opinions": opinions,
+        "schedules": schedules,
         "projects": {
             "active_count": active_projects,
             "total_count": project_summary["total_count"],
@@ -427,6 +617,7 @@ def get_operational_summary(args: dict[str, Any], db: Session, current: User) ->
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "get_operational_summary": get_operational_summary,
     "get_timesheet_team_status": get_timesheet_team_status,
+    "get_schedule_status": get_schedule_status,
     "search_projects": search_projects,
     "list_waiting_opinions": list_waiting_opinions,
 }

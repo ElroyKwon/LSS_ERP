@@ -374,10 +374,21 @@
           <a-card :bordered="false" class="table-card admin-labor-card">
             <div class="admin-section-title">프로젝트별 인건비</div>
             <div class="admin-table-wrap">
-              <table class="admin-project-labor-table">
+              <table class="admin-project-labor-table" :style="{ minWidth: `${adminProjectLaborTableMinWidth}px` }">
+                <colgroup>
+                  <col :style="columnStyle('adminProject')" />
+                  <col v-for="col in 4" :key="`admin-hours-${col}`" class="admin-hours-col" />
+                  <col class="admin-meta-col" />
+                  <col class="admin-meta-col" />
+                  <col class="admin-total-amount-col" />
+                  <col v-for="month in MONTH_NUMBERS" :key="`admin-month-${month}`" class="admin-month-amount-col" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th rowspan="2">프로젝트</th>
+                    <th rowspan="2" class="resizable-th" :style="columnStyle('adminProject')">
+                      <span>프로젝트</span>
+                      <span class="col-resizer" @mousedown.prevent="startColumnResize('adminProject', $event)" />
+                    </th>
                     <th colspan="2">월 투입시간</th>
                     <th colspan="2">누적 투입시간</th>
                     <th rowspan="2">매출 유형</th>
@@ -394,8 +405,8 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in adminProjectRows" :key="row.key">
-                    <td class="text-left">{{ row.project }}</td>
+                  <tr v-for="row in pagedAdminProjectRows" :key="row.key">
+                    <td class="admin-project-name" :style="columnStyle('adminProject')">{{ row.project }}</td>
                     <td>{{ formatHours(row.monthly_cost_hours) }}</td>
                     <td>{{ formatHours(row.monthly_admin_hours) }}</td>
                     <td>{{ formatHours(row.cumulative_cost_hours) }}</td>
@@ -414,6 +425,19 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div class="admin-project-pagination">
+              <span>총 {{ adminProjectRows.length }}건</span>
+              <a-pagination
+                size="small"
+                :current="adminProjectPagination.current"
+                :page-size="adminProjectPagination.pageSize"
+                :total="adminProjectRows.length"
+                :show-size-changer="true"
+                :page-size-options="PAGE_SIZE_OPTIONS"
+                @change="handleAdminProjectPaginationChange"
+                @show-size-change="handleAdminProjectPageSizeChange"
+              />
             </div>
           </a-card>
         </a-spin>
@@ -496,7 +520,7 @@ import {
 import { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { canAccess, normalizeRole } from '@/utils/permissions'
-import { createClientPagination } from '@/utils/pagination'
+import { PAGE_SIZE_OPTIONS, createClientPagination } from '@/utils/pagination'
 
 const clientPagination = createClientPagination()
 const auth = useAuthStore()
@@ -513,19 +537,27 @@ const DEFAULT_COLUMN_WIDTHS = {
   task: 180,
   labor: 90,
   type: 140,
+  adminProject: 192,
 }
 const MIN_COLUMN_WIDTHS = {
   project: 160,
   task: 120,
   labor: 86,
   type: 100,
+  adminProject: 140,
 }
 const MAX_COLUMN_WIDTHS = {
   project: 640,
   task: 520,
   labor: 180,
   type: 420,
+  adminProject: 520,
 }
+const TIMESHEET_GRID_COLUMN_KEYS = ['project', 'task', 'labor', 'type']
+const ADMIN_HOUR_COL_WIDTH = 76
+const ADMIN_META_COL_WIDTH = 84
+const ADMIN_TOTAL_COL_WIDTH = 132
+const ADMIN_MONTH_COL_WIDTH = 112
 const WORK_TYPE_GROUPS = [
   { title: '공통', children: ['연차', '교육', '행사', '기타'] },
   { title: '영업', children: ['설계', 'SHOP작업', '견적', '제안서', '미팅', '기타'] },
@@ -724,8 +756,17 @@ function stopColumnResize() {
 
 const fixedWeekWidth = 70 + (58 * 7) + 64 + 44
 const fixedMonthBaseWidth = 70 + 64
-const variableColumnWidth = computed(() => Object.values(columnWidths.value).reduce((sum, value) => sum + Number(value || 0), 0))
+const variableColumnWidth = computed(() =>
+  TIMESHEET_GRID_COLUMN_KEYS.reduce((sum, key) => sum + Number(columnWidths.value[key] || DEFAULT_COLUMN_WIDTHS[key] || 0), 0),
+)
 const weekTableMinWidth = computed(() => fixedWeekWidth + variableColumnWidth.value)
+const adminProjectLaborTableMinWidth = computed(() =>
+  (columnWidths.value.adminProject || DEFAULT_COLUMN_WIDTHS.adminProject)
+  + (ADMIN_HOUR_COL_WIDTH * 4)
+  + (ADMIN_META_COL_WIDTH * 2)
+  + ADMIN_TOTAL_COL_WIDTH
+  + (ADMIN_MONTH_COL_WIDTH * 12),
+)
 
 const weekEnd = computed(() => addDays(weekStart.value, 6))
 const weekDays = computed(() =>
@@ -1276,6 +1317,7 @@ const allocationRows = ref(LABOR_ALLOCATION_CATEGORIES.map(category => ({
   other_amount: 0,
 })))
 const adminProjectRows = ref([])
+const adminProjectPagination = ref({ current: 1, pageSize: 20 })
 
 const summaryMonthEnd = computed(() => lastDayOfMonth(summaryMonthStart.value))
 const summaryMonthLabel = computed(() => {
@@ -1315,6 +1357,13 @@ const editableAllocationRows = computed(() => {
 const adminYearMonth = computed(() => {
   const d = new Date(adminMonthStart.value)
   return { year: d.getFullYear(), month: d.getMonth() + 1 }
+})
+const pagedAdminProjectRows = computed(() => {
+  const pageSize = Number(adminProjectPagination.value.pageSize) || 20
+  const maxPage = Math.max(1, Math.ceil(adminProjectRows.value.length / pageSize))
+  const current = Math.min(maxPage, Math.max(1, Number(adminProjectPagination.value.current) || 1))
+  const start = (current - 1) * pageSize
+  return adminProjectRows.value.slice(start, start + pageSize)
 })
 
 const summaryCols = [
@@ -1357,6 +1406,20 @@ function nextAdminMonth() {
 function goAdminThisMonth() {
   adminMonthStart.value = firstDayOfMonth(todayStr)
   loadAdminLabor()
+}
+
+function handleAdminProjectPaginationChange(page, pageSize) {
+  adminProjectPagination.value = {
+    current: page || 1,
+    pageSize: pageSize || adminProjectPagination.value.pageSize,
+  }
+}
+
+function handleAdminProjectPageSizeChange(_page, pageSize) {
+  adminProjectPagination.value = {
+    current: 1,
+    pageSize: pageSize || adminProjectPagination.value.pageSize,
+  }
 }
 
 async function loadSummary() {
@@ -1427,6 +1490,7 @@ async function loadAdminLabor() {
       }
     })
     adminProjectRows.value = res.data?.project_rows || []
+    adminProjectPagination.value = { ...adminProjectPagination.value, current: 1 }
   } catch (e) {
     adminProjectRows.value = []
     message.error(e.response?.data?.detail || '타임시트 관리자 데이터를 불러오지 못했습니다.')
@@ -1662,19 +1726,29 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 .admin-project-labor-table {
-  min-width: 1980px;
+  min-width: 100%;
 }
-.admin-project-labor-table th:first-child,
-.admin-project-labor-table td:first-child {
-  width: 320px;
-}
-.admin-project-labor-table th:nth-child(n + 2),
-.admin-project-labor-table td:nth-child(n + 2) {
-  width: 90px;
+.admin-project-labor-table col.admin-hours-col { width: 76px; }
+.admin-project-labor-table col.admin-meta-col { width: 84px; }
+.admin-project-labor-table col.admin-total-amount-col { width: 132px; }
+.admin-project-labor-table col.admin-month-amount-col { width: 112px; }
+.admin-project-labor-table .admin-project-name {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .admin-project-labor-table .amount-cell {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+.admin-project-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 12px;
+  color: #595959;
+  font-size: 13px;
 }
 .ts-grid-wrap { overflow-x: auto; }
 

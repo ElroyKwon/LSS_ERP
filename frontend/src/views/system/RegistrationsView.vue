@@ -65,7 +65,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -149,7 +149,9 @@ import { ROLE_OPTIONS } from '@/utils/permissions'
 import {
   TeamOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
 } from '@ant-design/icons-vue'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const items = ref([])
 const loading = ref(false)
 const filterStatus = ref('')

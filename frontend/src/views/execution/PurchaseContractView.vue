@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -216,7 +216,9 @@ import { message } from 'ant-design-vue'
 import { FileTextOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined, DollarOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
 import { printElementAsPdf } from '@/utils/pdfExport'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---구매계약요구사항---\n'
 const CONTRACT_TYPES = ['자재', '외주', '안전', '기타']
 const STATUSES = ['입력', '구매팀확인', '승인', '완료', '해지']

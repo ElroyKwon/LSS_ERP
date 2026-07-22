@@ -148,6 +148,8 @@ TIMESHEET_ENTRY_COLUMNS = {
     "project_source": "VARCHAR(20) DEFAULT '공통'",
     "spg": "VARCHAR(20)",
     "labor_type": "VARCHAR(20)",
+    "schedule_event_id": "VARCHAR(255)",
+    "schedule_category": "VARCHAR(20)",
 }
 
 
@@ -227,6 +229,9 @@ MASTER_INDEXES = {
         ("idx_materials_active_name", "is_active, material_name"),
         ("idx_materials_active_type_code", "is_active, material_type, material_code"),
     ],
+    "timesheet_entries": [
+        ("idx_timesheet_entries_schedule_event", "schedule_event_id, schedule_category"),
+    ],
 }
 
 
@@ -285,6 +290,53 @@ def ensure_security_tables(engine):
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens (token_hash)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_api_tokens_prefix ON api_tokens (token_prefix)"))
+
+
+def ensure_calendar_schedule_tables(engine):
+    id_ddl = "SERIAL PRIMARY KEY"
+    created_at_ddl = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+    user_fk = "REFERENCES users(id)"
+    if engine.dialect.name == "sqlite":
+        id_ddl = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        created_at_ddl = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        user_fk = "REFERENCES users(id)"
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS calendar_schedules (
+                id {id_ddl},
+                google_event_id VARCHAR(255) NOT NULL,
+                category VARCHAR(20) NOT NULL,
+                content VARCHAR(255) NOT NULL,
+                type VARCHAR(30) NOT NULL,
+                user_name VARCHAR(100) NOT NULL,
+                is_all_day BOOLEAN DEFAULT TRUE,
+                date DATE,
+                end_date DATE,
+                start_time TIMESTAMP,
+                end_time TIMESTAMP,
+                schedule_kind VARCHAR(50),
+                timesheet_project_id INTEGER,
+                timesheet_project_name VARCHAR(255),
+                timesheet_project_source VARCHAR(20) DEFAULT '공통',
+                created_by INTEGER {user_fk},
+                created_at {created_at_ddl},
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_calendar_schedules_google_category "
+            "ON calendar_schedules (google_event_id, category)"
+        ))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_schedules_google_event ON calendar_schedules (google_event_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_schedules_category ON calendar_schedules (category)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_schedules_date ON calendar_schedules (date)"))
+    _ensure_columns(engine, "timesheet_entries", TIMESHEET_ENTRY_COLUMNS)
+    _ensure_indexes(engine, {
+        "timesheet_entries": [
+            ("idx_timesheet_entries_schedule_event", "schedule_event_id, schedule_category"),
+        ],
+    })
 
 
 def ensure_master_columns(engine):

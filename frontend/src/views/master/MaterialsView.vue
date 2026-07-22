@@ -352,7 +352,7 @@
       <a-table
         :columns="lookupColumns"
         :data-source="lookupRows"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         row-key="code"
         size="small"
         :custom-row="record => ({ onDblclick: () => selectLookup(record) })"
@@ -384,7 +384,9 @@ import {
   ShoppingOutlined,
   UploadOutlined,
 } from '@ant-design/icons-vue'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const FormLine = defineComponent({
   name: 'FormLine',
   props: {

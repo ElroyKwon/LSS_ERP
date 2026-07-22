@@ -138,7 +138,7 @@
                   size="middle"
                   :columns="summaryColumns"
                   :data-source="summary.division"
-                  :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+                  :pagination="clientPagination"
                   :scroll="{ x: 1120 }"
         :sticky="{ offsetHeader: 56 }"
         />
@@ -149,7 +149,7 @@
                   size="middle"
                   :columns="summaryColumns"
                   :data-source="summary.business_group"
-                  :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+                  :pagination="clientPagination"
                   :scroll="{ x: 1120 }"
         :sticky="{ offsetHeader: 56 }"
         />
@@ -172,7 +172,9 @@ import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { CanvasRenderer } from 'echarts/renderers'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { forecastApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 use([BarChart, LineChart, PieChart, CanvasRenderer, GridComponent, LegendComponent, TooltipComponent])
 
 const now = new Date()

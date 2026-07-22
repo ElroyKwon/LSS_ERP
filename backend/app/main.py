@@ -20,6 +20,7 @@ from .utils.authorization import enforce_api_permissions
 from .services.holiday_sync import list_holidays, sync_holidays_for_year
 from .utils.schema import (
     ensure_accounting_columns,
+    ensure_calendar_schedule_tables,
     ensure_execution_columns,
     ensure_master_columns,
     ensure_management_columns,
@@ -37,6 +38,7 @@ if settings.AUTO_CREATE_SCHEMA:
     ensure_accounting_columns(engine)
     ensure_execution_columns(engine)
 ensure_security_tables(engine)
+ensure_calendar_schedule_tables(engine)
 ensure_project_column_types(engine)
 ensure_management_columns(engine)
 

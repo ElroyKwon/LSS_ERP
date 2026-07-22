@@ -74,13 +74,20 @@
         <a-modal v-model:open="isCompanyModalOpen" :title="editingCompanySchedule ? '\uc804\uc0ac \uc77c\uc815(\uc678\uadfc\u00b7\ucd9c\uc7a5) \uc218\uc815' : '\uc804\uc0ac \uc77c\uc815(\uc678\uadfc\u00b7\ucd9c\uc7a5) \ub4f1\ub85d'" @ok="handleCompanySubmit" @cancel="closeCompanyModal" :ok-text="editingCompanySchedule ? '\uc800\uc7a5' : '\ub4f1\ub85d'" :cancel-text="'\ucde8\uc18c'">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
-              <a-input v-model:value="newCompanySchedule.content" placeholder="예: 전사 정기 미팅, 현장 작업" />
+              <a-auto-complete
+                v-model:value="newCompanySchedule.content"
+                :options="companyProjectOptions"
+                :filter-option="filterCompanyProjectOption"
+                @search="searchCompanyCommonProjects"
+                @select="selectCompanyProject"
+                @change="changeCompanyProjectInput"
+              />
             </a-form-item>
             <a-form-item label="일정 유형">
               <a-select v-model:value="newCompanySchedule.type">
-                <a-select-option value="#52c41a">외근 (초록)</a-select-option>
-                <a-select-option value="#722ed1">국내 출장 (보라)</a-select-option>
-                <a-select-option value="#fa8c16">국외 출장 (주황)</a-select-option>
+                <a-select-option value="#52c41a">외근</a-select-option>
+                <a-select-option value="#722ed1">국내 출장</a-select-option>
+                <a-select-option value="#fa8c16">국외 출장</a-select-option>
               </a-select>
             </a-form-item>
             <a-form-item label="일정 선택" required v-if="isCompanyFieldWork">
@@ -170,17 +177,17 @@
         <a-modal v-model:open="isRefreshModalOpen" :title="editingRefreshSchedule ? '\uc804\uc0ac \uc77c\uc815(\ud734\uac00) \uc218\uc815' : '\uc804\uc0ac \uc77c\uc815(\ud734\uac00) \ub4f1\ub85d'" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" :ok-text="editingRefreshSchedule ? '\uc800\uc7a5' : '\ub4f1\ub85d'" :cancel-text="'\ucde8\uc18c'">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
-              <a-input v-model:value="newRefreshSchedule.content" placeholder="예: 여름휴가, OOO 매니저 연차" />
+              <a-input v-model:value="newRefreshSchedule.content" placeholder="예시 : 하계휴가, 연차" />
             </a-form-item>
             <a-form-item label="일정 유형">
               <a-select v-model:value="newRefreshSchedule.type">
-                <a-select-option value="#bae7ff">연차 (연파랑)</a-select-option>
-                <a-select-option value="#13c2c2">반차 (청록)</a-select-option>
-                <a-select-option value="#eb2f96">반반차 (분홍)</a-select-option>
-                <a-select-option value="#1890ff">대체휴가 (파랑)</a-select-option>
-                <a-select-option value="#bfbfbf">하계휴가 (회색)</a-select-option>
-                <a-select-option value="#ff7a45">병가 (주황)</a-select-option>
-                <a-select-option value="#d9d9d9">기타 (연회색)</a-select-option>
+                <a-select-option value="#bae7ff">연차</a-select-option>
+                <a-select-option value="#13c2c2">반차</a-select-option>
+                <a-select-option value="#eb2f96">반반차</a-select-option>
+                <a-select-option value="#1890ff">대체휴가</a-select-option>
+                <a-select-option value="#bfbfbf">하계휴가</a-select-option>
+                <a-select-option value="#ff7a45">병가</a-select-option>
+                <a-select-option value="#d9d9d9">기타</a-select-option>
               </a-select>
             </a-form-item>
             <a-form-item label="기간" required>
@@ -195,7 +202,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import api from '@/api'
+import api, { timesheetApi, executionApi, salesApi } from '@/api'
 import dayjs from 'dayjs'
 import { message, Modal } from 'ant-design-vue'
 import { LeftOutlined, RightOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -205,6 +212,7 @@ const auth = useAuthStore()
 const activeTab = ref('company-calendar')
 const currentUserName = computed(() => (auth.user?.name || '').trim())
 const CALENDAR_VISIBLE_EVENT_LIMIT = 2
+const COMPANY_PROJECT_SOURCES = new Set(['실행', '영업', '공통'])
 
 function getScheduleErrorMessage(error, fallback) {
   const detail = error?.response?.data?.detail
@@ -218,11 +226,159 @@ const companyCalendarValue = ref(dayjs())
 const companySchedules     = ref([])
 const companyHoliday       = ref([]) 
 const companyHolidayCache  = ref({})
+const companyProjects      = ref([])
+const companySalesProjects = ref([])
+const companyCommonProjectSuggestions = ref([])
+let companyCommonSearchTimer = null
 
 const isCompanyModalOpen   = ref(false)
-const newCompanySchedule   = ref({ content: '', dateValue: null, rangeValue: null, workDate: null, startTime: dayjs('2026-01-01 08:30'), endTime: dayjs('2026-01-01 17:30'), type: '#52c41a' })
+const newCompanySchedule   = ref(createDefaultCompanySchedule())
 const editingCompanySchedule = ref(null)
 const isCompanyFieldWork  = computed(() => newCompanySchedule.value.type === '#52c41a')
+
+
+function createDefaultCompanySchedule() {
+  return {
+    content: '',
+    dateValue: null,
+    rangeValue: null,
+    workDate: null,
+    startTime: dayjs('2026-01-01 08:30'),
+    endTime: dayjs('2026-01-01 17:30'),
+    type: '#52c41a',
+    timesheet_project_id: null,
+    timesheet_project_name: '',
+    timesheet_project_source: '공통',
+  }
+}
+
+function labelCompanyProjectOption(option) {
+  const source = option.source || '공통'
+  return `[${source}] ${option.value || option.project_name || ''}`
+}
+
+const companyProjectOptions = computed(() => {
+  const executionOptions = companyProjects.value.map(project => {
+    const projectNo = (project.project_no || '').trim()
+    const projectName = (project.project_name || '').trim()
+    const value = [projectNo, projectName].filter(Boolean).join(' ') || projectName || projectNo
+    return {
+      value,
+      label: labelCompanyProjectOption({ source: '실행', value }),
+      searchText: `${projectNo} ${projectName}`.toLowerCase(),
+      id: project.id,
+      project_name: projectName || value,
+      source: '실행',
+    }
+  }).filter(option => option.value)
+
+  const salesOptions = companySalesProjects.value.map(row => {
+    const projectNo = (row.project_no || row.sales_no || '').trim()
+    const projectName = (row.project_name || '').trim()
+    const value = [projectNo, projectName].filter(Boolean).join(' ') || projectName || projectNo
+    if (!value) return null
+    return {
+      value,
+      label: labelCompanyProjectOption({ source: '영업', value }),
+      searchText: `${projectNo} ${projectName} ${row.client_name || ''} ${row.sales_status || ''}`.toLowerCase(),
+      id: null,
+      project_name: projectName || value,
+      source: '영업',
+    }
+  }).filter(Boolean)
+
+  const commonOptions = companyCommonProjectSuggestions.value.map(item => {
+    const value = item.project_name || item.value || item.label || ''
+    return {
+      value,
+      label: labelCompanyProjectOption({ source: '공통', value }),
+      searchText: value.toLowerCase(),
+      id: null,
+      project_name: value,
+      source: '공통',
+    }
+  }).filter(option => option.value)
+
+  return [...executionOptions, ...salesOptions, ...commonOptions]
+})
+
+function filterCompanyProjectOption(input, option) {
+  const keyword = String(input || '').trim().toLowerCase()
+  if (!keyword) return true
+  return String(option.searchText || option.value || option.label || '').toLowerCase().includes(keyword)
+}
+
+function findCompanyProjectOption(value, option = null) {
+  const selectedValue = String(value || '').trim()
+  const optionValue = String(option?.value || '').trim()
+  return companyProjectOptions.value.find(item =>
+    item === option
+    || item.value === selectedValue
+    || item.value === optionValue
+    || item.project_name === selectedValue
+  ) || option || null
+}
+
+function applyCompanyProjectOption(selected, fallbackValue = '') {
+  const source = COMPANY_PROJECT_SOURCES.has(selected?.source) ? selected.source : '공통'
+  newCompanySchedule.value.timesheet_project_id = source === '실행' ? (selected?.id || null) : null
+  newCompanySchedule.value.timesheet_project_name = selected?.project_name || selected?.value || fallbackValue || ''
+  newCompanySchedule.value.timesheet_project_source = source
+}
+
+function selectCompanyProject(value, option) {
+  applyCompanyProjectOption(findCompanyProjectOption(value, option), value)
+}
+
+function changeCompanyProjectInput(value) {
+  const typed = String(value || '').trim()
+  const selected = findCompanyProjectOption(typed)
+  if (selected) {
+    applyCompanyProjectOption(selected, typed)
+    return
+  }
+  newCompanySchedule.value.timesheet_project_id = null
+  newCompanySchedule.value.timesheet_project_name = typed
+  newCompanySchedule.value.timesheet_project_source = '공통'
+}
+
+async function loadCompanyCommonProjectSuggestions(keyword = '') {
+  try {
+    const res = await timesheetApi.searchCommonProjects({ q: String(keyword || '').trim(), limit: 20 })
+    companyCommonProjectSuggestions.value = res.data || []
+  } catch (_) {
+    companyCommonProjectSuggestions.value = []
+  }
+}
+
+function searchCompanyCommonProjects(value) {
+  if (companyCommonSearchTimer) clearTimeout(companyCommonSearchTimer)
+  companyCommonSearchTimer = setTimeout(() => loadCompanyCommonProjectSuggestions(value), 180)
+}
+
+async function loadCompanySalesProjects() {
+  try {
+    const weekStart = dayjs().startOf('week').add(1, 'day').format('YYYY-MM-DD')
+    const current = await salesApi.getSalesManagementRows(weekStart)
+    if ((current.data || []).length) {
+      companySalesProjects.value = current.data || []
+      return
+    }
+    const latest = await salesApi.getLatestSalesManagementRowsBefore(weekStart)
+    companySalesProjects.value = latest.data?.rows || []
+  } catch (_) {
+    companySalesProjects.value = []
+  }
+}
+
+async function loadCompanyProjectSources() {
+  const [projects] = await Promise.all([
+    executionApi.getProjects().catch(() => ({ data: [] })),
+    loadCompanySalesProjects(),
+    loadCompanyCommonProjectSuggestions(),
+  ])
+  companyProjects.value = projects.data || []
+}
 
 const isCompanyDetailModalOpen = ref(false)
 const selectedCompanyDate      = ref('')
@@ -327,7 +483,11 @@ async function loadCompanyCalendarData() {
         content: item.user_name ? `${timePrefix}[${item.user_name}] ${item.content}` : `${timePrefix}${item.content}`,
         raw_content: item.content,
         user_name: item.user_name,
-        type: item.type
+        type: item.type,
+        schedule_kind: item.schedule_kind,
+        timesheet_project_id: item.timesheet_project_id,
+        timesheet_project_name: item.timesheet_project_name,
+        timesheet_project_source: item.timesheet_project_source
       }
     })
   } catch (error) {
@@ -338,7 +498,7 @@ async function loadCompanyCalendarData() {
 
 function resetCompanyForm() {
   editingCompanySchedule.value = null
-  newCompanySchedule.value = { content: '', dateValue: null, rangeValue: null, workDate: null, startTime: dayjs('2026-01-01 08:30'), endTime: dayjs('2026-01-01 17:30'), type: '#52c41a' }
+  newCompanySchedule.value = createDefaultCompanySchedule()
 }
 
 function openCompanyModal() {
@@ -361,7 +521,10 @@ function openCompanyEditModal(item) {
     workDate: item.is_all_day ? null : dayjs(item.date || item.start_time?.slice(0, 10)),
     startTime: item.start_time ? dayjs(item.start_time) : dayjs('2026-01-01 08:30'),
     endTime: item.end_time ? dayjs(item.end_time) : dayjs('2026-01-01 17:30'),
-    type: item.type || '#52c41a'
+    type: item.type || '#52c41a',
+    timesheet_project_id: item.timesheet_project_id || null,
+    timesheet_project_name: item.timesheet_project_name || item.raw_content || '',
+    timesheet_project_source: COMPANY_PROJECT_SOURCES.has(item.timesheet_project_source) ? item.timesheet_project_source : '공통'
   }
   isCompanyDetailModalOpen.value = false
   isCompanyModalOpen.value = true
@@ -393,7 +556,11 @@ async function handleCompanySubmit() {
       type: newCompanySchedule.value.type,
       category: 'company',
       user_name: auth.user?.name || '\ubbf8\ud655\uc778',
-      is_all_day: !isCompanyFieldWork.value
+      is_all_day: !isCompanyFieldWork.value,
+      schedule_kind: isCompanyFieldWork.value ? '외근' : '출장',
+      timesheet_project_id: newCompanySchedule.value.timesheet_project_id || null,
+      timesheet_project_name: newCompanySchedule.value.timesheet_project_name || newCompanySchedule.value.content,
+      timesheet_project_source: newCompanySchedule.value.timesheet_project_source || '공통'
     }
     if (isCompanyFieldWork.value) {
       const workDate = newCompanySchedule.value.workDate.format('YYYY-MM-DD')
@@ -577,7 +744,11 @@ async function loadRefreshCalendarData() {
         content: item.user_name ? `${timePrefix}[${item.user_name}] ${item.content}` : `${timePrefix}${item.content}`,
         raw_content: item.content,
         user_name: item.user_name,
-        type: item.type
+        type: item.type,
+        schedule_kind: item.schedule_kind,
+        timesheet_project_id: item.timesheet_project_id,
+        timesheet_project_name: item.timesheet_project_name,
+        timesheet_project_source: item.timesheet_project_source
       }
     })
   } catch (error) {
@@ -614,6 +785,19 @@ function openRefreshEditModal(item) {
   isRefreshModalOpen.value = true
 }
 
+function getRefreshScheduleKind(type) {
+  const map = {
+    '#bae7ff': '\uC5F0\uCC28',
+    '#13c2c2': '\uBC18\uCC28',
+    '#eb2f96': '\uBC18\uBC18\uCC28',
+    '#1890ff': '\uB300\uCCB4\uD734\uAC00',
+    '#bfbfbf': '\uD558\uACC4\uD734\uAC00',
+    '#ff7a45': '\uBCD1\uAC00',
+    '#d9d9d9': '\uAE30\uD0C0',
+  }
+  return map[type] || '\uC5F0\uCC28'
+}
+
 async function handleRefreshSubmit() {
   if (!newRefreshSchedule.value.content) {
     message.warning('\uc77c\uc815\uba85\uc744 \uc785\ub825\ud574 \uc8fc\uc138\uc694.')
@@ -629,7 +813,8 @@ async function handleRefreshSubmit() {
       type: newRefreshSchedule.value.type,
       category: 'refresh',
       user_name: auth.user?.name || '\ubbf8\ud655\uc778',
-      is_all_day: true
+      is_all_day: true,
+      schedule_kind: getRefreshScheduleKind(newRefreshSchedule.value.type)
     }
     payload.date = newRefreshSchedule.value.dateValue[0].format('YYYY-MM-DD')
     payload.end_date = newRefreshSchedule.value.dateValue[1].format('YYYY-MM-DD')
@@ -783,6 +968,7 @@ function shouldShowEventText(item, currentDate) {
 
 onMounted(() => {
   const currentYear = dayjs().format('YYYY')
+  loadCompanyProjectSources()
   
   // 전사 일정 구동
   fetchCompanyHolidayFromServer(currentYear)

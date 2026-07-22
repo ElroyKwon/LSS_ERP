@@ -131,11 +131,11 @@
     </a-layout-sider>
 
     <!-- 메인 -->
-    <a-layout :style="{ marginLeft: collapsed ? '60px' : '220px', transition: 'all 0.2s', background: '#f0f2f5', minHeight: '100vh' }">
+    <a-layout class="app-main-layout" :style="mainLayoutStyle">
       <!-- 헤더 -->
       <a-layout-header class="app-header">
         <div class="header-left">
-          <button class="toggle-btn" @click="collapsed = !collapsed" :title="collapsed ? '메뉴 펼치기' : '메뉴 접기'">
+          <button class="toggle-btn" @click="toggleSidebar" :title="collapsed ? '메뉴 펼치기' : '메뉴 접기'">
             <MenuUnfoldOutlined v-if="collapsed" />
             <MenuFoldOutlined v-else />
           </button>
@@ -171,7 +171,7 @@
       </a-layout-header>
 
       <!-- 콘텐츠 -->
-      <a-layout-content style="margin: 20px; min-height: calc(100vh - 64px - 40px)">
+      <a-layout-content class="app-content">
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -202,7 +202,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   DatabaseOutlined, ShopOutlined, AppstoreOutlined,
@@ -223,6 +223,27 @@ const pendingCount = ref(0)
 const visibleNotices = ref([])
 const noticePopupOpen = ref(false)
 const hideNoticesToday = ref(false)
+
+const COMPACT_PC_BREAKPOINT = 1366
+let userSidebarToggled = false
+
+const mainLayoutStyle = computed(() => ({
+  marginLeft: collapsed.value ? '60px' : '220px',
+  transition: 'all 0.2s',
+  background: '#f0f2f5',
+  minHeight: '100vh',
+  minWidth: 0,
+}))
+
+function applyResponsiveSidebar() {
+  if (typeof window === 'undefined' || userSidebarToggled) return
+  collapsed.value = window.innerWidth <= COMPACT_PC_BREAKPOINT
+}
+
+function toggleSidebar() {
+  userSidebarToggled = true
+  collapsed.value = !collapsed.value
+}
 
 const canRead = (path) => canAccess(auth.user?.role, path, 'R')
 const canReadAny = (paths) => paths.some(path => canRead(path))
@@ -268,8 +289,14 @@ function closeNoticePopup() {
 }
 
 onMounted(() => {
+  applyResponsiveSidebar()
+  window.addEventListener('resize', applyResponsiveSidebar)
   loadPendingCount()
   loadActiveNotices()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', applyResponsiveSidebar)
 })
 
 // 시스템 메뉴 이동 시 뱃지 갱신
@@ -349,6 +376,17 @@ function handleLogout() {
 </script>
 
 <style scoped>
+
+.app-main-layout {
+  min-width: 0;
+}
+
+.app-content {
+  margin: 20px;
+  min-height: calc(100vh - 64px - 40px);
+  min-width: 0;
+  overflow-x: hidden;
+}
 /* ── 사이드바 로고 ── */
 .sider-logo {
   height: 56px;
@@ -398,8 +436,9 @@ function handleLogout() {
   height: 56px;
   line-height: 56px;
 }
-.header-left { display: flex; align-items: center; gap: 8px; }
-.header-right { display: flex; align-items: center; }
+.header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.header-right { display: flex; align-items: center; flex: 0 0 auto; min-width: 0; }
+:deep(.ant-breadcrumb) { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* ── 사이드바 토글 버튼 ── */
 .toggle-btn {
@@ -472,6 +511,16 @@ function handleLogout() {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid #f0f0f0;
+}
+
+@media (max-width: 1440px) {
+  .app-content { margin: 16px; min-height: calc(100vh - 64px - 32px); }
+  .app-header { padding-right: 12px; }
+}
+
+@media (max-width: 1366px) {
+  .app-content { margin: 12px; min-height: calc(100vh - 64px - 24px); }
+  .user-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }

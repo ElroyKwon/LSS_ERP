@@ -64,7 +64,7 @@
             :columns="userColumns"
             :data-source="users"
             :loading="userLoading"
-            :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+            :pagination="clientPagination"
             row-key="id" size="middle" :scroll="{ x: 1290 }"
           
         :sticky="{ offsetHeader: 56 }">
@@ -113,7 +113,7 @@
             :columns="regColumns"
             :data-source="displayRegistrations"
             :loading="regLoading"
-            :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+            :pagination="clientPagination"
             row-key="id" size="middle" :scroll="{ x: 1160 }"
           
         :sticky="{ offsetHeader: 56 }">
@@ -289,7 +289,9 @@ import {
   TeamOutlined, UserOutlined, SafetyCertificateOutlined,
   ClockCircleOutlined, PlusOutlined,
 } from '@ant-design/icons-vue'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const auth = useAuthStore()
 
 // ── 탭 ──

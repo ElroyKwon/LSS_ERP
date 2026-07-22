@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1280 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -148,7 +148,7 @@
               </a-button>
             </div>
             <a-table :columns="relatedPurchaseColumns" :data-source="form.related_purchases"
-                     row-key="uid" size="small" :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" class="related-purchase-table"
+                     row-key="uid" size="small" :pagination="clientPagination" class="related-purchase-table"
         :sticky="{ offsetHeader: 56 }">
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'vendor_name'">
@@ -195,7 +195,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { FileTextOutlined, ClockCircleOutlined, CheckCircleOutlined, CheckOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---매출청구요구사항---\n'
 const STATUSES    = ['발행요청', '발행완료', '확인', '승인']
 const statusColor = { 발행요청:'orange', 발행완료:'blue', 확인:'green', 승인:'green' }

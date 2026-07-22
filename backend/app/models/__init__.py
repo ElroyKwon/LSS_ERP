@@ -9,6 +9,7 @@ from .common import (
     OpinionAttachment,
     OpinionNotificationSetting,
     Holiday,
+    CalendarSchedule,
 )
 from .master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
 from .sales import Estimate, EstimateItem, EstimateAttachment, DesignRequest, SalesManagementWeeklyRow
@@ -24,7 +25,7 @@ from .vehicle import Vehicle, VehicleLog
 
 __all__ = [
     "User", "Department", "AuditLog", "UserRegistration", "ApiToken", "Notice",
-    "OpinionPost", "OpinionAttachment", "OpinionNotificationSetting", "Holiday",
+    "OpinionPost", "OpinionAttachment", "OpinionNotificationSetting", "Holiday", "CalendarSchedule",
     "Company", "Site", "CostCode", "AccountCode", "Material", "UnitPrice", "Employee", "OverheadRate",
     "Estimate", "EstimateItem", "EstimateAttachment", "DesignRequest", "SalesManagementWeeklyRow",
     "Project", "ProjectPlan", "ProjectSalesPlanRow", "ProjectPurchasePlanRow", "ProjectBusinessCategory", "ProjectPlanMeta", "ProjectPlanWeeklySnapshot", "PurchaseContract", "ReleaseRequest", "SalesBill", "APBill",

@@ -47,6 +47,8 @@ class TimesheetEntry(Base):
     sun_hours    = Column(Numeric(4, 2), default=0)
     sort_order   = Column(Integer, default=0)
     notes        = Column(Text)
+    schedule_event_id = Column(String(255), index=True, nullable=True)
+    schedule_category = Column(String(20), nullable=True)
 
     timesheet = relationship("Timesheet", back_populates="entries")
     project   = relationship("Project", foreign_keys=[project_id])

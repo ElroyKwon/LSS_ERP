@@ -31,7 +31,7 @@
         :columns="columns"
         :data-source="settings"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }"
         row-key="user_id"
@@ -61,7 +61,9 @@ import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { BellOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { opinionApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const settings = ref([])
 const loading = ref(false)
 const savingIds = ref(new Set())

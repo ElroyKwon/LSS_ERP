@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 950 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -114,7 +114,7 @@
               </a-button>
             </div>
             <a-table :columns="materialColumns" :data-source="form.release_items"
-                     row-key="uid" size="small" :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" class="material-table"
+                     row-key="uid" size="small" :pagination="clientPagination" class="material-table"
         :sticky="{ offsetHeader: 56 }">
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'no'">{{ index + 1 }}</template>
@@ -133,7 +133,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { InboxOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const RELEASE_ITEMS_MARKER = '\n---출고요청자재목록---\n'
 const STATUSES    = ['요청', '승인', '출고', '취소']
 const statusColor = { 요청: 'orange', 승인: 'blue', 출고: 'green', 취소: 'red' }

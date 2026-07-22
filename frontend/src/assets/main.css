@@ -2,11 +2,75 @@
 
 html, body, #app {
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
   background: #f0f2f5;
   color: #2c3e50;
   font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.ant-layout,
+.ant-layout-content,
+.ant-card,
+.ant-card-body,
+.ant-tabs,
+.ant-tabs-content,
+.ant-tabs-tabpane {
+  min-width: 0;
+}
+
+.page-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.table-card,
+.grid-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ant-card-head-wrapper {
+  min-width: 0;
+  gap: 12px;
+}
+
+.ant-card-head-title {
+  min-width: 0;
+}
+
+.ant-card-extra {
+  min-width: 0;
+}
+
+.ant-card-extra > .ant-space,
+.title-row,
+.filter-row,
+.toolbar-row,
+.action-row {
+  max-width: 100%;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.ant-space {
+  max-width: 100%;
+}
+
+.ant-select,
+.ant-picker,
+.ant-input-affix-wrapper,
+.ant-input-search {
+  max-width: 100%;
 }
 
 /* 스크롤바 */
@@ -44,6 +108,42 @@ html, body, #app {
 
 .ant-table-wrapper .ant-input-number-input {
   white-space: nowrap;
+}
+
+.ant-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+}
+
+.ant-table-wrapper .ant-table {
+  max-width: 100%;
+}
+
+.ant-table-wrapper .ant-table-container {
+  min-width: 0;
+}
+
+.ant-table-wrapper .ant-table-content,
+.ant-table-wrapper .ant-table-body {
+  overflow: auto !important;
+}
+
+.ant-table-wrapper .ant-table-pagination.ant-pagination {
+  margin: 12px 0 0;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.ant-table-wrapper .ant-pagination-options {
+  margin-inline-start: 8px;
+}
+
+.ant-table-wrapper .amount-cell,
+.ant-table-wrapper .num-cell,
+.ant-table-wrapper .readonly-cell,
+.ant-table-wrapper .table-number-input,
+.ant-table-wrapper .ant-input-number {
+  min-width: 118px;
 }
 
 .ant-modal-root .notice-center-modal {
@@ -84,9 +184,21 @@ html, body, #app {
   max-width: calc(100vw - 48px);
 }
 
+.ant-modal-root .ant-modal:not(.ant-modal-confirm) .ant-modal-content {
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+
 .ant-modal-root .ant-modal:not(.ant-modal-confirm) .ant-modal-body {
-  max-height: calc(100vh - 220px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100vh - 164px);
   overflow: auto;
+}
+
+.ant-modal-root .ant-modal:not(.ant-modal-confirm) .ant-modal-footer {
+  flex: 0 0 auto;
 }
 
 .ant-modal-root .project-editor-modal .ant-modal {
@@ -139,7 +251,7 @@ html, body, #app {
 .ant-modal-root .material-editor-modal .ant-modal-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .ant-modal-root .material-editor-modal .ant-modal-footer {
@@ -169,7 +281,7 @@ html, body, #app {
 .ant-modal-root .company-editor-modal .ant-modal-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .ant-modal-root .company-editor-modal .ant-modal-footer {
@@ -195,6 +307,52 @@ html, body, #app {
 
 .ant-modal-root .release-request-modal .ant-modal-body {
   overflow: auto;
+}
+
+
+@media (max-width: 1440px) {
+  .ant-card-body {
+    padding: 18px;
+  }
+
+  .ant-table-wrapper .ant-table-thead > tr > th,
+  .ant-table-wrapper .ant-table-tbody > tr > td {
+    padding: 10px 8px;
+  }
+
+  .ant-modal-root .ant-modal:not(.ant-modal-confirm) {
+    max-width: calc(100vw - 32px);
+  }
+
+  .ant-modal-root .ant-modal:not(.ant-modal-confirm) .ant-modal-body {
+    max-height: calc(100vh - 148px);
+  }
+}
+
+@media (max-width: 1366px) {
+  .ant-card-body {
+    padding: 16px;
+  }
+
+  .table-card,
+  .grid-card {
+    border-radius: 6px;
+  }
+
+  .ant-modal-root .project-editor-modal .ant-modal,
+  .ant-modal-root .sales-billing-modal .ant-modal,
+  .ant-modal-root .estimate-editor-modal .ant-modal,
+  .ant-modal-root .purchase-billing-modal .ant-modal,
+  .ant-modal-root .purchase-contract-modal .ant-modal,
+  .ant-modal-root .material-editor-modal .ant-modal,
+  .ant-modal-root .company-editor-modal .ant-modal,
+  .ant-modal-root .design-request-modal .ant-modal,
+  .ant-modal-root .opinion-editor-modal .ant-modal,
+  .ant-modal-root .opinion-detail-modal .ant-modal,
+  .ant-modal-root .release-request-modal.ant-modal-wrap .ant-modal,
+  .ant-modal-root .release-request-modal .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+  }
 }
 
 @media (max-width: 768px) {

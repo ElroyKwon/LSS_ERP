@@ -32,7 +32,7 @@
         :columns="columns"
         :data-source="items"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         row-key="id"
         size="middle"
         :scroll="{ x: 2740 }"
@@ -90,7 +90,9 @@ import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { managementApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const RECEIVABLE_TYPES = ['외상매출금', '받을어음']
 const CUSTOMER_CLASSES = ['특수관계자', '대리점', '일반']
 const TEXT_FIELDS = [

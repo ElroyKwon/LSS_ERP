@@ -51,7 +51,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" row-key="id" size="middle"
+               :pagination="clientPagination" row-key="id" size="middle"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['labor_rate','overhead_rate','profit_rate'].includes(column.key)">
@@ -110,7 +110,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { masterApi } from '@/api'
 import { UserOutlined, CalculatorOutlined, RiseOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const items = ref([])
 const loading = ref(false)
 const saving = ref(false)

@@ -65,7 +65,7 @@
         :columns="columns"
         :data-source="filteredItems"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         row-key="id"
         size="middle"
         :scroll="{ x: 2180 }"
@@ -228,7 +228,9 @@ import {
 } from '@ant-design/icons-vue'
 import { masterApi } from '@/api'
 import { flattenDepartmentTree } from '@/utils/departments'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const items = ref([])
 const departments = ref([])
 const loading = ref(false)

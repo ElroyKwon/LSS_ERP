@@ -304,7 +304,7 @@
 
         <a-card :bordered="false" class="table-card">
           <a-table :columns="summaryCols" :data-source="summaryRows" :loading="summaryLoading"
-                   :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" size="middle" row-key="key" :scroll="{ x: 760 }"
+                   :pagination="clientPagination" size="middle" row-key="key" :scroll="{ x: 760 }"
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'total_hours'">
@@ -394,7 +394,9 @@ import {
 import { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { canAccess } from '@/utils/permissions'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
 const canSelectTimesheetEmployee = canApproveTimesheet

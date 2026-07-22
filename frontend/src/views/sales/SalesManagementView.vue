@@ -47,7 +47,7 @@
         :columns="columns"
         :data-source="rows"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         :scroll="{ x: tableScrollX }"
         row-key="id"
         size="small"
@@ -155,7 +155,9 @@ import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { DownloadOutlined, LeftOutlined, PlusOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { executionApi, salesApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const now = new Date()
 const currentYear = now.getFullYear()
 const nextYear = currentYear + 1

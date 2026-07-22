@@ -31,7 +31,7 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1240 }"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
@@ -180,7 +180,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { FileTextOutlined, ClockCircleOutlined, CheckCircleOutlined, DollarOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---매입청구요구사항---\n'
 const STATUSES    = ['지급요청', '승인', '지급완료']
 const statusColor = { 지급요청:'orange', 승인:'blue', 지급완료:'green' }

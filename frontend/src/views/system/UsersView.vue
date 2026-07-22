@@ -60,9 +60,18 @@
       <a-tabs v-model:activeKey="activeTab" class="main-tabs">
         <!-- ── 사용자 목록 탭 ── -->
         <a-tab-pane key="users" tab="사용자 목록">
+          <div class="user-list-toolbar">
+            <div class="list-count">총 {{ filteredUsers.length }}명</div>
+            <a-input-search
+              v-model:value="userSearchKeyword"
+              class="user-search"
+              allow-clear
+              placeholder="이름 / 아이디 / 부서 검색"
+            />
+          </div>
           <a-table
             :columns="userColumns"
-            :data-source="users"
+            :data-source="filteredUsers"
             :loading="userLoading"
             :pagination="clientPagination"
             row-key="id" size="middle" :scroll="{ x: 1290 }"
@@ -305,6 +314,7 @@ const saving     = ref(false)
 const modalOpen  = ref(false)
 const editItem   = ref(null)
 const formRef    = ref()
+const userSearchKeyword = ref('')
 const form = reactive({
   username: '', name: '', password: '', new_password: '',
   employee_code: '', email: '', role: 'sales_staff', labor_type: '원가', position: '', department_id: null, is_active: true,
@@ -326,6 +336,17 @@ const userStats = computed(() => ({
   admin: users.value.filter(u => u.role === 'system_admin' || u.role === 'admin').length,
   user:  users.value.filter(u => u.role !== 'system_admin' && u.role !== 'admin').length,
 }))
+
+const filteredUsers = computed(() => {
+  const keyword = userSearchKeyword.value.trim().toLowerCase()
+  if (!keyword) return users.value
+
+  return users.value.filter(user => {
+    const departmentName = user.department_name || user.department?.path_name || user.department?.name || user.department || ''
+    return [user.name, user.username, departmentName]
+      .some(value => String(value || '').toLowerCase().includes(keyword))
+  })
+})
 
 const userColumns = [
   { title: '사원번호', dataIndex: 'employee_code', width: 110, align: 'center' },
@@ -546,6 +567,23 @@ onMounted(() => {
 
 /* 탭 상단 여백 제거 */
 .main-tabs :deep(.ant-tabs-nav) { margin-bottom: 16px; }
+
+.user-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.list-count {
+  color: #595959;
+  font-size: 13px;
+  font-weight: 600;
+}
+.user-search {
+  width: 300px;
+  max-width: 100%;
+}
 
 .reg-filter { margin-bottom: 16px; }
 .approve-dept-alert { margin-bottom: 12px; }

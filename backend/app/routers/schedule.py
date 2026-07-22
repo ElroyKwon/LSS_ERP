@@ -15,6 +15,7 @@ from googleapiclient.errors import HttpError
 from pathlib import Path
 from dotenv import load_dotenv
 from ..utils.auth import get_current_user
+from ..utils.system_accounts import is_system_account_username
 from ..database import get_db
 from ..models.common import User, CalendarSchedule
 from ..models.master import Employee
@@ -275,6 +276,9 @@ def _set_entry_hours(entry: TimesheetEntry, hours_by_day: dict[str, Decimal]) ->
 
 
 def _sync_schedule_to_timesheet(db: Session, payload: ScheduleCreate, event_id: str, current_user) -> None:
+    if is_system_account_username(getattr(current_user, "username", None)):
+        return
+
     employee = _current_employee(db, current_user)
     if not employee:
         raise HTTPException(status_code=400, detail="로그인 사용자의 사원 정보를 찾을 수 없어 타임시트에 자동 반영할 수 없습니다.")

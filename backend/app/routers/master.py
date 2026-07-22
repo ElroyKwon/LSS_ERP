@@ -12,6 +12,7 @@ from ..models.common import User, Department, Notice
 from ..utils.auth import get_current_user, hash_password
 from ..utils.permissions import is_system_admin, normalize_role, validate_role
 from ..services.user_employee_sync import deactivate_employee_for_user, effective_employee_code, sync_employee_for_user
+from ..utils.system_accounts import exclude_system_account_employees
 from ..utils.excel_import import (
     COMPANY_HEADERS,
     MATERIAL_HEADERS,
@@ -1264,6 +1265,7 @@ def list_employees(search: Optional[str] = None, emp_type: Optional[str] = None,
                    include_inactive: bool = False,
                    db: Session = Depends(get_db), _=Depends(get_current_user)):
     q = db.query(Employee)
+    q = exclude_system_account_employees(q, db)
     if not include_inactive:
         q = q.filter(Employee.is_active == True)
     if search:

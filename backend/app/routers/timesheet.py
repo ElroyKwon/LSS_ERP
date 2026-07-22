@@ -14,6 +14,7 @@ from ..models.purchase import CostInput
 from ..utils.auth import get_current_user
 from ..utils import to_kst, to_kst_date
 from ..utils.permissions import is_system_admin, normalize_role
+from ..utils.system_accounts import exclude_system_account_employees, is_system_account_employee
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["타임시트"])
@@ -155,15 +156,23 @@ def _allowed_employee_ids(db: Session, current) -> set[int] | None:
                 Employee.is_active == True,
                 Employee.department_id.in_(department_ids),
             ).all()
-            scoped_ids = {row.id for row in rows}
-            if current_emp:
+            scoped_ids = {
+                row.id
+                for row in rows
+                if not is_system_account_employee(db, row.id)
+            }
+            if current_emp and not is_system_account_employee(db, current_emp.id):
                 scoped_ids.add(current_emp.id)
             return scoped_ids
 
-    return {current_emp.id} if current_emp else set()
+    if current_emp and not is_system_account_employee(db, current_emp.id):
+        return {current_emp.id}
+    return set()
 
 
 def _require_employee_access(employee_id: int, db: Session, current) -> None:
+    if is_system_account_employee(db, employee_id):
+        raise HTTPException(status_code=403, detail="운영 계정은 업무 데이터 대상에서 제외됩니다.")
     allowed_ids = _allowed_employee_ids(db, current)
     if allowed_ids is not None and employee_id not in allowed_ids:
         raise HTTPException(status_code=403, detail="해당 직원의 타임시트를 조회할 권한이 없습니다.")
@@ -259,6 +268,7 @@ def _sales_type(project: Project | None, source: str) -> str:
 def list_timesheet_employees(db: Session = Depends(get_db), current=Depends(get_current_user)):
     allowed_ids = _allowed_employee_ids(db, current)
     q = db.query(Employee).filter(Employee.is_active == True)
+    q = exclude_system_account_employees(q, db)
     if allowed_ids is not None:
         if not allowed_ids:
             return []
@@ -286,6 +296,7 @@ def search_common_timesheet_projects(
     query = (
         db.query(TimesheetEntry.project_name)
         .join(Timesheet, Timesheet.id == TimesheetEntry.timesheet_id)
+        .join(Employee, Employee.id == Timesheet.employee_id)
         .filter(TimesheetEntry.project_name.isnot(None))
         .filter(TimesheetEntry.project_name != "")
         .filter(
@@ -293,6 +304,7 @@ def search_common_timesheet_projects(
             | (TimesheetEntry.project_id.is_(None))
         )
     )
+    query = exclude_system_account_employees(query, db)
 
     allowed_ids = _allowed_employee_ids(db, current)
     if allowed_ids is not None:
@@ -372,9 +384,10 @@ def get_timesheet_admin_labor(
     sheets = (
         db.query(Timesheet)
         .options(joinedload(Timesheet.entries).joinedload(TimesheetEntry.project))
+        .join(Employee, Employee.id == Timesheet.employee_id)
         .filter(Timesheet.week_start <= year_end, Timesheet.week_end >= year_start)
-        .all()
     )
+    sheets = exclude_system_account_employees(sheets, db).all()
 
     project_rows: dict[str, dict] = {}
     total_cost_hours_by_month = {m: 0.0 for m in range(1, 13)}
@@ -505,7 +518,8 @@ def list_timesheets(
     db: Session = Depends(get_db),
     current=Depends(get_current_user),
 ):
-    q = db.query(Timesheet)
+    q = db.query(Timesheet).join(Employee, Employee.id == Timesheet.employee_id)
+    q = exclude_system_account_employees(q, db)
     allowed_ids = _allowed_employee_ids(db, current)
     if allowed_ids is not None:
         if not allowed_ids:
@@ -650,6 +664,7 @@ def team_status(week_start: date, db: Session = Depends(get_db),
     monday, sunday = _week_of(week_start)
     allowed_ids = _allowed_employee_ids(db, current)
     employee_q = db.query(Employee).filter(Employee.is_active == True)
+    employee_q = exclude_system_account_employees(employee_q, db)
     if allowed_ids is not None:
         if not allowed_ids:
             return []
@@ -686,6 +701,8 @@ def timesheet_stats(employee_id: Optional[int] = None,
         sqlfunc.extract("month", Timesheet.week_start) == m,
         Timesheet.status == "승인",
     )
+    q = q.join(Employee, Employee.id == Timesheet.employee_id)
+    q = exclude_system_account_employees(q, db)
     allowed_ids = _allowed_employee_ids(db, current)
     if allowed_ids is not None:
         if not allowed_ids:

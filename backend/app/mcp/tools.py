@@ -12,6 +12,7 @@ from ..models.execution import Project
 from ..models.master import Employee
 from ..models.timesheet import Timesheet
 from ..utils.permissions import is_system_admin, normalize_role
+from ..utils.system_accounts import exclude_system_account_employees, is_system_account_employee
 
 
 ToolHandler = Callable[[dict[str, Any], Session, User], dict[str, Any]]
@@ -155,15 +156,22 @@ def _allowed_employee_ids(db: Session, current: User) -> set[int] | None:
                 Employee.is_active == True,
                 Employee.department_id.in_(department_ids),
             ).all()
-            allowed = {row.id for row in rows}
-            if emp:
+            allowed = {
+                row.id
+                for row in rows
+                if not is_system_account_employee(db, row.id)
+            }
+            if emp and not is_system_account_employee(db, emp.id):
                 allowed.add(emp.id)
             return allowed
-    return {emp.id} if emp else set()
+    if emp and not is_system_account_employee(db, emp.id):
+        return {emp.id}
+    return set()
 
 
 def _employee_query(db: Session, current: User):
     q = db.query(Employee).filter(Employee.is_active == True)
+    q = exclude_system_account_employees(q, db)
     allowed_ids = _allowed_employee_ids(db, current)
     if allowed_ids is not None:
         if not allowed_ids:

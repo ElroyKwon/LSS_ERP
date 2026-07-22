@@ -60,7 +60,7 @@ def get_calendar_config_and_service(category: str):
     if not CREDENTIALS_DIR:
         raise HTTPException(
             status_code=500,
-            detail="환경 변수 'GOOGLE_CUSTOM_CREDENTIALS_DIR'이 정의되지 않았습니다."
+            detail="?섍꼍 蹂??'GOOGLE_CUSTOM_CREDENTIALS_DIR'???뺤쓽?섏? ?딆븯?듬땲??"
         )
 
     if category == "refresh":
@@ -73,13 +73,13 @@ def get_calendar_config_and_service(category: str):
     if not calendar_id:
         raise HTTPException(
             status_code=500,
-            detail=f"'{category}' 캘린더 ID 환경 변수가 정의되지 않았습니다."
+            detail=f"'{category}' 罹섎┛??ID ?섍꼍 蹂?섍? ?뺤쓽?섏? ?딆븯?듬땲??"
         )
         
     if not json_path or not os.path.exists(json_path):
         raise HTTPException(
             status_code=500, 
-            detail=f"인증에 필요한 구글 JSON 키 파일이 경로에 없습니다: {json_path}"
+            detail=f"?몄쬆???꾩슂??援ш? JSON ???뚯씪??寃쎈줈???놁뒿?덈떎: {json_path}"
         )
         
     creds = service_account.Credentials.from_service_account_file(json_path, scopes=SCOPES)
@@ -90,7 +90,7 @@ def get_calendar_config_and_service(category: str):
 
 
 @router.get("")
-def get_schedules(category: str = Query("company", description="company 또는 refresh")):
+def get_schedules(category: str = Query("company", description="company ?먮뒗 refresh")):
     try:
         service, target_calendar_id = get_calendar_config_and_service(category)
         
@@ -132,7 +132,7 @@ def get_schedules(category: str = Query("company", description="company 또는 r
                 end_time = end_time_str.replace('T', ' ')[:19] if end_time_str else None
                 end_date = end_time_str[:10] if end_time_str else event_date
             
-            raw_summary = event.get('summary', '제목 없음')
+            raw_summary = event.get('summary', '?쒕ぉ ?놁쓬')
             content = raw_summary
             user_name = ""  
             
@@ -148,18 +148,18 @@ def get_schedules(category: str = Query("company", description="company 또는 r
             desc = event.get('description', '')
             schedule_type = "success" 
             
-            if "유형:" in desc:
+            if "?좏삎:" in desc:
                 try:
-                    raw_type = desc.split("유형:")[1].split("(")[0].strip()
-                    if raw_type in ["정상", "업무", "success"]:
+                    raw_type = desc.split("?좏삎:")[1].split("(")[0].strip()
+                    if raw_type in ["?뺤긽", "?낅Т", "success"]:
                         schedule_type = "success"
-                    elif raw_type in ["경고", "warning"]:
+                    elif raw_type in ["寃쎄퀬", "warning"]:
                         schedule_type = "warning"
-                    elif raw_type in ["중요", "error", "야근"]:
+                    elif raw_type in ["以묒슂", "error", "?쇨렐"]:
                         schedule_type = "error"
-                    elif raw_type in ["진행중", "processing"]:
+                    elif raw_type in ["吏꾪뻾以?, "processing"]:
                         schedule_type = "processing"
-                    elif raw_type in ["기타", "default"]:
+                    elif raw_type in ["湲고?", "default"]:
                         schedule_type = "default"
                     else:
                         schedule_type = raw_type
@@ -184,14 +184,14 @@ def get_schedules(category: str = Query("company", description="company 또는 r
     except HttpError as he:
         print(f"\n=== GOOGLE CALENDAR API HTTP ERROR ({category}) ===")
         print(f"Status Code: {he.resp.status}, Reason: {he.content}")
-        raise HTTPException(status_code=he.resp.status, detail="구글 캘린더 API 연동 중 오류 발생")
+        raise HTTPException(status_code=he.resp.status, detail="援ш? 罹섎┛??API ?곕룞 以??ㅻ쪟 諛쒖깮")
     except Exception as e:
         print(f"\n=== GOOGLE CALENDAR FETCH ERROR ({category}) ===")
         traceback.print_exc()
         print("==================================================\n")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"구글 ({category}) 일정 불러오기 실패 원인: {str(e)}"
+            detail=f"援ш? ({category}) ?쇱젙 遺덈윭?ㅺ린 ?ㅽ뙣 ?먯씤: {str(e)}"
         )
 
 
@@ -214,7 +214,7 @@ def create_schedule(payload: ScheduleCreate):
             
             event = {
                 'summary': display_summary,
-                'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
+                'description': f"?좏삎: {payload.type} (?щ궡 Timesheet ?쒖뒪???곕룞 - ?깅줉?? {payload.user_name})",
                 'start': {
                     'date': start_date_str,
                     'timeZone': 'Asia/Seoul',
@@ -226,13 +226,13 @@ def create_schedule(payload: ScheduleCreate):
             }
         else:
             if not payload.start_time or not payload.end_time:
-                raise HTTPException(status_code=400, detail="시간 지정 일정은 start_time과 end_time 필드가 필요합니다.")
+                raise HTTPException(status_code=400, detail="?쒓컙 吏???쇱젙? start_time怨?end_time ?꾨뱶媛 ?꾩슂?⑸땲??")
             start_dt = datetime.strptime(payload.start_time, "%Y-%m-%d %H:%M:%S")
             end_dt = datetime.strptime(payload.end_time, "%Y-%m-%d %H:%M:%S")
             
             event = {
                 'summary': display_summary,
-                'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
+                'description': f"?좏삎: {payload.type} (?щ궡 Timesheet ?쒖뒪???곕룞 - ?깅줉?? {payload.user_name})",
                 'start': {
                     'dateTime': start_dt.isoformat(),
                     'timeZone': 'Asia/Seoul',
@@ -250,17 +250,15 @@ def create_schedule(payload: ScheduleCreate):
             "id": google_result.get('id')
         }
         
-    except HTTPException:
-        raise
     except HttpError as he:
         print(f"\n=== GOOGLE CALENDAR API HTTP ERROR ({payload.category}) ===")
         print(f"Status Code: {he.resp.status}, Reason: {he.content}")
-        raise HTTPException(status_code=he.resp.status, detail="구글 캘린더 쓰기 권한이 없거나 API 오류가 발생했습니다.")
+        raise HTTPException(status_code=he.resp.status, detail="援ш? 罹섎┛???곌린 沅뚰븳???녾굅??API ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.")
     except Exception as e:
         print(f"\n=== GOOGLE CALENDAR INSERT ERROR ({payload.category}) ===")
         traceback.print_exc()
         print("==================================================\n")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"구글 API ({payload.category}) 전송 실패 원인: {str(e)}"
+            detail=f"援ш? API ({payload.category}) ?꾩넚 ?ㅽ뙣 ?먯씤: {str(e)}"
         )

@@ -2,7 +2,7 @@
   <div class="page-wrap">
     <a-tabs v-model:activeKey="activeTab" class="main-tabs">
       
-      <a-tab-pane key="company-calendar" tab="전사 일정(외근·출장)">
+      <a-tab-pane key="company-calendar" tab="?꾩궗 ?쇱젙(?멸렐쨌異쒖옣)">
         <div class="calendar-nav">
           <div style="display: flex; align-items: center; gap: 10px;">
             <a-button @click="prevCompanyMonth"><LeftOutlined /></a-button>
@@ -10,10 +10,10 @@
               {{ companyYearMonth }}
             </span>
             <a-button @click="nextCompanyMonth"><RightOutlined /></a-button>
-            <a-button size="small" @click="goCompanyToday" style="margin-left: 8px;">이번 달</a-button>
+            <a-button size="small" @click="goCompanyToday" style="margin-left: 8px;">?대쾲 ??/a-button>
           </div>
           <a-button type="primary" size="small" @click="openCompanyModal">
-            <template #icon><PlusOutlined /></template>일정 등록
+            <template #icon><PlusOutlined /></template>?쇱젙 ?깅줉
           </a-button>
         </div>
 
@@ -40,7 +40,7 @@
           </a-calendar>
         </a-card>	
 
-        <a-modal :mask-closable="false" v-model:open="isCompanyDetailModalOpen" :title="`${selectedCompanyDate} 일정 상세`" :footer="null">
+        <a-modal :mask-closable="false" v-model:open="isCompanyDetailModalOpen" :title="`${selectedCompanyDate} ?쇱젙 ?곸꽭`" :footer="null">
           <div style="margin-top: 16px;">
             <a-list item-layout="horizontal" :data-source="companyDetailList">
               <template #renderItem="{ item }">
@@ -50,48 +50,52 @@
                       <a-badge :color="item.type" :text="item.raw_content" style="font-size: 14px; font-weight: 500;" />
                     </div>
                     <div style="font-size: 12px; color: #8c8c8c; padding-left: 14px;">
-                      <span v-if="item.is_all_day">종일</span>
+                      <span v-if="item.is_all_day">醫낆씪</span>
                       <span v-else>{{ formatTimeRange(item.start_time, item.end_time) }}</span>
-                      <span style="margin-left: 8px; font-weight: 500; color: #595959;">등록자: {{ item.user_name }}</span>
+                      <span style="margin-left: 8px; font-weight: 500; color: #595959;">?깅줉?? {{ item.user_name }}</span>
                     </div>
                   </div>
                 </a-list-item>
               </template>
               <template #empty>
-                <a-empty description="등록된 일정이 없습니다." />
+                <a-empty description="?깅줉???쇱젙???놁뒿?덈떎." />
               </template>
             </a-list>
           </div>
         </a-modal>
 
-        <a-modal v-model:open="isCompanyModalOpen" title="전사 일정(외근·출장) 등록" @ok="handleCompanySubmit" @cancel="closeCompanyModal" ok-text="등록" cancel-text="취소">
+        <a-modal v-model:open="isCompanyModalOpen" title="?꾩궗 ?쇱젙(?멸렐쨌異쒖옣) ?깅줉" @ok="handleCompanySubmit" @cancel="closeCompanyModal" ok-text="?깅줉" cancel-text="痍⑥냼">
           <a-form layout="vertical" style="margin-top: 16px;">
-            <a-form-item label="일정명" required>
-              <a-input v-model:value="newCompanySchedule.content" placeholder="예: 전사 정기 미팅, 현장 작업" />
+            <a-form-item label="?쇱젙紐? required>
+              <a-input v-model:value="newCompanySchedule.content" placeholder="?? ?꾩궗 ?뺢린 誘명똿, ?꾩옣 ?묒뾽" />
             </a-form-item>
-            <a-form-item label="일정 유형">
+            <a-form-item label="醫낆씪 ?щ?">
+              <a-switch v-model:checked="newCompanySchedule.is_all_day" checked-children="醫낆씪" un-checked-children="?쒓컙吏?? />
+            </a-form-item>
+            <a-form-item label="?좎쭨" required v-if="newCompanySchedule.is_all_day">
+              <a-date-picker v-model:value="newCompanySchedule.dateValue" style="width: 100%" placeholder="?좎쭨 ?좏깮" />
+            </a-form-item>
+            <a-form-item label="?쒓컙 吏?? required v-else>
+              <a-range-picker 
+                v-model:value="newCompanySchedule.rangeValue" 
+                format="YYYY-MM-DD HH:mm" 
+                :show-time="{ format: 'HH:mm', minuteStep: 30 }"
+                :placeholder="['?쒖옉 ?쇱떆', '醫낅즺 ?쇱떆']" 
+                style="width: 100%" 
+              />
+            </a-form-item>
+            <a-form-item label="?쇱젙 ?좏삎">
               <a-select v-model:value="newCompanySchedule.type">
-                <a-select-option value="#52c41a">외근 (초록)</a-select-option>
-                <a-select-option value="#722ed1">국내 출장 (보라)</a-select-option>
-                <a-select-option value="#fa8c16">국외 출장 (주황)</a-select-option>
+                <a-select-option value="#52c41a">?멸렐 (珥덈줉)</a-select-option>
+                <a-select-option value="#722ed1">援?궡 異쒖옣 (蹂대씪)</a-select-option>
+                <a-select-option value="#fa8c16">援?쇅 異쒖옣 (鍮④컯)</a-select-option>
               </a-select>
-            </a-form-item>
-            <a-form-item label="일정 선택" required v-if="isCompanyFieldWork">
-              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <a-date-picker v-model:value="newCompanySchedule.workDate" placeholder="일자 선택" style="flex: 1 1 180px; min-width: 160px;" />
-                <a-time-picker v-model:value="newCompanySchedule.startTime" format="HH:mm" :minute-step="30" style="width: 110px;" />
-                <span>~</span>
-                <a-time-picker v-model:value="newCompanySchedule.endTime" format="HH:mm" :minute-step="30" style="width: 110px;" />
-              </div>
-            </a-form-item>
-            <a-form-item label="기간" required v-else>
-              <a-range-picker v-model:value="newCompanySchedule.dateValue" format="YYYY-MM-DD" :placeholder="['시작일', '종료일']" style="width: 100%" />
             </a-form-item>
           </a-form>
         </a-modal>
       </a-tab-pane>
 
-      <a-tab-pane key="refresh-calendar" tab="전사 일정(휴가)">
+      <a-tab-pane key="refresh-calendar" tab="?꾩궗 ?쇱젙(?닿?)">
         <div class="calendar-nav">
           <div style="display: flex; align-items: center; gap: 10px;">
             <a-button @click="prevRefreshMonth"><LeftOutlined /></a-button>
@@ -99,10 +103,10 @@
               {{ refreshYearMonth }}
             </span>
             <a-button @click="nextRefreshMonth"><RightOutlined /></a-button>
-            <a-button size="small" @click="goRefreshToday" style="margin-left: 8px;">이번 달</a-button>
+            <a-button size="small" @click="goRefreshToday" style="margin-left: 8px;">?대쾲 ??/a-button>
           </div>
           <a-button type="primary" size="small" @click="openRefreshModal">
-            <template #icon><PlusOutlined /></template>일정 등록
+            <template #icon><PlusOutlined /></template>?쇱젙 ?깅줉
           </a-button>
         </div>
 
@@ -129,7 +133,7 @@
           </a-calendar>
         </a-card>	
 
-        <a-modal :mask-closable="false" v-model:open="isRefreshDetailModalOpen" :title="`${selectedRefreshDate} 휴가 상세`" :footer="null">
+        <a-modal :mask-closable="false" v-model:open="isRefreshDetailModalOpen" :title="`${selectedRefreshDate} ?닿? ?곸꽭`" :footer="null">
           <div style="margin-top: 16px;">
             <a-list item-layout="horizontal" :data-source="refreshDetailList">
               <template #renderItem="{ item }">
@@ -139,38 +143,48 @@
                       <a-badge :color="item.type" :text="item.raw_content" style="font-size: 14px; font-weight: 500;" />
                     </div>
                     <div style="font-size: 12px; color: #8c8c8c; padding-left: 14px;">
-                      <span v-if="item.is_all_day">종일</span>
+                      <span v-if="item.is_all_day">醫낆씪</span>
                       <span v-else>{{ formatTimeRange(item.start_time, item.end_time) }}</span>
-                      <span style="margin-left: 8px; font-weight: 500; color: #595959;">등록자: {{ item.user_name }}</span>
+                      <span style="margin-left: 8px; font-weight: 500; color: #595959;">?깅줉?? {{ item.user_name }}</span>
                     </div>
                   </div>
                 </a-list-item>
               </template>
               <template #empty>
-                <a-empty description="등록된 휴가 일정이 없습니다." />
+                <a-empty description="?깅줉???닿? ?쇱젙???놁뒿?덈떎." />
               </template>
             </a-list>
           </div>
         </a-modal>
 
-        <a-modal v-model:open="isRefreshModalOpen" title="전사 일정(휴가) 등록" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" ok-text="등록" cancel-text="취소">
+        <a-modal v-model:open="isRefreshModalOpen" title="?꾩궗 ?쇱젙(?닿?) ?깅줉" @ok="handleRefreshSubmit" @cancel="closeRefreshModal" ok-text="?깅줉" cancel-text="痍⑥냼">
           <a-form layout="vertical" style="margin-top: 16px;">
-            <a-form-item label="일정명" required>
-              <a-input v-model:value="newRefreshSchedule.content" placeholder="예: 여름휴가, OOO 매니저 연차" />
+            <a-form-item label="?쇱젙紐? required>
+              <a-input v-model:value="newRefreshSchedule.content" placeholder="?? ?щ쫫?닿?, OOO 留ㅻ땲? ?곗감" />
             </a-form-item>
-            <a-form-item label="일정 유형">
-              <a-select v-model:value="newRefreshSchedule.type">
-                <a-select-option value="#bae7ff">연차 (연파랑)</a-select-option>
-                <a-select-option value="#13c2c2">반차 (청록)</a-select-option>
-                <a-select-option value="#eb2f96">반반차 (분홍)</a-select-option>
-                <a-select-option value="#1890ff">대체휴가 (파랑)</a-select-option>
-                <a-select-option value="#bfbfbf">하계휴가 (회색)</a-select-option>
-                <a-select-option value="#ff7a45">병가 (주황)</a-select-option>
-                <a-select-option value="#d9d9d9">기타 (연회색)</a-select-option>
-              </a-select>
+            <a-form-item label="醫낆씪 ?щ?">
+              <a-switch v-model:checked="newRefreshSchedule.is_all_day" checked-children="醫낆씪" un-checked-children="?쒓컙吏?? />
             </a-form-item>
-            <a-form-item label="기간" required>
+            <a-form-item label="?좎쭨" required v-if="newRefreshSchedule.is_all_day">
               <a-range-picker v-model:value="newRefreshSchedule.dateValue" format="YYYY-MM-DD" :placeholder="['시작일', '종료일']" style="width: 100%" />
+            </a-form-item>
+            <a-form-item label="?쒓컙 吏?? required v-else>
+              <a-range-picker 
+                v-model:value="newRefreshSchedule.rangeValue" 
+                format="YYYY-MM-DD HH:mm" 
+                :show-time="{ format: 'HH:mm', minuteStep: 30 }"
+                :placeholder="['?쒖옉 ?쇱떆', '醫낅즺 ?쇱떆']" 
+                style="width: 100%" 
+              />
+            </a-form-item>
+            <a-form-item label="?쇱젙 ?좏삎">
+              <a-select v-model:value="newRefreshSchedule.type">
+                <a-select-option value="#bae7ff">?곗감 (?고뙆??</a-select-option>
+                <a-select-option value="#1890ff">?泥댄쑕媛 (?뚮옉)</a-select-option>
+                <a-select-option value="#bfbfbf">?섍퀎?닿? (?뚯깋)</a-select-option>
+                <a-select-option value="#ff7a45">蹂묎? (二쇳솴)</a-select-option>
+                <a-select-option value="#d9d9d9">湲고? (?고쉶??</a-select-option>
+              </a-select>
             </a-form-item>
           </a-form>
         </a-modal>
@@ -195,24 +209,23 @@ function getScheduleErrorMessage(error, fallback) {
   return detail ? `${fallback} (${detail})` : fallback
 }
 
-// ══════════════════════════════════════════════════
-// 탭 1: 전사 월간 일정 데이터 및 로직
-// ══════════════════════════════════════════════════
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+// ??1: ?꾩궗 ?붽컙 ?쇱젙 ?곗씠??諛?濡쒖쭅
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 const companyCalendarValue = ref(dayjs()) 
 const companySchedules     = ref([])
 const companyHoliday       = ref([]) 
 const companyHolidayCache  = ref({})
 
 const isCompanyModalOpen   = ref(false)
-const newCompanySchedule   = ref({ content: '', dateValue: null, rangeValue: null, workDate: null, startTime: dayjs('2026-01-01 08:30'), endTime: dayjs('2026-01-01 17:30'), type: '#52c41a' })
-const isCompanyFieldWork  = computed(() => newCompanySchedule.value.type === '#52c41a')
+const newCompanySchedule   = ref({ content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#52c41a' })
 
 const isCompanyDetailModalOpen = ref(false)
 const selectedCompanyDate      = ref('')
 const companyDetailList        = ref([])
 
 const companyYearMonth = computed(() => {
-  return companyCalendarValue.value ? companyCalendarValue.value.format('YYYY년 MM월') : ''
+  return companyCalendarValue.value ? companyCalendarValue.value.format('YYYY??MM??) : ''
 })
 
 async function fetchCompanyHolidayFromServer(year) {
@@ -231,7 +244,7 @@ async function fetchCompanyHolidayFromServer(year) {
       companyHoliday.value = []
     }
   } catch (error) {
-    console.error('전사 일정 공휴일 조회 실패:', error)
+    console.error('?꾩궗 ?쇱젙 怨듯쑕??議고쉶 ?ㅽ뙣:', error)
     companyHoliday.value = []
   }
 }
@@ -309,13 +322,13 @@ async function loadCompanyCalendarData() {
       }
     })
   } catch (error) {
-    console.error('전사 일정 조회 실패:', error)
-    message.error(getScheduleErrorMessage(error, '전사 월간 일정을 불러오지 못했습니다.'))
+    console.error('?꾩궗 ?쇱젙 議고쉶 ?ㅽ뙣:', error)
+    message.error(getScheduleErrorMessage(error, '?꾩궗 ?붽컙 ?쇱젙??遺덈윭?ㅼ? 紐삵뻽?듬땲??'))
   }
 }
 
 function openCompanyModal() {
-  newCompanySchedule.value = { content: '', dateValue: null, rangeValue: null, workDate: null, startTime: dayjs('2026-01-01 08:30'), endTime: dayjs('2026-01-01 17:30'), type: '#52c41a' }
+  newCompanySchedule.value = { content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#52c41a' }
   isCompanyModalOpen.value = true
 }
 
@@ -325,21 +338,17 @@ function closeCompanyModal() {
 
 async function handleCompanySubmit() {
   if (!newCompanySchedule.value.content) {
-    message.warning('일정명을 입력해 주세요.')
+    message.warning('?쇱젙紐낆쓣 ?낅젰??二쇱꽭??')
     return
   }
-  if (isCompanyFieldWork.value) {
-    if (!newCompanySchedule.value.workDate || !newCompanySchedule.value.startTime || !newCompanySchedule.value.endTime) {
-      message.warning('일자와 시간을 선택해 주세요.')
-      return
-    }
-    if (!newCompanySchedule.value.endTime.isAfter(newCompanySchedule.value.startTime)) {
-      message.warning('종료 시간은 시작 시간보다 늦어야 합니다.')
+  if (newCompanySchedule.value.is_all_day) {
+    if (!newCompanySchedule.value.dateValue) {
+      message.warning('?좎쭨瑜??좏깮??二쇱꽭??')
       return
     }
   } else {
-    if (!newCompanySchedule.value.dateValue || newCompanySchedule.value.dateValue.length < 2) {
-      message.warning('기간을 선택해 주세요.')
+    if (!newCompanySchedule.value.rangeValue || newCompanySchedule.value.rangeValue.length < 2) {
+      message.warning('?쒓컙 踰붿쐞瑜?吏?뺥빐 二쇱꽭??')
       return
     }
   }
@@ -348,31 +357,29 @@ async function handleCompanySubmit() {
       content: newCompanySchedule.value.content,
       type: newCompanySchedule.value.type,
       category: 'company',
-      user_name: auth.user?.name || '미확인',
-      is_all_day: !isCompanyFieldWork.value
+      user_name: auth.user?.name || '誘명솗??,
+      is_all_day: newCompanySchedule.value.is_all_day
     }
-    if (isCompanyFieldWork.value) {
-      const workDate = newCompanySchedule.value.workDate.format('YYYY-MM-DD')
-      payload.start_time = `${workDate} ${newCompanySchedule.value.startTime.format('HH:mm')}:00`
-      payload.end_time = `${workDate} ${newCompanySchedule.value.endTime.format('HH:mm')}:00`
+    if (newCompanySchedule.value.is_all_day) {
+      payload.date = newCompanySchedule.value.dateValue.format('YYYY-MM-DD')
     } else {
-      payload.date = newCompanySchedule.value.dateValue[0].format('YYYY-MM-DD')
-      payload.end_date = newCompanySchedule.value.dateValue[1].format('YYYY-MM-DD')
+      payload.start_time = newCompanySchedule.value.rangeValue[0].format('YYYY-MM-DD HH:mm:ss')
+      payload.end_time = newCompanySchedule.value.rangeValue[1].format('YYYY-MM-DD HH:mm:ss')
     }
 
     await api.post('/schedules', payload)
-    message.success('전사 일정 등록이 완료되었습니다.')
+    message.success('?꾩궗 ?쇱젙 ?깅줉???꾨즺?섏뿀?듬땲??')
     isCompanyModalOpen.value = false
     loadCompanyCalendarData()
   } catch (error) {
-    console.error('전사 일정 등록 실패:', error)
-    message.error(error.response?.data?.detail || '일정 등록 중 오류가 발생했습니다.')
+    console.error('?꾩궗 ?쇱젙 ?깅줉 ?ㅽ뙣:', error)
+    message.error(error.response?.data?.detail || '?쇱젙 ?깅줉 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')
   }
 }
 
 function openCompanyDetailModal(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
-  selectedCompanyDate.value = currentDate.format('YYYY년 MM월 DD일')
+  selectedCompanyDate.value = currentDate.format('YYYY??MM??DD??)
   companyDetailList.value = companySchedules.value.filter(item => {
     if (item.start_date && item.end_date) {
       return dateStr >= item.start_date && dateStr <= item.end_date
@@ -382,23 +389,23 @@ function openCompanyDetailModal(currentDate) {
   isCompanyDetailModalOpen.value = true
 }
 
-// ══════════════════════════════════════════════════
-// 탭 2: 전사 휴가 일정 데이터 및 로직
-// ══════════════════════════════════════════════════
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+// ??2: ?꾩궗 ?닿? ?쇱젙 ?곗씠??諛?濡쒖쭅
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 const refreshCalendarValue = ref(dayjs()) 
 const refreshSchedules     = ref([])
 const refreshHoliday       = ref([]) 
 const refreshHolidayCache  = ref({})
 
 const isRefreshModalOpen   = ref(false)
-const newRefreshSchedule   = ref({ content: '', dateValue: null, rangeValue: null, type: '#bae7ff' })
+const newRefreshSchedule   = ref({ content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#bae7ff' })
 
 const isRefreshDetailModalOpen = ref(false)
 const selectedRefreshDate      = ref('')
 const refreshDetailList        = ref([])
 
 const refreshYearMonth = computed(() => {
-  return refreshCalendarValue.value ? refreshCalendarValue.value.format('YYYY년 MM월') : ''
+  return refreshCalendarValue.value ? refreshCalendarValue.value.format('YYYY??MM??) : ''
 })
 
 async function fetchRefreshHolidayFromServer(year) {
@@ -417,7 +424,7 @@ async function fetchRefreshHolidayFromServer(year) {
       refreshHoliday.value = []
     }
   } catch (error) {
-    console.error('휴가 일정 공휴일 조회 실패:', error)
+    console.error('?닿? ?쇱젙 怨듯쑕??議고쉶 ?ㅽ뙣:', error)
     refreshHoliday.value = []
   }
 }
@@ -495,13 +502,13 @@ async function loadRefreshCalendarData() {
       }
     })
   } catch (error) {
-    console.error('휴가 일정 조회 실패:', error)
-    message.error(getScheduleErrorMessage(error, '전사 휴가 일정을 불러오지 못했습니다.'))
+    console.error('?닿? ?쇱젙 議고쉶 ?ㅽ뙣:', error)
+    message.error(getScheduleErrorMessage(error, '?꾩궗 ?닿? ?쇱젙??遺덈윭?ㅼ? 紐삵뻽?듬땲??'))
   }
 }
 
 function openRefreshModal() {
-  newRefreshSchedule.value = { content: '', dateValue: null, rangeValue: null, type: '#bae7ff' }
+  newRefreshSchedule.value = { content: '', is_all_day: true, dateValue: null, rangeValue: null, type: '#bae7ff' }
   isRefreshModalOpen.value = true
 }
 
@@ -511,37 +518,49 @@ function closeRefreshModal() {
 
 async function handleRefreshSubmit() {
   if (!newRefreshSchedule.value.content) {
-    message.warning('일정명을 입력해 주세요.')
+    message.warning('?쇱젙紐낆쓣 ?낅젰??二쇱꽭??')
     return
   }
-  if (!newRefreshSchedule.value.dateValue || newRefreshSchedule.value.dateValue.length < 2) {
-    message.warning('기간을 선택해 주세요.')
-    return
+  if (newRefreshSchedule.value.is_all_day) {
+    if (!newRefreshSchedule.value.dateValue || newRefreshSchedule.value.dateValue.length < 2) {
+      message.warning('휴가 기간을 선택해 주세요.')
+      return
+    }
+  } else {
+    if (!newRefreshSchedule.value.rangeValue || newRefreshSchedule.value.rangeValue.length < 2) {
+      message.warning('?쒓컙 踰붿쐞瑜?吏?뺥빐 二쇱꽭??')
+      return
+    }
   }
   try {
     const payload = {
       content: newRefreshSchedule.value.content,
       type: newRefreshSchedule.value.type,
       category: 'refresh',
-      user_name: auth.user?.name || '미확인',
-      is_all_day: true
+      user_name: auth.user?.name || '誘명솗??,
+      is_all_day: newRefreshSchedule.value.is_all_day
     }
-    payload.date = newRefreshSchedule.value.dateValue[0].format('YYYY-MM-DD')
-    payload.end_date = newRefreshSchedule.value.dateValue[1].format('YYYY-MM-DD')
+    if (newRefreshSchedule.value.is_all_day) {
+      payload.date = newRefreshSchedule.value.dateValue[0].format('YYYY-MM-DD')
+      payload.end_date = newRefreshSchedule.value.dateValue[1].format('YYYY-MM-DD')
+    } else {
+      payload.start_time = newRefreshSchedule.value.rangeValue[0].format('YYYY-MM-DD HH:mm:ss')
+      payload.end_time = newRefreshSchedule.value.rangeValue[1].format('YYYY-MM-DD HH:mm:ss')
+    }
 
     await api.post('/schedules', payload)
-    message.success('전사 휴가 일정 등록이 완료되었습니다.')
+    message.success('?꾩궗 ?닿? ?쇱젙 ?깅줉???꾨즺?섏뿀?듬땲??')
     isRefreshModalOpen.value = false
     loadRefreshCalendarData()
   } catch (error) {
-    console.error('휴가 일정 등록 실패:', error)
-    message.error(error.response?.data?.detail || '일정 등록 중 오류가 발생했습니다.')
+    console.error('?닿? ?쇱젙 ?깅줉 ?ㅽ뙣:', error)
+    message.error(error.response?.data?.detail || '?쇱젙 ?깅줉 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')
   }
 }
 
 function openRefreshDetailModal(currentDate) {
   const dateStr = currentDate.format('YYYY-MM-DD')
-  selectedRefreshDate.value = currentDate.format('YYYY년 MM월 DD일')
+  selectedRefreshDate.value = currentDate.format('YYYY??MM??DD??)
   refreshDetailList.value = refreshSchedules.value.filter(item => {
     if (item.start_date && item.end_date) {
       return dateStr >= item.start_date && dateStr <= item.end_date
@@ -551,9 +570,9 @@ function openRefreshDetailModal(currentDate) {
   isRefreshDetailModalOpen.value = true
 }
 
-// ══════════════════════════════════════════════════
-// 공통 가동 감시 및 생명주기 관련
-// ══════════════════════════════════════════════════
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+// 怨듯넻 媛??媛먯떆 諛??앸챸二쇨린 愿??
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 watch(() => companyCalendarValue.value, (newVal, oldVal) => {
   if (!newVal) return
   const newYear = newVal.format('YYYY')
@@ -645,11 +664,11 @@ function shouldShowEventText(item, currentDate) {
 onMounted(() => {
   const currentYear = dayjs().format('YYYY')
   
-  // 전사 일정 구동
+  // ?꾩궗 ?쇱젙 援щ룞
   fetchCompanyHolidayFromServer(currentYear)
   loadCompanyCalendarData()
   
-  // 휴가 일정 구동
+  // ?닿? ?쇱젙 援щ룞
   fetchRefreshHolidayFromServer(currentYear)
   loadRefreshCalendarData()
 })

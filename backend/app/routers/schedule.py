@@ -3,13 +3,14 @@ import re
 import traceback
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Tuple
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from pydantic import BaseModel
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from pathlib import Path
 from dotenv import load_dotenv
+from ..utils.auth import get_current_user
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=BASE_DIR / "google_calendar.env")
@@ -87,6 +88,56 @@ def get_calendar_config_and_service(category: str):
     
     _google_services_cache[category] = (service, calendar_id)
     return service, calendar_id
+
+
+def extract_event_owner(event: dict) -> str:
+    raw_summary = event.get('summary', '') or ''
+    if raw_summary.startswith('[') and ']' in raw_summary:
+        match = re.match(r"^\[(.*?)\]\s*(.*)$", raw_summary)
+        if match:
+            return match.group(1).strip()
+    return ''
+
+
+def require_event_owner(event: dict, current_user) -> None:
+    owner = extract_event_owner(event)
+    current_name = (getattr(current_user, 'name', '') or '').strip()
+    if not owner or owner != current_name:
+        raise HTTPException(status_code=403, detail='본인이 등록한 일정만 수정 또는 삭제할 수 있습니다.')
+
+
+def build_google_event(payload: ScheduleCreate, user_name: str) -> dict:
+    display_summary = f"[{user_name}] {payload.content}"
+    description = f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {user_name})"
+
+    if payload.is_all_day:
+        start_date_str = payload.date
+        if not start_date_str:
+            raise HTTPException(status_code=400, detail='종일 일정은 시작일이 필요합니다.')
+        start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
+        end_dt = datetime.strptime(payload.end_date or start_date_str, '%Y-%m-%d')
+        if end_dt < start_dt:
+            raise HTTPException(status_code=400, detail='종료일은 시작일보다 빠를 수 없습니다.')
+        end_date_str = (end_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+        return {
+            'summary': display_summary,
+            'description': description,
+            'start': {'date': start_date_str, 'timeZone': 'Asia/Seoul'},
+            'end': {'date': end_date_str, 'timeZone': 'Asia/Seoul'},
+        }
+
+    if not payload.start_time or not payload.end_time:
+        raise HTTPException(status_code=400, detail='시간 지정 일정은 start_time과 end_time 필드가 필요합니다.')
+    start_dt = datetime.strptime(payload.start_time, '%Y-%m-%d %H:%M:%S')
+    end_dt = datetime.strptime(payload.end_time, '%Y-%m-%d %H:%M:%S')
+    if end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail='종료 시간은 시작 시간보다 늦어야 합니다.')
+    return {
+        'summary': display_summary,
+        'description': description,
+        'start': {'dateTime': start_dt.isoformat(), 'timeZone': 'Asia/Seoul'},
+        'end': {'dateTime': end_dt.isoformat(), 'timeZone': 'Asia/Seoul'},
+    }
 
 
 @router.get("")
@@ -196,60 +247,17 @@ def get_schedules(category: str = Query("company", description="company 또는 r
 
 
 @router.post("")
-def create_schedule(payload: ScheduleCreate):
+def create_schedule(payload: ScheduleCreate, current_user=Depends(get_current_user)):
     try:
         service, target_calendar_id = get_calendar_config_and_service(payload.category)
-        
-        display_summary = f"[{payload.user_name}] {payload.content}"
-        
-        if payload.is_all_day:
-            start_date_str = payload.date
-            if not start_date_str:
-                raise HTTPException(status_code=400, detail="종일 일정은 시작일이 필요합니다.")
-            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-            end_dt = datetime.strptime(payload.end_date or start_date_str, "%Y-%m-%d")
-            if end_dt < start_dt:
-                raise HTTPException(status_code=400, detail="종료일은 시작일보다 빠를 수 없습니다.")
-            end_date_str = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
-            
-            event = {
-                'summary': display_summary,
-                'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
-                'start': {
-                    'date': start_date_str,
-                    'timeZone': 'Asia/Seoul',
-                },
-                'end': {
-                    'date': end_date_str,
-                    'timeZone': 'Asia/Seoul',
-                },
-            }
-        else:
-            if not payload.start_time or not payload.end_time:
-                raise HTTPException(status_code=400, detail="시간 지정 일정은 start_time과 end_time 필드가 필요합니다.")
-            start_dt = datetime.strptime(payload.start_time, "%Y-%m-%d %H:%M:%S")
-            end_dt = datetime.strptime(payload.end_time, "%Y-%m-%d %H:%M:%S")
-            
-            event = {
-                'summary': display_summary,
-                'description': f"유형: {payload.type} (사내 Timesheet 시스템 연동 - 등록자: {payload.user_name})",
-                'start': {
-                    'dateTime': start_dt.isoformat(),
-                    'timeZone': 'Asia/Seoul',
-                },
-                'end': {
-                    'dateTime': end_dt.isoformat(),
-                    'timeZone': 'Asia/Seoul',
-                },
-            }
-        
+        user_name = (getattr(current_user, 'name', None) or payload.user_name or '미확인').strip()
+        event = build_google_event(payload, user_name)
         google_result = service.events().insert(calendarId=target_calendar_id, body=event).execute()
-        
         return {
             "status": "success",
             "id": google_result.get('id')
         }
-        
+
     except HTTPException:
         raise
     except HttpError as he:
@@ -262,5 +270,63 @@ def create_schedule(payload: ScheduleCreate):
         print("==================================================\n")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"구글 API ({payload.category}) 전송 실패 원인: {str(e)}"
+            detail=f"구글 API ({payload.category}) 수정 실패 원인: {str(e)}"
+        )
+
+
+@router.put("/{event_id}")
+def update_schedule(event_id: str, payload: ScheduleCreate, current_user=Depends(get_current_user)):
+    try:
+        service, target_calendar_id = get_calendar_config_and_service(payload.category)
+        existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
+        require_event_owner(existing, current_user)
+        user_name = (getattr(current_user, 'name', None) or payload.user_name or '미확인').strip()
+        event = build_google_event(payload, user_name)
+        service.events().update(calendarId=target_calendar_id, eventId=event_id, body=event).execute()
+        return {"status": "success", "id": event_id}
+
+    except HTTPException:
+        raise
+    except HttpError as he:
+        status_code = getattr(he.resp, 'status', 500)
+        if status_code == 404:
+            raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
+        print(f"\n=== GOOGLE CALENDAR UPDATE ERROR ({payload.category}) ===")
+        print(f"Status Code: {status_code}, Reason: {he.content}")
+        raise HTTPException(status_code=status_code, detail="구글 캘린더 일정 삭제 중 오류가 발생했습니다.")
+    except Exception as e:
+        print(f"\n=== GOOGLE CALENDAR UPDATE ERROR ({payload.category}) ===")
+        traceback.print_exc()
+        print("==================================================\n")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"구글 API ({payload.category}) 수정 실패 원인: {str(e)}"
+        )
+
+
+@router.delete("/{event_id}")
+def delete_schedule(event_id: str, category: str = Query("company"), current_user=Depends(get_current_user)):
+    try:
+        service, target_calendar_id = get_calendar_config_and_service(category)
+        existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
+        require_event_owner(existing, current_user)
+        service.events().delete(calendarId=target_calendar_id, eventId=event_id).execute()
+        return {"status": "success"}
+
+    except HTTPException:
+        raise
+    except HttpError as he:
+        status_code = getattr(he.resp, 'status', 500)
+        if status_code == 404:
+            raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
+        print(f"\n=== GOOGLE CALENDAR DELETE ERROR ({category}) ===")
+        print(f"Status Code: {status_code}, Reason: {he.content}")
+        raise HTTPException(status_code=status_code, detail="구글 캘린더 일정 삭제 중 오류가 발생했습니다.")
+    except Exception as e:
+        print(f"\n=== GOOGLE CALENDAR DELETE ERROR ({category}) ===")
+        traceback.print_exc()
+        print("==================================================\n")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"구글 API ({category}) 삭제 실패 원인: {str(e)}"
         )

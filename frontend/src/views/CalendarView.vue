@@ -321,8 +321,10 @@ function findCompanyProjectOption(value, option = null) {
 
 function applyCompanyProjectOption(selected, fallbackValue = '') {
   const source = COMPANY_PROJECT_SOURCES.has(selected?.source) ? selected.source : '공통'
+  const projectName = selected?.project_name || selected?.value || fallbackValue || ''
+  newCompanySchedule.value.content = projectName
   newCompanySchedule.value.timesheet_project_id = source === '실행' ? (selected?.id || null) : null
-  newCompanySchedule.value.timesheet_project_name = selected?.project_name || selected?.value || fallbackValue || ''
+  newCompanySchedule.value.timesheet_project_name = projectName
   newCompanySchedule.value.timesheet_project_source = source
 }
 

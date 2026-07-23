@@ -318,7 +318,7 @@ def _sync_schedule_to_timesheet(db: Session, payload: ScheduleCreate, event_id: 
             end_dt = datetime.strptime(payload.end_time, "%Y-%m-%d %H:%M:%S")
             if end_dt <= start_dt:
                 raise HTTPException(status_code=400, detail="종료 시간은 시작 시간보다 늦어야 합니다.")
-            hours = Decimal(str(round((end_dt - start_dt).total_seconds() / 3600, 2)))
+            hours = min(Decimal(str(round((end_dt - start_dt).total_seconds() / 3600, 2))), Decimal("8"))
             schedule_days = [(start_dt.date(), hours)]
         else:
             start_day = _parse_ymd(payload.date) if payload.date else None

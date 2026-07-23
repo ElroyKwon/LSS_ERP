@@ -74,14 +74,29 @@
         <a-modal v-model:open="isCompanyModalOpen" :title="editingCompanySchedule ? '\uc804\uc0ac \uc77c\uc815(\uc678\uadfc\u00b7\ucd9c\uc7a5) \uc218\uc815' : '\uc804\uc0ac \uc77c\uc815(\uc678\uadfc\u00b7\ucd9c\uc7a5) \ub4f1\ub85d'" @ok="handleCompanySubmit" @cancel="closeCompanyModal" :ok-text="editingCompanySchedule ? '\uc800\uc7a5' : '\ub4f1\ub85d'" :cancel-text="'\ucde8\uc18c'">
           <a-form layout="vertical" style="margin-top: 16px;">
             <a-form-item label="일정명" required>
-              <a-auto-complete
-                v-model:value="newCompanySchedule.content"
-                :options="companyProjectOptions"
-                :filter-option="filterCompanyProjectOption"
-                @search="searchCompanyCommonProjects"
-                @select="selectCompanyProject"
-                @blur="changeCompanyProjectInput(newCompanySchedule.content)"
-              />
+              <div class="schedule-project-picker">
+                <a-input
+                  v-model:value="newCompanySchedule.content"
+                  @update:value="handleCompanyProjectInput"
+                  @focus="openCompanyProjectDropdown"
+                  @blur="closeCompanyProjectDropdown"
+                />
+                <div
+                  v-if="companyProjectDropdownOpen && visibleCompanyProjectOptions.length"
+                  class="schedule-project-dropdown"
+                >
+                  <button
+                    v-for="option in visibleCompanyProjectOptions"
+                    :key="`${option.source}-${option.id || option.value}`"
+                    type="button"
+                    class="schedule-project-option"
+                    @mousedown.prevent="selectCompanyProjectOption(option)"
+                  >
+                    <span class="schedule-project-source">[{{ option.source }}]</span>
+                    <span class="schedule-project-name">{{ option.value }}</span>
+                  </button>
+                </div>
+              </div>
             </a-form-item>
             <a-form-item label="일정 유형">
               <a-select v-model:value="newCompanySchedule.type">
@@ -229,8 +244,9 @@ const companyHolidayCache  = ref({})
 const companyProjects      = ref([])
 const companySalesProjects = ref([])
 const companyCommonProjectSuggestions = ref([])
+const companyProjectDropdownOpen = ref(false)
 let companyCommonSearchTimer = null
-let companyProjectSelecting = false
+let companyProjectSelectionTimer = null
 
 const isCompanyModalOpen   = ref(false)
 const newCompanySchedule   = ref(createDefaultCompanySchedule())
@@ -303,6 +319,14 @@ const companyProjectOptions = computed(() => {
   return [...executionOptions, ...salesOptions, ...commonOptions]
 })
 
+const visibleCompanyProjectOptions = computed(() => {
+  const keyword = String(newCompanySchedule.value.content || '').trim().toLowerCase()
+  if (!keyword) return []
+  return companyProjectOptions.value
+    .filter(option => filterCompanyProjectOption(keyword, option))
+    .slice(0, 30)
+})
+
 function filterCompanyProjectOption(input, option) {
   const keyword = String(input || '').trim().toLowerCase()
   if (!keyword) return true
@@ -320,26 +344,64 @@ function findCompanyProjectOption(value, option = null) {
   ) || option || null
 }
 
-function applyCompanyProjectOption(selected, fallbackValue = '') {
+function normalizeCompanyProjectOption(selected, fallbackValue = '') {
   const source = COMPANY_PROJECT_SOURCES.has(selected?.source) ? selected.source : '공통'
   const projectName = selected?.project_name || selected?.value || fallbackValue || ''
-  newCompanySchedule.value.content = projectName
-  newCompanySchedule.value.timesheet_project_id = source === '실행' ? (selected?.id || null) : null
-  newCompanySchedule.value.timesheet_project_name = projectName
-  newCompanySchedule.value.timesheet_project_source = source
+  return {
+    value: projectName,
+    label: labelCompanyProjectOption({ source, value: projectName }),
+    searchText: projectName.toLowerCase(),
+    id: source === '실행' ? (selected?.id || null) : null,
+    project_name: projectName,
+    source,
+  }
 }
 
-function selectCompanyProject(value, option) {
-  const selected = findCompanyProjectOption(value, option)
-  companyProjectSelecting = true
+function applyCompanyProjectOption(selected, fallbackValue = '') {
+  const normalized = normalizeCompanyProjectOption(selected, fallbackValue)
+  newCompanySchedule.value = {
+    ...newCompanySchedule.value,
+    content: normalized.project_name,
+    timesheet_project_id: normalized.id,
+    timesheet_project_name: normalized.project_name,
+    timesheet_project_source: normalized.source,
+  }
+}
+
+function openCompanyProjectDropdown() {
+  companyProjectDropdownOpen.value = Boolean(String(newCompanySchedule.value.content || '').trim())
+}
+
+function closeCompanyProjectDropdown() {
   setTimeout(() => {
-    applyCompanyProjectOption(selected, value)
-    companyProjectSelecting = false
-  }, 0)
+    companyProjectDropdownOpen.value = false
+    if (companyProjectSelectionTimer) return
+    changeCompanyProjectInput(newCompanySchedule.value.content)
+  }, 120)
+}
+
+function selectCompanyProjectOption(option) {
+  const selected = normalizeCompanyProjectOption(option, option?.value || '')
+  if (companyProjectSelectionTimer) clearTimeout(companyProjectSelectionTimer)
+  applyCompanyProjectOption(selected, selected.value)
+  companyProjectDropdownOpen.value = false
+  companyProjectSelectionTimer = setTimeout(() => {
+    applyCompanyProjectOption(selected, selected.value)
+    companyProjectSelectionTimer = null
+  }, 160)
+}
+
+function handleCompanyProjectInput(value) {
+  if (companyProjectSelectionTimer) {
+    clearTimeout(companyProjectSelectionTimer)
+    companyProjectSelectionTimer = null
+  }
+  companyProjectDropdownOpen.value = Boolean(String(value || '').trim())
+  changeCompanyProjectInput(value)
+  searchCompanyCommonProjects(value)
 }
 
 function changeCompanyProjectInput(value) {
-  if (companyProjectSelecting) return
   const typed = String(value || '').trim()
   const selected = findCompanyProjectOption(typed)
   if (selected) {
@@ -361,7 +423,6 @@ async function loadCompanyCommonProjectSuggestions(keyword = '') {
 }
 
 function searchCompanyCommonProjects(value) {
-  changeCompanyProjectInput(value)
   if (companyCommonSearchTimer) clearTimeout(companyCommonSearchTimer)
   companyCommonSearchTimer = setTimeout(() => loadCompanyCommonProjectSuggestions(value), 180)
 }
@@ -1007,6 +1068,50 @@ onMounted(() => {
 }
 .calendar-period-label { font-size: 14px; font-weight: 700; color: #1a2535; min-width: 120px; text-align: center; }
 .grid-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+.schedule-project-picker {
+  position: relative;
+}
+.schedule-project-dropdown {
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+.schedule-project-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #1f1f1f;
+  text-align: left;
+  cursor: pointer;
+}
+.schedule-project-option:hover {
+  background: #f5f5f5;
+}
+.schedule-project-source {
+  flex: 0 0 auto;
+  color: #8c8c8c;
+  font-size: 12px;
+}
+.schedule-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .calendar-event-list { list-style: none; padding: 0; margin: 0; }
 .calendar-event-chip {
   margin-bottom: 3px;

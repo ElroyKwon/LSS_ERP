@@ -413,6 +413,7 @@
                 :options="clientSuggestions"
                 placeholder="발주처명 직접 입력 또는 검색"
                 allow-clear
+                :filter-option="false"
                 @select="onClientSelect"
                 @change="onClientChange"
               />
@@ -2158,10 +2159,12 @@ function closeProjectEditor() {
 
 // 발주처 자동완성: 등록된 거래처 목록 제안 (직접 입력도 허용)
 const clientSuggestions = computed(() => {
-  const keyword = (form.client_name || '').toLowerCase()
+  const keyword = (form.client_name || '').trim().toLowerCase()
+  if (!keyword) return []
   return companies.value
-    .filter(c => !keyword || c.company_name.toLowerCase().includes(keyword))
-    .map(c => ({ value: c.company_name, id: c.id }))
+    .filter(c => String(c.company_name || '').toLowerCase().includes(keyword))
+    .slice(0, 30)
+    .map(c => ({ value: c.company_name, label: c.company_name, id: c.id }))
 })
 
 function onClientSelect(value, option) {

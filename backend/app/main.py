@@ -24,6 +24,7 @@ from .utils.schema import (
     ensure_execution_columns,
     ensure_master_columns,
     ensure_management_columns,
+    ensure_notice_attachment_tables,
     ensure_project_column_types,
     ensure_security_tables,
     ensure_timesheet_admin_tables,
@@ -41,6 +42,7 @@ if settings.AUTO_CREATE_SCHEMA:
 ensure_security_tables(engine)
 ensure_calendar_schedule_tables(engine)
 ensure_timesheet_admin_tables(engine)
+ensure_notice_attachment_tables(engine)
 ensure_project_column_types(engine)
 ensure_management_columns(engine)
 

@@ -314,6 +314,7 @@ AUTHENTICATED_ONLY_PREFIXES = (
     "/api/auth/change-password",
     "/api/auth/registrations",
     "/api/notices/active",
+    "/api/notice-attachments",
     "/api/departments",
     "/api/sites",
     "/api/cost-codes",

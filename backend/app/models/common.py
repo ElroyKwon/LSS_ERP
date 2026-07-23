@@ -96,6 +96,23 @@ class Notice(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     creator = relationship("User", foreign_keys=[created_by])
+    attachments = relationship("NoticeAttachment", back_populates="notice", cascade="all, delete-orphan")
+
+
+class NoticeAttachment(Base):
+    __tablename__ = "notice_attachments"
+    id = Column(Integer, primary_key=True, index=True)
+    notice_id = Column(Integer, ForeignKey("notices.id", ondelete="CASCADE"), nullable=False, index=True)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False)
+    content_type = Column(String(100))
+    file_size = Column(Integer, default=0)
+    file_path = Column(String(500), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    notice = relationship("Notice", back_populates="attachments")
+    creator = relationship("User", foreign_keys=[created_by])
 
 
 class OpinionPost(Base):

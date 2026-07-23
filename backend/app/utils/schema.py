@@ -359,6 +359,31 @@ def ensure_timesheet_admin_tables(engine):
         """))
 
 
+def ensure_notice_attachment_tables(engine):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS notice_attachments (
+                id SERIAL PRIMARY KEY,
+                notice_id INTEGER NOT NULL REFERENCES notices(id) ON DELETE CASCADE,
+                original_name VARCHAR(255) NOT NULL,
+                stored_name VARCHAR(255) NOT NULL,
+                content_type VARCHAR(100),
+                file_size INTEGER DEFAULT 0,
+                file_path VARCHAR(500) NOT NULL,
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_notice_attachments_id
+                ON notice_attachments (id)
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_notice_attachments_notice_id
+                ON notice_attachments (notice_id)
+        """))
+
+
 def ensure_master_columns(engine):
     _ensure_columns(engine, "users", USER_COLUMNS)
     _ensure_columns(engine, "user_registrations", USER_REGISTRATION_COLUMNS)

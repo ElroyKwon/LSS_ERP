@@ -1,14 +1,18 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import quote
+import os
+import shutil
+import uuid
 from ..database import get_db
 from ..models.master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
-from ..models.common import User, Department, Notice
+from ..models.common import User, Department, Notice, NoticeAttachment
 from ..utils.auth import get_current_user, hash_password
 from ..utils.permissions import is_system_admin, normalize_role, validate_role
 from ..services.user_employee_sync import deactivate_employee_for_user, effective_employee_code, sync_employee_for_user
@@ -29,6 +33,8 @@ from datetime import date, datetime
 from decimal import Decimal
 
 router = APIRouter(prefix="/api", tags=["기준정보"])
+
+NOTICE_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "notices"
 
 
 def _excel_response(content: bytes, filename: str):
@@ -60,6 +66,19 @@ class NoticeUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+def _notice_attachment_dict(row: NoticeAttachment):
+    return {
+        "id": row.id,
+        "notice_id": row.notice_id,
+        "original_name": row.original_name,
+        "content_type": row.content_type,
+        "file_size": row.file_size,
+        "created_by": row.created_by,
+        "creator_name": row.creator.name if row.creator else None,
+        "created_at": row.created_at,
+    }
+
+
 def _notice_dict(notice: Notice):
     return {
         "id": notice.id,
@@ -72,6 +91,7 @@ def _notice_dict(notice: Notice):
         "creator_name": notice.creator.name if notice.creator else None,
         "created_at": notice.created_at,
         "updated_at": notice.updated_at,
+        "attachments": [_notice_attachment_dict(row) for row in notice.attachments],
     }
 
 
@@ -165,8 +185,86 @@ def delete_notice(notice_id: int, db: Session = Depends(get_db), current=Depends
     notice = db.query(Notice).filter(Notice.id == notice_id).first()
     if not notice:
         raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    file_paths = [attachment.file_path for attachment in notice.attachments]
     db.delete(notice)
     db.commit()
+    for file_path in file_paths:
+        if file_path and os.path.isfile(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+    return {"ok": True}
+
+
+@router.post("/notices/{notice_id}/attachments")
+def upload_notice_attachment(
+    notice_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    notice = db.query(Notice).filter(Notice.id == notice_id).first()
+    if not notice:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    original_name = os.path.basename(file.filename or "attachment")
+    ext = os.path.splitext(original_name)[1]
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    directory = NOTICE_UPLOAD_ROOT / str(notice_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    file_path = directory / stored_name
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file_size = file_path.stat().st_size
+    finally:
+        file.file.close()
+    attachment = NoticeAttachment(
+        notice_id=notice_id,
+        original_name=original_name,
+        stored_name=stored_name,
+        content_type=file.content_type,
+        file_size=file_size,
+        file_path=str(file_path),
+        created_by=current.id,
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+    return _notice_attachment_dict(attachment)
+
+
+@router.get("/notice-attachments/{attachment_id}/download")
+def download_notice_attachment(attachment_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    row = db.query(NoticeAttachment).filter(NoticeAttachment.id == attachment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+    if not os.path.isfile(row.file_path):
+        raise HTTPException(status_code=404, detail="파일이 서버에 존재하지 않습니다.")
+    return FileResponse(
+        row.file_path,
+        media_type=row.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(row.original_name, safe='')}"},
+    )
+
+
+@router.delete("/notice-attachments/{attachment_id}")
+def delete_notice_attachment(attachment_id: int, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    if not is_system_admin(current.role):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    row = db.query(NoticeAttachment).filter(NoticeAttachment.id == attachment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+    file_path = row.file_path
+    db.delete(row)
+    db.commit()
+    if file_path and os.path.isfile(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
     return {"ok": True}
 
 

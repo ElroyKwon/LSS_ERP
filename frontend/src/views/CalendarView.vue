@@ -80,7 +80,7 @@
                 :filter-option="filterCompanyProjectOption"
                 @search="searchCompanyCommonProjects"
                 @select="selectCompanyProject"
-                @change="changeCompanyProjectInput"
+                @blur="changeCompanyProjectInput(newCompanySchedule.content)"
               />
             </a-form-item>
             <a-form-item label="일정 유형">
@@ -230,6 +230,7 @@ const companyProjects      = ref([])
 const companySalesProjects = ref([])
 const companyCommonProjectSuggestions = ref([])
 let companyCommonSearchTimer = null
+let companyProjectSelecting = false
 
 const isCompanyModalOpen   = ref(false)
 const newCompanySchedule   = ref(createDefaultCompanySchedule())
@@ -329,10 +330,16 @@ function applyCompanyProjectOption(selected, fallbackValue = '') {
 }
 
 function selectCompanyProject(value, option) {
-  applyCompanyProjectOption(findCompanyProjectOption(value, option), value)
+  const selected = findCompanyProjectOption(value, option)
+  companyProjectSelecting = true
+  setTimeout(() => {
+    applyCompanyProjectOption(selected, value)
+    companyProjectSelecting = false
+  }, 0)
 }
 
 function changeCompanyProjectInput(value) {
+  if (companyProjectSelecting) return
   const typed = String(value || '').trim()
   const selected = findCompanyProjectOption(typed)
   if (selected) {
@@ -354,6 +361,7 @@ async function loadCompanyCommonProjectSuggestions(keyword = '') {
 }
 
 function searchCompanyCommonProjects(value) {
+  changeCompanyProjectInput(value)
   if (companyCommonSearchTimer) clearTimeout(companyCommonSearchTimer)
   companyCommonSearchTimer = setTimeout(() => loadCompanyCommonProjectSuggestions(value), 180)
 }

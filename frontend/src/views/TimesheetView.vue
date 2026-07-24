@@ -1689,7 +1689,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 .admin-table-wrap {
-  overflow-x: auto;
+  overflow: auto;
 }
 .admin-table-wrap.compact {
   max-width: 720px;
@@ -1719,7 +1719,7 @@ onBeforeUnmount(() => {
 .admin-labor-table thead,
 .admin-project-labor-table thead {
   position: sticky;
-  top: 56px;
+  top: 0;
   z-index: 8;
   background: #fafafa;
   box-shadow: inset 0 -1px 0 #f0f0f0;
@@ -1761,14 +1761,14 @@ onBeforeUnmount(() => {
   color: #595959;
   font-size: 13px;
 }
-.ts-grid-wrap { overflow-x: auto; }
+.ts-grid-wrap { overflow: auto; }
 
 /* ── 타임시트 그리드 테이블 ── */
 .ts-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
 .ts-grid th, .ts-grid td { border: 1px solid #f0f0f0; padding: 5px 3px; }
 .ts-grid thead {
   position: sticky;
-  top: 56px;
+  top: 0;
   z-index: 8;
   background: #fafafa;
   box-shadow: inset 0 -1px 0 #f0f0f0;

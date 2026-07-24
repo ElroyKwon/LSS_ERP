@@ -1003,6 +1003,15 @@ function resetFilters() {
 }
 
 // ── 클라이언트 필터링 ──
+function compareProjectNo(a = '', b = '') {
+  const left = String(a || '').trim()
+  const right = String(b || '').trim()
+  if (!left && !right) return 0
+  if (!left) return 1
+  if (!right) return -1
+  return left.localeCompare(right, 'ko-KR', { numeric: true, sensitivity: 'base' })
+}
+
 const filtered = computed(() => items.value.filter(d => {
   if (filters.search && !d.project_name?.toLowerCase().includes(filters.search.toLowerCase())
       && !d.project_no?.toLowerCase().includes(filters.search.toLowerCase())) return false
@@ -1018,7 +1027,7 @@ const filtered = computed(() => items.value.filter(d => {
   if (filters.contract_forms.length > 0 && !filters.contract_forms.includes(d.contract_form)) return false
   if (filters.contract_types.length > 0 && !filters.contract_types.includes(d.contract_type)) return false
   return true
-}))
+}).sort((a, b) => compareProjectNo(a.project_no, b.project_no)))
 
 // ── 통계 카드 ──
 function keepPaginationInRange(pagination, total) {
@@ -1247,8 +1256,6 @@ const purchasePlanScrollX = 12900
 
 // ── 테이블 컬럼 ──
 const columns = [
-  { title: 'No',        key: 'no',               width: 55,  align: 'center',
-    customRender: ({ index }) => index + 1 },
   { title: 'PJT NO.',   dataIndex: 'project_no',  width: 140, align: 'center' },
   { title: 'PJT명',     key: 'project_name',      width: 220, align: 'center', ellipsis: true },
   { title: '발주처',    dataIndex: 'client_name',  width: 160, align: 'center', ellipsis: true },

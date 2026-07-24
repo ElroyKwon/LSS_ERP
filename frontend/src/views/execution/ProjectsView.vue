@@ -1,8 +1,8 @@
 <template>
   <div class="page-wrap">
-    <a-tabs v-model:activeKey="activeTab" class="project-tabs">
+    <a-tabs v-model:activeKey="activeTab" class="project-tabs" :destroy-inactive-tab-pane="true">
       <a-tab-pane key="orders" tab="프로젝트리스트(수주)">
-        <div class="tab-content">
+        <div v-if="activeTab === 'orders'" class="tab-content">
 
     <!-- ── 통계 카드 ── -->
     <a-row :gutter="16">
@@ -192,7 +192,7 @@
       </a-tab-pane>
 
       <a-tab-pane v-if="canAccessSalesPurchaseTabs" key="sales" tab="프로젝트리스트(매출)">
-        <a-card :bordered="false" class="table-card">
+        <a-card v-if="activeTab === 'sales'" :bordered="false" class="table-card">
           <template #title><span class="card-title">프로젝트리스트(매출)</span></template>
           <template #extra>
             <a-space>
@@ -218,8 +218,9 @@
             row-key="id"
             size="small"
             :scroll="{ x: salesPlanScrollX }"
+            table-layout="fixed"
             bordered
-            class="sales-plan-table"
+            class="project-plan-table"
             @change="handleSalesPlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
@@ -283,7 +284,7 @@
       </a-tab-pane>
 
       <a-tab-pane v-if="canAccessSalesPurchaseTabs" key="purchases" tab="프로젝트리스트(매입)">
-        <a-card :bordered="false" class="table-card">
+        <a-card v-if="activeTab === 'purchases'" :bordered="false" class="table-card">
           <template #title><span class="card-title">프로젝트리스트(매입)</span></template>
           <template #extra>
             <a-space>
@@ -308,8 +309,9 @@
             row-key="id"
             size="small"
             :scroll="{ x: purchasePlanScrollX }"
+            table-layout="fixed"
             bordered
-            class="sales-plan-table"
+            class="project-plan-table"
             @change="handlePurchasePlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
@@ -2383,7 +2385,7 @@ onMounted(load)
 .detail-cost-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; table-layout: fixed; }
 .detail-cost-table th,
 .detail-cost-table td { border: 1px solid #d9d9d9; padding: 5px 7px; text-align: center; font-size: 12px; vertical-align: middle; }
-.detail-cost-table thead th { background: #203f70; color: #fff; font-weight: 700; }
+.detail-cost-table thead th { position: sticky; top: 0; z-index: 3; background: #203f70; color: #fff; font-weight: 700; }
 .detail-cost-table .group-cell { background: #f0f0f0; color: #111; font-weight: 700; }
 .detail-cost-table .item-cell { background: #fafafa; font-weight: 600; }
 .detail-cost-table .summary-row td { background: #f3f3f3; font-weight: 700; }
@@ -2400,4 +2402,22 @@ onMounted(load)
 
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
+
+.project-plan-table :deep(.ant-table-tbody > tr > td) {
+  overflow: hidden;
+}
+.project-plan-table :deep(.ant-table-tbody > tr > td:has(.table-number-input)),
+.project-plan-table :deep(.ant-table-tbody > tr > td:has(.table-date-input)) {
+  padding-inline: 4px;
+}
+.project-plan-table :deep(.table-number-input),
+.project-plan-table :deep(.table-date-input) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+.project-plan-table :deep(.table-number-input .ant-input-number-input) {
+  padding-inline: 8px;
+}
 </style>

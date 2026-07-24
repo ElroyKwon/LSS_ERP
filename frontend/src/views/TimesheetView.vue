@@ -1658,6 +1658,9 @@ onBeforeUnmount(() => {
   padding: 7px 8px;
 }
 .history-preview-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   background: #fafafa;
   text-align: center;
 }
@@ -1709,9 +1712,17 @@ onBeforeUnmount(() => {
 }
 .admin-labor-table th,
 .admin-project-labor-table th {
+  position: sticky;
+  top: 56px;
+  z-index: 8;
   background: #fafafa;
   color: #1f1f1f;
   font-weight: 700;
+  box-shadow: inset 0 -1px 0 #f0f0f0;
+}
+.admin-project-labor-table thead tr:nth-child(2) th {
+  top: 89px;
+  z-index: 9;
 }
 .admin-labor-table {
   min-width: 640px;
@@ -1756,7 +1767,16 @@ onBeforeUnmount(() => {
 .ts-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
 .ts-grid th, .ts-grid td { border: 1px solid #f0f0f0; padding: 5px 3px; }
 .ts-grid thead tr { background: #fafafa; }
-.ts-grid th { text-align: center; font-weight: 600; color: #595959; white-space: nowrap; }
+.ts-grid th {
+  position: sticky;
+  top: 56px;
+  z-index: 8;
+  text-align: center;
+  font-weight: 600;
+  color: #595959;
+  white-space: nowrap;
+  box-shadow: inset 0 -1px 0 #f0f0f0;
+}
 
 .col-source  { width: 70px; min-width: 70px; text-align: center; }
 .col-project { width: 220px; min-width: 160px; }

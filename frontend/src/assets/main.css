@@ -90,7 +90,14 @@ body {
 }
 
 .ant-table-wrapper .ant-table-sticky-holder {
-  z-index: 5;
+  top: 56px !important;
+  z-index: 20;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(5, 5, 5, 0.06);
+}
+
+.ant-table-wrapper .ant-table-sticky-scroll {
+  z-index: 20;
 }
 
 .ant-table-wrapper .ant-table-thead > tr > th,
@@ -140,10 +147,25 @@ body {
 
 .ant-table-wrapper .amount-cell,
 .ant-table-wrapper .num-cell,
-.ant-table-wrapper .readonly-cell,
-.ant-table-wrapper .table-number-input,
-.ant-table-wrapper .ant-input-number {
+.ant-table-wrapper .readonly-cell {
   min-width: 118px;
+}
+
+.ant-table-wrapper .table-number-input,
+.ant-table-wrapper .table-date-input,
+.ant-table-wrapper .month-input,
+.ant-table-wrapper .ant-table-tbody .ant-input-number,
+.ant-table-wrapper .ant-table-tbody .ant-picker,
+.ant-table-wrapper .ant-table-tbody .ant-input,
+.ant-table-wrapper .ant-table-tbody .ant-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ant-table-wrapper .ant-table-tbody .ant-input-number-input {
+  min-width: 0;
 }
 
 .ant-modal-root .notice-center-modal {

@@ -10,6 +10,9 @@
 - local_database: UNAVAILABLE
 - execution_model: parallel backend handoff and database-free MCP lane
 - collaboration_push: GRANTED
+- collaboration_remote_checkpoint: PUSHED (fb4680c)
+- github_issue_registration: MANUAL-PENDING
+- github_issue_draft: docs/mcp/GITHUB-ISSUE-HANDOFF.md
 - release_merge_deploy: NOT-GRANTED
 - release_state: DEVELOPMENT/NOT-RELEASED
 - parallel_local_lane: IMPLEMENTED/LOCAL-PASS

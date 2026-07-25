@@ -15,12 +15,13 @@
 | Area | State | Evidence |
 |---|---|---|
 | Single active Goal | PASS | `LSS-MCP-G0001` is the only `ACTIVE` Goal |
-| Collaboration branch | PUSHED BASELINE | `origin/khlee-add-mcp`; every checkpoint is `DEVELOPMENT/NOT-RELEASED` |
+| Collaboration branch | PUSHED VERIFIED CHECKPOINT | `origin/khlee-add-mcp@fb4680c`; every checkpoint is `DEVELOPMENT/NOT-RELEASED` |
 | Database-free MCP code | LOCAL-PASS | code checkpoint `cf31647` |
 | Local test suite | PASS | 70 tests, compileall PASS, banned runtime references 0 |
 | Dependency audit | PASS | no known vulnerabilities; unpublished local package skipped |
 | MCP protocol | PASS | Python SDK stdio tests and external Inspector five-tool listing |
-| AI application package | READY FOR VERIFIED PUSH | `docs/mcp/` and `mcp_server/README.md` |
+| AI application package | PUSHED | `docs/mcp/` and `mcp_server/README.md` at verified checkpoint `fb4680c` |
+| GitHub work registration | MANUAL-PENDING | Copy `docs/mcp/GITHUB-ISSUE-HANDOFF.md` into a GitHub issue |
 | Main developer hand-back | WAITING | PostgreSQL, Alembic, backend, OpenAPI, legacy UI evidence not received |
 | Real API, canary, rollback | NOT-RUN | blocked until the documented joint Gates and separate user approval |
 | Merge and deployment | NOT-GRANTED | requires G0009 `COMPLETE/PASS` and separate user approval |

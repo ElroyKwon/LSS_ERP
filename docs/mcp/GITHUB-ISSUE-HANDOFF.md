@@ -1,0 +1,118 @@
+# GitHub Issue Handoff — LSS-MCP-G0001
+
+## Suggested title
+
+`[LSS-MCP-G0001][DEV/NOT-RELEASED] PostgreSQL·Alembic·ERP REST backend hand-back 요청`
+
+## Suggested labels
+
+`backend`, `mcp`, `security`, `development`
+
+## Issue body
+
+### 목적
+
+`khlee-add-mcp` 브랜치의 DB 없는 MCP 로컬 검증 패키지를 기준으로,
+메인 개발자 소유의 PostgreSQL·Alembic·token/scope·ERP REST API 작업과
+재현 가능한 evidence hand-back을 요청합니다.
+
+이 이슈는 개발 업무 전달용입니다. 현재 상태는
+`DEVELOPMENT/NOT-RELEASED`이며 merge, 실제 서버 배포, 실제 ERP write
+활성화를 승인하지 않습니다.
+
+### 기준점
+
+- branch: `khlee-add-mcp`
+- verified implementation checkpoint:
+  `fb4680c560e8315ffd84a53bdc6d2e633eefda90`
+- active Goal: `LSS-MCP-G0001`
+- release state: `DEVELOPMENT/NOT-RELEASED`
+- local database: 없음
+- PostgreSQL/Alembic/실제 API/canary/rollback: `NOT-RUN`
+
+### 먼저 읽을 문서
+
+1. `docs/mcp/AI-MAIN-DEVELOPER-ENTRYPOINT.md`
+2. `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`
+3. `docs/mcp/API-CONTRACT.md`
+4. `docs/mcp/APPLY-AND-ROLLBACK.md`
+5. `docs/mcp/EVIDENCE-HAND-BACK.md`
+6. `docs/mcp/LOCAL-VERIFICATION.md`
+
+### 메인 개발자 작업
+
+- [ ] 작업 branch와 정확한 backend commit SHA 기록
+- [ ] production이 아님을 증명할 PostgreSQL 16 test lane 식별
+- [ ] employee/week 및 parking duplicate preflight 실행·건수 반환
+- [ ] Alembic revision 작성, upgrade와 downgrade 재현
+- [ ] API token hash·expiry·revocation·client/resource/scope default-deny 구현
+- [ ] token identity를 기존 `AuthContext`로 연결
+- [ ] 아래 최소 REST 계약 구현
+  - `GET /api/auth/me` — `mcp:discover`
+  - `GET /api/timesheets/week` — `timesheet:read:self`
+  - `GET /api/timesheets/projects` — `timesheet:read:self`
+  - `POST /api/timesheets/mcp-draft` —
+    `timesheet:write:self:draft`
+- [ ] self-only·draft-only·protected-state·expected-version 검증
+- [ ] `(employee_id, week_start)` PostgreSQL unique 보장
+- [ ] idempotency key + request hash + audit + mutation 단일 transaction 보장
+- [ ] success 및 401/403/404/409/422/429/5xx contract/security 테스트
+- [ ] 기존 `/api/mcp` read contract와 기존 ERP UI 회귀 테스트
+- [ ] development OpenAPI 산출물과 SHA-256 반환
+- [ ] credential 없는 development API base URL 반환
+- [ ] Windows Credential Manager service/target 이름만 반환
+- [ ] token revoke `401`, migration/backend rollback, legacy UI smoke 재현
+
+### 필수 hand-back
+
+`docs/mcp/EVIDENCE-HAND-BACK.md` 형식으로 다음을 반환해 주세요.
+
+- backend commit SHA
+- non-production PostgreSQL test-lane 증거
+- Alembic before/applied/rollback revision
+- OpenAPI SHA-256
+- dependency audit 명령과 출력
+- backend contract/security/PostgreSQL/migration/UI 테스트 명령과 출력
+- duplicate preflight 건수
+- credential-free development API base URL
+- Credential Manager service/target 이름
+- rollback 명령·출력·최종 data/migration 상태
+- 남은 blocker와 `UNKNOWN`
+
+`NONE`, `NOT-RUN`, `UNKNOWN`을 추정값으로 바꾸지 마세요.
+
+### 절대 금지
+
+- MCP 프로세스에 DB account, `DATABASE_URL`, `SECRET_KEY`, backend import 제공
+- token, authorization header, connection string, raw request body, 개인 vault
+  path를 Git·Markdown·이슈·로그·스크린샷에 기록
+- SQLite-only 결과로 PostgreSQL migration을 PASS 처리
+- 제출·승인·반려 상태를 MCP로 변경
+- 이 branch 존재만으로 merge·배포·실제 write 활성화
+
+### 현재 로컬 evidence
+
+- pytest: `70 passed`
+- MCP Python SDK stdio initialize/list/call: PASS
+- external MCP Inspector `tools/list`: 5개 도구 PASS
+- compileall: PASS
+- banned runtime references: 0
+- Python dependency audit: 알려진 취약점 0
+- Mermaid: 11/11 실제 렌더 PASS
+- secret pattern scan: 0
+- frontend build: 3,841 modules PASS
+- 독립 review: Critical 0, Important 0
+
+위 결과는 DB 없는 로컬 MCP lane만 증명합니다. 실제 Credential Manager,
+PostgreSQL, deployed API, read-only integration, one-user canary, rollback은
+아직 증명하지 않습니다.
+
+### 완료 조건
+
+- [ ] hand-back 필수 항목이 명령 출력과 함께 제출됨
+- [ ] G0001 backend dependency/contract/security/PostgreSQL 증거 수락
+- [ ] real API read-only 검증을 시작할 수 있는 credential-free endpoint 제공
+- [ ] blocker와 `UNKNOWN`이 명시됨
+
+G0009 `COMPLETE/PASS`와 사용자 별도 승인 전에는 merge, deployment, real
+ERP write activation을 진행하지 않습니다.

@@ -41,11 +41,28 @@ class TimeoutAfterFirstCommit(httpx.AsyncBaseTransport):
             self.fired = True
             await response.aread()
             await response.aclose()
-            raise httpx.ReadTimeout("response lost after commit", request=request)
+            return httpx.Response(
+                response.status_code,
+                headers=response.headers,
+                stream=TimeoutBodyStream(request),
+                request=request,
+            )
         return response
 
     async def aclose(self) -> None:
         await self.inner.aclose()
+
+
+class TimeoutBodyStream(httpx.AsyncByteStream):
+    def __init__(self, request: httpx.Request) -> None:
+        self.request = request
+
+    async def __aiter__(self):
+        yield b"{"
+        raise httpx.ReadTimeout(
+            "response body lost after commit",
+            request=self.request,
+        )
 
 
 async def prepare(

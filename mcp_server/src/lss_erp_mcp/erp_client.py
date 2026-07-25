@@ -177,6 +177,22 @@ class ERPClient:
                     details if isinstance(details, dict) else {},
                 )
             return payload
+        except ERPError:
+            raise
+        except httpx.TimeoutException as exc:
+            raise ERPError(
+                "upstream_timeout",
+                "ERP API timed out",
+                True,
+                response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ERPError(
+                "upstream_unavailable",
+                "ERP API response failed",
+                True,
+                response.status_code,
+            ) from exc
         finally:
             await response.aclose()
 

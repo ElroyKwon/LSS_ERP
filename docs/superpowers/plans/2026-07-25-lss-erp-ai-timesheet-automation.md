@@ -999,7 +999,7 @@ git commit -m "feat: expose AI-oriented timesheet tools"
 - Modify: `mcp_server/tests/performance/test_local_budget.py`
 - Create: `mcp_server/tests/integration/test_worklog_golden_cases.py`
 
-- [ ] **Step 1: Add failing safety and quality tests**
+- [x] **Step 1: Add failing safety and quality tests**
 
 Require:
 
@@ -1015,7 +1015,7 @@ Require:
 - preparation local overhead remains within the existing budget after removing
   contract-oracle network time from the measurement.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run:
 
@@ -1025,12 +1025,12 @@ Run:
 
 Expected: new tests fail until every Gate is enforced.
 
-- [ ] **Step 3: Apply minimal fixes**
+- [x] **Step 3: Apply minimal fixes**
 
 Fix only behavior demonstrated by the failing tests. Do not add transcript,
 weekly-report, Telegram, email, schedule, or manager features.
 
-- [ ] **Step 4: Run selected Gate suites**
+- [x] **Step 4: Run selected Gate suites**
 
 Run:
 
@@ -1040,7 +1040,7 @@ Run:
 
 Expected: all selected tests pass with no warnings.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add mcp_server/tests mcp_server/src

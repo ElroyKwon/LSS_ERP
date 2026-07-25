@@ -299,6 +299,10 @@ async def prepare_from_worklog(
     facts: list[dict[str, object]],
     accepted_question_ids: list[str],
 ) -> dict[str, object]:
+    if not 1 <= len(facts) <= 100:
+        raise ValueError("facts must contain between 1 and 100 items")
+    if len(accepted_question_ids) > 50:
+        raise ValueError("accepted_question_ids may contain at most 50 items")
     parsed_week = date.fromisoformat(week_start)
     parsed_facts = [WorklogFact.model_validate(item) for item in facts]
     week_end = parsed_week + timedelta(days=6)

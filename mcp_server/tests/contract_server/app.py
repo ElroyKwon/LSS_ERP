@@ -100,7 +100,8 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
             items = [
                 item
                 for item in items
-                if lowered in item["project_code"].casefold()
+                if lowered == str(item["project_id"])
+                or lowered in item["project_code"].casefold()
                 or lowered in item["project_name"].casefold()
             ]
         return {"items": items[:limit], "truncated": len(items) > limit}

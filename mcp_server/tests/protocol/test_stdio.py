@@ -29,5 +29,6 @@ async def test_stdio_lists_only_expected_read_tools(
     assert {tool.name for tool in result.tools} == {
         "erp_get_current_user",
         "timesheet_get_week",
+        "timesheet_prepare_draft",
         "timesheet_search_projects",
     }

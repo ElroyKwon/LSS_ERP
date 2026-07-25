@@ -7,16 +7,19 @@ from dataclasses import dataclass
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
+from .confirmation import ConfirmationStore
 from .config import McpSettings
 from .credentials import load_erp_token
 from .erp_client import ERPClient
+from .schemas.timesheet import DraftEntry
 from .tools.identity import get_current_user
-from .tools.timesheets import get_week, search_projects
+from .tools.timesheets import get_week, prepare_draft, search_projects
 
 
 @dataclass
 class AppContext:
     client: ERPClient
+    confirmations: ConfirmationStore
 
 
 @asynccontextmanager
@@ -32,7 +35,10 @@ async def lifespan(_server: FastMCP) -> AsyncIterator[AppContext]:
         pool_timeout_seconds=settings.pool_timeout_seconds,
         max_response_bytes=settings.max_response_bytes,
     ) as client:
-        yield AppContext(client=client)
+        yield AppContext(
+            client=client,
+            confirmations=ConfirmationStore(),
+        )
 
 
 mcp = FastMCP("LSS ERP", lifespan=lifespan, log_level="WARNING")
@@ -66,6 +72,22 @@ async def timesheet_search_projects(
         ctx.request_context.lifespan_context.client,
         query,
         limit,
+    )
+
+
+@mcp.tool()
+async def timesheet_prepare_draft(
+    week_start: str,
+    entries: list[DraftEntry],
+    ctx: Context[ServerSession, AppContext],
+) -> dict[str, object]:
+    """Build a local diff and confirmation token without writing ERP."""
+    app = ctx.request_context.lifespan_context
+    return await prepare_draft(
+        app.client,
+        app.confirmations,
+        week_start=week_start,
+        entries=[entry.model_dump(mode="json") for entry in entries],
     )
 
 

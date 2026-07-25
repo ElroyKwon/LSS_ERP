@@ -71,6 +71,26 @@ def test_merge_replaces_only_same_semantic_row() -> None:
     assert preserved == 0
 
 
+def test_merge_never_collapses_duplicate_existing_rows() -> None:
+    current = [
+        {"entry_id": 1, **draft_entry(hours="4")},
+        {"entry_id": 2, **draft_entry(hours="4")},
+    ]
+    incoming = [
+        draft_entry(
+            work_date="2026-07-21",
+            project_id=456,
+            project_name="신규 프로젝트",
+            description="신규 업무",
+        )
+    ]
+
+    merged, preserved = merge_entries(current, incoming)
+
+    assert len(merged) == 3
+    assert preserved == 2
+
+
 def test_semantic_key_distinguishes_projectless_names() -> None:
     common = draft_entry(
         project_id=None,

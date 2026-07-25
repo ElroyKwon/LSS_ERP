@@ -84,3 +84,29 @@ async def test_prepare_rejects_more_than_50_accepted_questions_before_http() -> 
                     for index in range(51)
                 ],
             )
+
+
+@pytest.mark.asyncio
+async def test_prepare_rejects_duplicate_fact_ids_before_http() -> None:
+    transport = httpx.ASGITransport(app=create_contract_app())
+    facts = [
+        minimal_fact(1),
+        {
+            **minimal_fact(2),
+            "fact_id": "log-1",
+            "work_date": "2026-07-21",
+        },
+    ]
+    async with ERPClient(
+        base_url="http://testserver",
+        token="test-token",
+        transport=transport,
+    ) as client:
+        with pytest.raises(ValueError, match="fact_id"):
+            await prepare_from_worklog(
+                client,
+                ConfirmationStore(),
+                week_start="2026-07-20",
+                facts=facts,
+                accepted_question_ids=[],
+            )

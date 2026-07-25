@@ -93,6 +93,63 @@ async def test_prepare_merges_unique_project_and_preserves_existing_row() -> Non
 
 
 @pytest.mark.asyncio
+async def test_prepare_blocks_duplicate_existing_rows_without_collapsing_them() -> None:
+    first = {**existing_entry(), "entry_id": 1, "hours": "4"}
+    second = {**existing_entry(), "entry_id": 2, "hours": "4"}
+    state = ContractState(entries=[first, second])
+
+    result = await run_prepare(
+        state,
+        [project_fact()],
+        weekday_gap_acceptances("2026-07-22", "2026-07-23", "2026-07-24"),
+    )
+
+    assert len(result["proposal_entries"]) == 3
+    assert result["preserved_entry_count"] == 2
+    assert any(
+        "duplicate existing entry" in warning
+        for warning in result["warnings"]
+    )
+    assert result["can_commit"] is False
+    assert result["confirmation_token"] is None
+    assert state.post_count == 0
+
+
+@pytest.mark.asyncio
+async def test_prepare_blocks_merged_proposal_over_write_limit() -> None:
+    current_entries = [
+        {
+            **existing_entry(description=f"기존 업무 {index}"),
+            "entry_id": index + 1,
+            "project_id": 1000 + index,
+            "project_name": f"기존 프로젝트 {index}",
+            "hours": "0.25",
+        }
+        for index in range(50)
+    ]
+    state = ContractState(entries=current_entries)
+
+    result = await run_prepare(
+        state,
+        [project_fact()],
+        [
+            "coverage:2026-07-20:above-target",
+            *weekday_gap_acceptances(
+                "2026-07-22",
+                "2026-07-23",
+                "2026-07-24",
+            ),
+        ],
+    )
+
+    assert len(result["proposal_entries"]) == 51
+    assert "merged proposal exceeds 50 entries" in result["warnings"]
+    assert result["can_commit"] is False
+    assert result["confirmation_token"] is None
+    assert state.post_count == 0
+
+
+@pytest.mark.asyncio
 async def test_prepare_returns_ambiguous_project_candidates_without_post() -> None:
     state = ContractState(
         projects=[

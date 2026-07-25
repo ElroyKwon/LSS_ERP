@@ -107,7 +107,12 @@ async def prepare_draft(
     ]
 
     unresolved: list[int] = []
-    for project_id in sorted({int(item["project_id"]) for item in proposed}):
+    project_ids = {
+        int(item["project_id"])
+        for item in proposed
+        if item.get("project_id") is not None
+    }
+    for project_id in sorted(project_ids):
         result = await client.search_projects(str(project_id), 20)
         active_ids = {item.project_id for item in result.items if item.active}
         if project_id not in active_ids:
@@ -130,7 +135,7 @@ async def prepare_draft(
     ]
 
     key_counts = Counter(entry_key(item) for item in proposed)
-    for key, count in sorted(key_counts.items()):
+    for key, count in sorted(key_counts.items(), key=lambda item: repr(item[0])):
         if count > 1:
             warnings.append(
                 "duplicate proposed entry: "
@@ -151,10 +156,17 @@ async def prepare_draft(
             proposal={"entries": proposed},
         )
     return {
+        "mode": "replace",
         "week_start": week_start,
         "current_status": current.status,
         "current_version": current.version,
         "diff": diff,
+        "daily_totals": {
+            day: str(total) for day, total in sorted(daily_total.items())
+        },
+        "weekly_total_hours": str(
+            sum(daily_total.values(), Decimal("0"))
+        ),
         "unresolved_project_ids": unresolved,
         "warnings": warnings,
         "can_commit": can_commit,

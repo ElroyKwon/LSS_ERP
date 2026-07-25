@@ -50,8 +50,32 @@ async def test_prepare_success_returns_diff_and_never_posts() -> None:
 
     result = await run_prepare(state, [proposed_entry()])
 
+    assert result["mode"] == "replace"
+    assert result["daily_totals"] == {"2026-07-20": "7.5"}
+    assert result["weekly_total_hours"] == "7.5"
     assert result["can_commit"] is True
     assert isinstance(result["confirmation_token"], str)
+    assert result["unresolved_project_ids"] == []
+    assert state.post_count == 0
+
+
+@pytest.mark.asyncio
+async def test_complete_replacement_prepare_accepts_common_entry_without_project_id() -> None:
+    state = ContractState()
+    common_entry = {
+        "work_date": "2026-07-20",
+        "project_id": None,
+        "project_name": "교육",
+        "project_source": "공통",
+        "spg": None,
+        "hours": "8",
+        "work_type": "공통 > 교육",
+        "description": "사내 교육",
+    }
+
+    result = await run_prepare(state, [common_entry])
+
+    assert result["can_commit"] is True
     assert result["unresolved_project_ids"] == []
     assert state.post_count == 0
 

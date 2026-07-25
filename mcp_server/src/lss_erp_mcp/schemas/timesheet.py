@@ -63,6 +63,16 @@ class ProjectItem(StrictModel):
     spg: str | None = None
     active: bool
 
+    @model_validator(mode="after")
+    def require_source_identity(self) -> "ProjectItem":
+        if self.project_source == "실행" and self.project_id is None:
+            raise ValueError("execution project candidate project_id is required")
+        if self.project_source != "실행" and self.project_id is not None:
+            raise ValueError(
+                "non-execution project candidate project_id must be omitted"
+            )
+        return self
+
 
 class ProjectSearch(StrictModel):
     items: list[ProjectItem]
@@ -93,8 +103,10 @@ class TimesheetEntryContext(StrictModel):
         ]
         if [target.work_date for target in self.daily_targets] != expected_dates:
             raise ValueError("daily_targets must contain the seven ordered week dates")
-        if len(set(self.project_sources)) != len(self.project_sources):
-            raise ValueError("project_sources must not contain duplicates")
+        if set(self.project_sources) != {"실행", "영업", "공통"}:
+            raise ValueError(
+                "project_sources must contain 실행, 영업, and 공통 exactly once"
+            )
         if len(set(self.work_types)) != len(self.work_types):
             raise ValueError("work_types must not contain duplicates")
         return self

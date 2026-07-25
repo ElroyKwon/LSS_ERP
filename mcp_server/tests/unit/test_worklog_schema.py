@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from lss_erp_mcp.schemas.timesheet import (
     DailyTarget,
     DraftEntry,
+    ProjectItem,
     TimesheetEntryContext,
 )
 from lss_erp_mcp.schemas.worklog import WorklogFact
@@ -111,4 +112,28 @@ def test_entry_context_rejects_missing_day() -> None:
             project_sources=["실행", "영업", "공통"],
             work_types=["공통 > 연차"],
             daily_targets=daily_targets(week_start)[:-1],
+        )
+
+
+def test_project_candidate_requires_identity_matching_source() -> None:
+    with pytest.raises(ValidationError, match="project_id"):
+        ProjectItem(
+            project_id=None,
+            project_code="P-1",
+            project_name="실행 프로젝트",
+            project_source="실행",
+            active=True,
+        )
+
+
+def test_entry_context_requires_all_three_project_sources() -> None:
+    week_start = date(2026, 7, 20)
+    with pytest.raises(ValidationError, match="project_sources"):
+        TimesheetEntryContext(
+            week_start=week_start,
+            week_end=week_start + timedelta(days=6),
+            labor_type="원가",
+            project_sources=["실행", "공통"],
+            work_types=["공통 > 연차"],
+            daily_targets=daily_targets(week_start),
         )

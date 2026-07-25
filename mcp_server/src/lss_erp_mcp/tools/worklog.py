@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -46,15 +46,32 @@ def merge_entries(
     current: list[dict[str, object]],
     incoming: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], int]:
-    merged = {
-        semantic_entry_key(_without_entry_id(item)): _without_entry_id(item)
-        for item in current
-    }
-    incoming_keys = {semantic_entry_key(item) for item in incoming}
-    preserved = len(set(merged) - incoming_keys)
+    current_clean = [_without_entry_id(item) for item in current]
+    current_counts = Counter(semantic_entry_key(item) for item in current_clean)
+    incoming_groups: dict[
+        tuple[object, ...],
+        list[dict[str, object]],
+    ] = defaultdict(list)
     for item in incoming:
-        merged[semantic_entry_key(item)] = item
-    return sorted(merged.values(), key=_sortable_entry_key), preserved
+        incoming_groups[semantic_entry_key(item)].append(item)
+
+    merged: list[dict[str, object]] = []
+    preserved = 0
+    replaced: set[tuple[object, ...]] = set()
+    for item in current_clean:
+        key = semantic_entry_key(item)
+        replacements = incoming_groups.get(key, [])
+        if current_counts[key] == 1 and len(replacements) == 1:
+            merged.append(replacements[0])
+            replaced.add(key)
+        else:
+            merged.append(item)
+            preserved += 1
+
+    for key, items in incoming_groups.items():
+        if key not in current_counts and key not in replaced:
+            merged.extend(items)
+    return sorted(merged, key=_sortable_entry_key), preserved
 
 
 def calculate_totals(
@@ -273,6 +290,7 @@ def build_coverage_questions(
 
 
 def hard_blocking_warnings(
+    current: list[dict[str, object]],
     incoming: list[dict[str, object]],
     daily_totals: dict[str, Decimal],
 ) -> list[str]:
@@ -286,6 +304,16 @@ def hard_blocking_warnings(
         "duplicate worklog entry: "
         + "/".join(str(component) for component in key)
         for key, count in sorted(counts.items(), key=lambda item: repr(item[0]))
+        if count > 1
+    )
+    current_counts = Counter(semantic_entry_key(item) for item in current)
+    warnings.extend(
+        "duplicate existing entry: "
+        + "/".join(str(component) for component in key)
+        for key, count in sorted(
+            current_counts.items(),
+            key=lambda item: repr(item[0]),
+        )
         if count > 1
     )
     return warnings
@@ -305,6 +333,9 @@ async def prepare_from_worklog(
         raise ValueError("accepted_question_ids may contain at most 50 items")
     parsed_week = date.fromisoformat(week_start)
     parsed_facts = [WorklogFact.model_validate(item) for item in facts]
+    fact_ids = [fact.fact_id for fact in parsed_facts]
+    if len(set(fact_ids)) != len(fact_ids):
+        raise ValueError("fact_id values must be unique")
     week_end = parsed_week + timedelta(days=6)
     if parsed_week.weekday() != 0:
         raise ValueError("week_start must be Monday")
@@ -349,7 +380,13 @@ async def prepare_from_worklog(
             if item.question_id not in accepted
         ],
     ]
-    warnings = hard_blocking_warnings(incoming, daily_totals)
+    warnings = hard_blocking_warnings(
+        current_entries,
+        incoming,
+        daily_totals,
+    )
+    if len(merged) > 50:
+        warnings.append("merged proposal exceeds 50 entries")
     can_commit = (
         current.status == "작성중"
         and bool(merged)

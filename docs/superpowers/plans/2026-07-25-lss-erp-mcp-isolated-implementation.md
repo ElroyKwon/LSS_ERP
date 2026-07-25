@@ -2438,10 +2438,10 @@ authority. The local FastAPI stub is a test oracle, not the deployed API.
 
 | Method | Path | Scope | State effect |
 |---|---|---|---|
-| GET | `/api/auth/me` | `mcp:identity:read` | none |
-| GET | `/api/timesheets/week` | `mcp:timesheet:read:self` | none |
-| GET | `/api/timesheets/projects` | `mcp:project:read` | none |
-| POST | `/api/timesheets/mcp-draft` | `mcp:timesheet:draft:self` | own draft only |
+| GET | `/api/auth/me` | `mcp:discover` | none |
+| GET | `/api/timesheets/week` | `timesheet:read:self` | none |
+| GET | `/api/timesheets/projects` | `timesheet:read:self` | none |
+| POST | `/api/timesheets/mcp-draft` | `timesheet:write:self:draft` | own draft only |
 
 ## Common response contract
 

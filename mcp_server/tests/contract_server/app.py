@@ -14,6 +14,34 @@ from lss_erp_mcp.schemas.timesheet import DraftWriteRequest
 
 from .state import ContractState
 
+WORK_TYPES = [
+    "공통 > 연차",
+    "공통 > 교육",
+    "공통 > 행사",
+    "공통 > 기타",
+    "영업 > 설계",
+    "영업 > SHOP작업",
+    "영업 > 견적",
+    "영업 > 제안서",
+    "영업 > 미팅",
+    "영업 > 기타",
+    "실행 > 현장관리",
+    "실행 > 시운전",
+    "실행 > 안전관리",
+    "실행 > 유지보수",
+    "실행 > 업무지원",
+    "실행 > 하자처리(유상)",
+    "실행 > 하자처리(무상)",
+    "실행 > 기타",
+    "경영지원 > 구매",
+    "경영지원 > 총무",
+    "경영지원 > 인사",
+    "경영지원 > 회계",
+    "경영지원 > 자금",
+    "경영지원 > 공시",
+    "경영지원 > 기타",
+]
+
 
 def _error_response(
     *,
@@ -112,6 +140,27 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
                 if current.readback_entries_override is None
                 else current.readback_entries_override
             ),
+        }
+
+    @app.get("/api/timesheets/entry-context")
+    def entry_context(
+        week_start: date = Query(...),
+    ) -> dict[str, object]:
+        current = app.state.contract
+        return {
+            "week_start": str(week_start),
+            "week_end": str(week_start + timedelta(days=6)),
+            "labor_type": current.labor_type,
+            "project_sources": ["실행", "영업", "공통"],
+            "work_types": WORK_TYPES,
+            "daily_targets": [
+                {
+                    "work_date": str(week_start + timedelta(days=offset)),
+                    "target_hours": "8" if offset < 5 else "0",
+                    "reason": "normal" if offset < 5 else "weekend",
+                }
+                for offset in range(7)
+            ],
         }
 
     @app.get("/api/timesheets/projects")

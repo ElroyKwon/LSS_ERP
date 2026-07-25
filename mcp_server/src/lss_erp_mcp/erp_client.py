@@ -15,6 +15,7 @@ from .schemas.timesheet import (
     DraftWriteRequest,
     DraftWriteResult,
     ProjectSearch,
+    TimesheetEntryContext,
     TimesheetWeek,
 )
 
@@ -22,6 +23,7 @@ from .schemas.timesheet import (
 ALLOWLIST = {
     ("GET", "/api/auth/me"),
     ("GET", "/api/timesheets/week"),
+    ("GET", "/api/timesheets/entry-context"),
     ("GET", "/api/timesheets/projects"),
     ("POST", "/api/timesheets/mcp-draft"),
 }
@@ -214,6 +216,24 @@ class ERPClient:
             raise ERPError(
                 "upstream_invalid_response",
                 "ERP API week mismatch",
+                False,
+            )
+        return result
+
+    async def get_entry_context(self, week_start: date) -> TimesheetEntryContext:
+        data = await self._request(
+            "GET",
+            "/api/timesheets/entry-context",
+            params={"week_start": week_start.isoformat()},
+        )
+        result = _validate_response(TimesheetEntryContext, data)
+        if (
+            result.week_start != week_start
+            or result.week_end != week_start + timedelta(days=6)
+        ):
+            raise ERPError(
+                "upstream_invalid_response",
+                "ERP API context week mismatch",
                 False,
             )
         return result

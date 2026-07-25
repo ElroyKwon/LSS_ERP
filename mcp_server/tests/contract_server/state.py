@@ -9,6 +9,7 @@ class ContractState:
     user_id: int = 10
     employee_id: int = 25
     employee_code: str = "E0010"
+    labor_type: str = "원가"
     scopes: set[str] = field(
         default_factory=lambda: {
             "mcp:discover",

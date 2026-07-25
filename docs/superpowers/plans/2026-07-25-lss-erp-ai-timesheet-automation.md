@@ -203,7 +203,7 @@ git commit -m "feat: add strict AI worklog schemas"
 - Create: `mcp_server/tests/integration/test_entry_context.py`
 - Modify: `mcp_server/tests/contract/test_erp_client.py`
 
-- [ ] **Step 1: Write failing context tests**
+- [x] **Step 1: Write failing context tests**
 
 ```python
 @pytest.mark.asyncio
@@ -264,7 +264,7 @@ async def test_context_response_for_another_week_is_rejected() -> None:
             await client.get_entry_context(date(2026, 7, 20))
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run:
 
@@ -274,7 +274,7 @@ Run:
 
 Expected: failures because the client method and endpoint do not exist.
 
-- [ ] **Step 3: Implement context client and oracle**
+- [x] **Step 3: Implement context client and oracle**
 
 Add `("GET", "/api/timesheets/entry-context")` to `ALLOWLIST`.
 
@@ -306,7 +306,7 @@ labor type, and no editable employee identifier.
 
 Add a `get_entry_context` tool helper that parses ISO date before HTTP.
 
-- [ ] **Step 4: Run context and contract tests**
+- [x] **Step 4: Run context and contract tests**
 
 Run:
 
@@ -316,7 +316,7 @@ Run:
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add mcp_server/src/lss_erp_mcp/erp_client.py mcp_server/src/lss_erp_mcp/tools/timesheets.py mcp_server/tests/contract_server mcp_server/tests/contract mcp_server/tests/integration/test_entry_context.py

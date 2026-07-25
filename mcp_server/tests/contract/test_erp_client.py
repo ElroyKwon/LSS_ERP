@@ -64,6 +64,19 @@ async def test_project_search_rejects_unbounded_input() -> None:
 
 
 @pytest.mark.asyncio
+async def test_entry_context_path_is_allowlisted() -> None:
+    transport = httpx.ASGITransport(app=create_contract_app())
+    async with ERPClient(
+        base_url="http://testserver",
+        token="test-token",
+        transport=transport,
+    ) as client:
+        context = await client.get_entry_context(date(2026, 7, 20))
+
+    assert context.week_start == date(2026, 7, 20)
+
+
+@pytest.mark.asyncio
 async def test_arbitrary_path_is_rejected() -> None:
     transport = httpx.ASGITransport(app=create_contract_app())
     async with ERPClient(

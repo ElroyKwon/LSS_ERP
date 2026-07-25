@@ -19,6 +19,14 @@ async def get_week(client: ERPClient, week_start: str) -> dict[str, object]:
     return (await client.get_week(parsed)).model_dump(mode="json")
 
 
+async def get_entry_context(
+    client: ERPClient,
+    week_start: str,
+) -> dict[str, object]:
+    parsed = date.fromisoformat(week_start)
+    return (await client.get_entry_context(parsed)).model_dump(mode="json")
+
+
 async def search_projects(
     client: ERPClient,
     query: str,

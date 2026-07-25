@@ -8,17 +8,18 @@ branch. It is not approval to merge into `origin/main`, deploy, or enable real
 ERP writes.
 
 1. Check out `khlee-add-mcp` and record `git rev-parse HEAD`.
-2. Read
-   `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`.
+2. Read `goals/_INDEX.md` and `goals/LSS-MCP-G0001/STATUS.md`.
 3. Read
-   `docs/superpowers/specs/2026-07-25-lss-erp-ai-timesheet-automation-design.md`.
+   `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`.
 4. Read
+   `docs/superpowers/specs/2026-07-25-lss-erp-ai-timesheet-automation-design.md`.
+5. Read
    `docs/superpowers/plans/2026-07-25-lss-erp-ai-timesheet-automation.md`.
-5. Read `docs/mcp/API-CONTRACT.md`.
-6. Read `docs/mcp/AI-SAFETY-BASELINE.md`.
-7. Read `docs/mcp/APPLY-AND-ROLLBACK.md`.
-8. Implement only the main-developer-owned backend and PostgreSQL lane.
-9. Return reproduced evidence using
+6. Read `docs/mcp/API-CONTRACT.md`.
+7. Read `docs/mcp/AI-SAFETY-BASELINE.md`.
+8. Read `docs/mcp/APPLY-AND-ROLLBACK.md`.
+9. Implement only the main-developer-owned backend and PostgreSQL lane.
+10. Return reproduced evidence using
    `docs/mcp/EVIDENCE-HAND-BACK.md`.
 
 Do not replace `NONE`, `NOT-RUN`, or `UNKNOWN` with an assumption.
@@ -54,6 +55,12 @@ preserves unrelated existing rows, and asks deterministic exception questions.
 It does not read a vault path or send raw worklog text to ERP. It does not
 expose every ERP API. Additional ERP capabilities require separate scope,
 contract, threat, and test Goals.
+
+G0011 through G0016 are already registered as inactive
+`DEFERRED/NOT-DESIGNED` Goals for weekly reports, transcript/audio intake,
+project mutation, Telegram commands, company email analysis, and
+manager/cross-employee functions. Do not implement or add them to the REST
+allowlist during the current G0001 backend hand-back.
 
 The isolated MCP lane must not edit backend models, migrations, authentication
 middleware, deployment files, or database configuration. The main developer

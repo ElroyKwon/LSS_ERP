@@ -165,14 +165,7 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
 
     @app.get("/api/timesheets/projects")
     def projects(q: str = "", limit: int = Query(default=20, ge=1, le=50)) -> dict:
-        items = [
-            {
-                "project_id": 123,
-                "project_code": "P-2026-001",
-                "project_name": "MCP 개발",
-                "active": True,
-            }
-        ]
+        items = list(app.state.contract.projects)
         if q:
             lowered = q.casefold()
             items = [

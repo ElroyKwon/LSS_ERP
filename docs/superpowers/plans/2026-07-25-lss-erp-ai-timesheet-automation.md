@@ -333,7 +333,7 @@ git commit -m "feat: add self timesheet entry context"
 - Modify: `mcp_server/tests/contract_server/state.py`
 - Modify: `mcp_server/tests/contract_server/app.py`
 
-- [ ] **Step 1: Write failing deterministic merge tests**
+- [x] **Step 1: Write failing deterministic merge tests**
 
 ```python
 def test_merge_preserves_unrelated_existing_rows() -> None:
@@ -365,7 +365,7 @@ def test_merge_replaces_only_same_semantic_row() -> None:
     assert preserved == 0
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run:
 
@@ -375,7 +375,7 @@ Run:
 
 Expected: import failure because `tools.worklog` does not exist.
 
-- [ ] **Step 3: Implement pure helpers**
+- [x] **Step 3: Implement pure helpers**
 
 Implement focused functions:
 
@@ -638,7 +638,7 @@ def hard_blocking_warnings(
 
 Keep these helpers independent from HTTP and confirmation state.
 
-- [ ] **Step 4: Write failing resolution integration tests**
+- [x] **Step 4: Write failing resolution integration tests**
 
 Cover:
 
@@ -666,7 +666,7 @@ assert result["can_commit"] is True
 assert state.post_count == 0
 ```
 
-- [ ] **Step 5: Run and verify resolution RED**
+- [x] **Step 5: Run and verify resolution RED**
 
 Run:
 
@@ -676,7 +676,7 @@ Run:
 
 Expected: failures because `prepare_from_worklog` is missing.
 
-- [ ] **Step 6: Implement resolution**
+- [x] **Step 6: Implement resolution**
 
 Implement:
 
@@ -800,7 +800,7 @@ f"coverage:{work_date.isoformat()}:below-target"
 The confirmation proposal includes complete merged entries and sorted accepted
 question IDs.
 
-- [ ] **Step 7: Run unit and integration tests**
+- [x] **Step 7: Run unit and integration tests**
 
 Run:
 
@@ -810,7 +810,7 @@ Run:
 
 Expected: all selected tests pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add mcp_server/src/lss_erp_mcp/tools/worklog.py mcp_server/tests/unit/test_worklog_merge.py mcp_server/tests/integration/test_worklog_prepare.py mcp_server/tests/contract_server

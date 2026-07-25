@@ -22,6 +22,18 @@ class ContractState:
     version: int = 3
     version_increment: int = 1
     entries: list[dict[str, object]] = field(default_factory=list)
+    projects: list[dict[str, object]] = field(
+        default_factory=lambda: [
+            {
+                "project_id": 123,
+                "project_code": "P-2026-001",
+                "project_name": "MCP 개발",
+                "project_source": "실행",
+                "spg": "에너지",
+                "active": True,
+            }
+        ]
+    )
     idempotency: dict[str, tuple[str, dict[str, object]]] = field(
         default_factory=dict
     )

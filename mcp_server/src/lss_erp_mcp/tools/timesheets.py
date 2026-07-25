@@ -38,9 +38,18 @@ async def search_projects(
 def entry_key(entry: dict[str, object]) -> tuple[object, ...]:
     return (
         entry["work_date"],
-        entry["project_id"],
+        entry.get("project_source"),
+        entry.get("project_id"),
+        entry.get("project_name"),
         entry["work_type"],
         entry["description"],
+    )
+
+
+def _sortable_entry_key(entry: dict[str, object]) -> tuple[str, ...]:
+    return tuple(
+        "" if component is None else str(component)
+        for component in entry_key(entry)
     )
 
 
@@ -60,12 +69,20 @@ def build_diff(
     for key in current_map.keys() & proposed_map.keys():
         before = current_map[key]
         after = proposed_map[key]
-        if Decimal(str(before["hours"])) != Decimal(str(after["hours"])):
+        comparable_before = {
+            item_key: item_value
+            for item_key, item_value in before.items()
+            if item_key != "entry_id"
+        }
+        if comparable_before != after:
             changed.append({"before": before, "after": after})
     return {
-        "added": sorted(added, key=entry_key),
-        "changed": sorted(changed, key=lambda item: entry_key(item["after"])),
-        "removed": sorted(removed, key=entry_key),
+        "added": sorted(added, key=_sortable_entry_key),
+        "changed": sorted(
+            changed,
+            key=lambda item: _sortable_entry_key(item["after"]),
+        ),
+        "removed": sorted(removed, key=_sortable_entry_key),
     }
 
 
@@ -243,7 +260,7 @@ def _readback_matches_request(
 ) -> bool:
     expected_entries = sorted(
         [item.model_dump(mode="json") for item in request.entries],
-        key=entry_key,
+        key=_sortable_entry_key,
     )
     actual_entries = sorted(
         [
@@ -254,8 +271,8 @@ def _readback_matches_request(
             }
             for item in persisted.entries
         ],
-        key=entry_key,
-    )
+            key=_sortable_entry_key,
+        )
     return (
         persisted.week_start == request.week_start
         and persisted.status == "작성중"

@@ -60,7 +60,7 @@ API. Never replace the literal test value with a real token:
 $env:LSS_ERP_ENVIRONMENT = 'test'
 $env:LSS_ERP_BASE_URL = 'http://127.0.0.1:8765'
 $env:LSS_ERP_ALLOW_ENV_TOKEN = 'true'
-$env:LSS_ERP_API_TOKEN = 'inspector-test-token'
+Set-Item Env:LSS_ERP_API_TOKEN ('inspector-' + [guid]::NewGuid())
 try {
   npx --yes @modelcontextprotocol/inspector --cli `
     .\mcp_server\.venv\Scripts\python.exe -m lss_erp_mcp --method tools/list

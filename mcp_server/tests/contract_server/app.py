@@ -82,7 +82,11 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
             "week_end": str(current.week_start + timedelta(days=6)),
             "status": current.status,
             "version": current.version,
-            "entries": current.entries,
+            "entries": (
+                current.entries
+                if current.readback_entries_override is None
+                else current.readback_entries_override
+            ),
         }
 
     @app.get("/api/timesheets/projects")

@@ -24,3 +24,4 @@ class ContractState:
         default_factory=dict
     )
     post_count: int = 0
+    readback_entries_override: list[dict[str, object]] | None = None

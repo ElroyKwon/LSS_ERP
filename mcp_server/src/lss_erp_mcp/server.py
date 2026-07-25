@@ -13,13 +13,14 @@ from .credentials import load_erp_token
 from .erp_client import ERPClient
 from .schemas.timesheet import DraftEntry
 from .tools.identity import get_current_user
-from .tools.timesheets import get_week, prepare_draft, search_projects
+from .tools.timesheets import commit_draft, get_week, prepare_draft, search_projects
 
 
 @dataclass
 class AppContext:
     client: ERPClient
     confirmations: ConfirmationStore
+    write_enabled: bool
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ async def lifespan(_server: FastMCP) -> AsyncIterator[AppContext]:
         yield AppContext(
             client=client,
             confirmations=ConfirmationStore(),
+            write_enabled=settings.canary_write,
         )
 
 
@@ -88,6 +90,24 @@ async def timesheet_prepare_draft(
         app.confirmations,
         week_start=week_start,
         entries=[entry.model_dump(mode="json") for entry in entries],
+    )
+
+
+@mcp.tool()
+async def timesheet_commit_draft(
+    confirmation_token: str,
+    idempotency_key: str,
+    ctx: Context[ServerSession, AppContext],
+) -> dict[str, object]:
+    """Commit one confirmed draft only when the canary write Gate is enabled."""
+    app = ctx.request_context.lifespan_context
+    if not app.write_enabled:
+        raise PermissionError("timesheet commit tool is disabled")
+    return await commit_draft(
+        app.client,
+        app.confirmations,
+        confirmation_token=confirmation_token,
+        idempotency_key=idempotency_key,
     )
 
 

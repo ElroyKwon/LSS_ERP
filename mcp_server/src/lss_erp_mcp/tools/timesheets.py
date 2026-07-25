@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 from lss_erp_mcp.confirmation import ConfirmationStore
 from lss_erp_mcp.erp_client import ERPClient
-from lss_erp_mcp.schemas.timesheet import DraftEntry
+from lss_erp_mcp.errors import ERPError
+from lss_erp_mcp.schemas.timesheet import DraftEntry, DraftWriteRequest
 
 
 async def get_week(client: ERPClient, week_start: str) -> dict[str, object]:
@@ -124,4 +126,76 @@ async def prepare_draft(
         "warnings": warnings,
         "can_commit": can_commit,
         "confirmation_token": confirmation_token,
+    }
+
+
+async def commit_draft(
+    client: ERPClient,
+    store: ConfirmationStore,
+    *,
+    confirmation_token: str,
+    idempotency_key: str,
+) -> dict[str, object]:
+    confirmation = store.get(confirmation_token)
+    user = await client.get_current_user()
+    if user.user_id != confirmation.user_id:
+        raise PermissionError("confirmation user mismatch")
+
+    request = DraftWriteRequest(
+        week_start=confirmation.week_start,
+        expected_version=confirmation.expected_version,
+        entries=confirmation.proposal["entries"],
+    )
+    parsed_idempotency_key = UUID(idempotency_key)
+    correlation_id = uuid4()
+    saved = None
+    for attempt in range(2):
+        try:
+            saved = await client.save_draft(
+                request,
+                idempotency_key=parsed_idempotency_key,
+                correlation_id=correlation_id,
+            )
+            break
+        except ERPError as exc:
+            if attempt == 0 and exc.code == "upstream_timeout" and exc.retryable:
+                continue
+            raise
+    if saved is None:
+        raise RuntimeError("commit did not produce a result")
+
+    persisted = await client.get_week(request.week_start)
+    expected_entries = sorted(
+        [item.model_dump(mode="json") for item in request.entries],
+        key=entry_key,
+    )
+    actual_entries = sorted(
+        [
+            {
+                key: value
+                for key, value in item.model_dump(mode="json").items()
+                if key != "entry_id"
+            }
+            for item in persisted.entries
+        ],
+        key=entry_key,
+    )
+    verified = (
+        saved.week_start == request.week_start
+        and persisted.week_start == request.week_start
+        and saved.version == persisted.version
+        and saved.status == "작성중"
+        and persisted.status == "작성중"
+        and expected_entries == actual_entries
+    )
+    if not verified:
+        raise RuntimeError("verification_failed")
+
+    store.consume(confirmation_token)
+    return {
+        "verified": True,
+        "timesheet_id": saved.timesheet_id,
+        "version": saved.version,
+        "correlation_id": saved.correlation_id,
+        "idempotency_replayed": saved.idempotency_replayed,
     }

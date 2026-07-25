@@ -2,8 +2,10 @@
 
 ## Current authority
 
-This document is an execution and evidence checklist. It does not authorize
-production access, merge, deployment, token issuance, or real writes.
+This document is an execution and evidence checklist. It permits a main
+developer to branch from the collaboration branch or merge it into a separate
+backend working branch. It does not authorize production access,
+`origin/main` release merge, deployment, token issuance, or real writes.
 
 Verified collaboration checkpoints may be pushed only to
 `origin/khlee-add-mcp`. Every such checkpoint remains
@@ -24,7 +26,7 @@ flowchart TD
     H --> I["Separate user approval<br/>one-user draft canary"]
     I --> J["Reproduce rollback"]
     J --> K["G0009 joint decision"]
-    K -->|"PASS + separate approval"| L["Merge/deploy decision"]
+    K -->|"PASS + separate approval"| L["origin/main merge/deploy decision"]
     K -->|"FAIL / UNKNOWN"| STOP2["Keep disabled<br/>report blocker"]
 ```
 

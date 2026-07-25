@@ -5,7 +5,8 @@ reproduced evidence. Keep unresolved fields as `NONE`, `NOT-RUN`, or
 `UNKNOWN`.
 
 ```yaml
-branch: khlee-add-mcp
+source_branch: khlee-add-mcp
+backend_working_branch: NONE
 backend_commit: NONE
 postgresql_test_lane:
   identity: NONE
@@ -39,6 +40,19 @@ tests:
   legacy_ui_smoke:
     command: NONE
     result: NOT-RUN
+authorization:
+  token_identity_to_auth_context: NOT-RUN
+  client_identity_fields_rejected: NOT-RUN
+  self_only_idor_denied: NOT-RUN
+  unregistered_endpoint_default_deny: NOT-RUN
+  protected_state_write_denied: NOT-RUN
+  jwt_and_api_token_privileges_not_unionized: NOT-RUN
+token_policy:
+  raw_token_stored_in_database: FORBIDDEN
+  client_id: lss-erp-mcp-local
+  resource: lss-erp-api
+  default_scope_empty: NOT-RUN
+  expiry_and_revoke_401: NOT-RUN
 duplicates:
   employee_week:
     query_id: NONE
@@ -71,6 +85,8 @@ unknowns:
 - OpenAPI artifact hash output;
 - migration current/upgrade/downgrade output;
 - backend and legacy UI test output;
+- token-derived identity, self-only, default-deny, scope, and protected-state
+  security test output;
 - redacted canary and rollback correlation IDs, if separately approved and run.
 
 ## Forbidden content

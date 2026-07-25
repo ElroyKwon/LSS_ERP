@@ -10,9 +10,10 @@
 - local_database: UNAVAILABLE
 - execution_model: parallel backend handoff and database-free MCP lane
 - collaboration_push: GRANTED
-- collaboration_remote_checkpoint: PUSHED (fb4680c)
+- collaboration_remote_checkpoint: PUSHED (verify current branch HEAD)
 - github_issue_registration: MANUAL-PENDING
 - github_issue_draft: docs/mcp/GITHUB-ISSUE-HANDOFF.md
+- ai_safety_baseline: docs/mcp/AI-SAFETY-BASELINE.md
 - release_merge_deploy: NOT-GRANTED
 - release_state: DEVELOPMENT/NOT-RELEASED
 - parallel_local_lane: IMPLEMENTED/LOCAL-PASS
@@ -23,13 +24,15 @@
 - local_dependency_audit: PASS (0 known vulnerabilities; local unpublished package skipped)
 - local_mcp_sdk_stdio: PASS
 - local_mcp_inspector_tools_list: PASS (5 tools)
-- local_mermaid_docs: PASS (11/11 rendered)
+- local_mermaid_docs: PASS (12/12 rendered)
 - credential_manager_live: NOT-RUN
 - backend_handback: WAITING
 - postgresql_and_alembic: NOT-RUN
 - deployed_real_api: NOT-RUN
 - real_erp_read_and_write: NOT-RUN
 - canary_and_rollback: NOT-RUN
+- exposed_mcp_scope: exactly 5 timesheet-focused tools over 4 REST endpoints
+- all_erp_api_access: NOT-IN-SCOPE
 
 ## Done-When
 

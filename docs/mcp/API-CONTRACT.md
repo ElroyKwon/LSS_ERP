@@ -10,6 +10,10 @@ The scope names below come from the versioned handoff and must not be silently
 renamed. If the backend already uses different names, stop and resolve the
 contract explicitly.
 
+This is the complete current allowlist, not an example subset. The current MCP
+does not expose all ERP APIs. Any additional method or path requires a separate
+scope, contract, threat review, tests, and Goal.
+
 | Method | Path | Required scope | State effect |
 |---|---|---|---|
 | `GET` | `/api/auth/me` | `mcp:discover` | None; minimum token identity |
@@ -30,6 +34,10 @@ flowchart LR
 
 The API derives employee ownership from the authenticated token. It must not
 trust an employee identifier supplied by the MCP client.
+
+The token-derived `user_id` and `employee_id` are the only identity authority
+for these endpoints. Client-provided `employee_id`, `user_id`, `approver_id`,
+or `status` fields must be rejected rather than ignored.
 
 ## Common response contract
 

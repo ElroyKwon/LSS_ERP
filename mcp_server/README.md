@@ -4,6 +4,11 @@ This is an isolated MCP stdio process for the LSS ERP REST contract. It has no
 database dependency and must not receive a database account, `DATABASE_URL`,
 backend `SECRET_KEY`, or backend imports.
 
+The current package exposes exactly five timesheet-focused tools over four
+allowlisted ERP REST endpoints. It is not a generic ERP API bridge. See
+`docs/mcp/AI-SAFETY-BASELINE.md` for the token-derived identity, least
+privilege, write Gate, evidence, and non-claim boundaries.
+
 ## Development setup
 
 ```powershell

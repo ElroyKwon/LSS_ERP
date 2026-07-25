@@ -4,7 +4,7 @@
 
 **Goal:** Build and locally verify a separately packaged stdio MCP server without a local database, publish reviewed checkpoints to `origin/khlee-add-mcp` for the main developer's AI, then integrate through the G0009 release Gate.
 
-**Architecture:** The MCP process lives only under repo-root `mcp_server/`, reads an ERP API token from Windows Credential Manager, and calls a fixed allowlist of ERP REST endpoints. Local tests use an in-memory FastAPI contract stub with no ORM or database while the main developer's PostgreSQL/API lane proceeds in parallel. Verified development checkpoints may be pushed to `origin/khlee-add-mcp`; merge, deployment, and real ERP write activation remain blocked until G0009 and separate user approval.
+**Architecture:** The MCP process lives only under repo-root `mcp_server/`, reads an ERP API token from Windows Credential Manager, and calls a fixed allowlist of ERP REST endpoints. Local tests use an in-memory FastAPI contract stub with no ORM or database while the main developer's PostgreSQL/API lane proceeds in parallel. Verified development checkpoints may be pushed to `origin/khlee-add-mcp`; a main developer may integrate them into a separate backend working branch, while `origin/main` release merge, deployment, and real ERP write activation remain blocked until G0009 and separate user approval.
 
 **Tech Stack:** Python 3.12, MCP Python SDK v1 (`mcp>=1.28,<2`), FastMCP stdio, httpx, Pydantic v2, keyring, pytest, pytest-asyncio, FastAPI test-only contract stub, PowerShell, PostgreSQL-backed ERP REST API supplied by the main developer.
 
@@ -15,16 +15,17 @@
 | Area | State | Evidence |
 |---|---|---|
 | Single active Goal | PASS | `LSS-MCP-G0001` is the only `ACTIVE` Goal |
-| Collaboration branch | PUSHED VERIFIED CHECKPOINT | `origin/khlee-add-mcp@fb4680c`; every checkpoint is `DEVELOPMENT/NOT-RELEASED` |
+| Collaboration branch | PUSHED COLLABORATION BRANCH | `origin/khlee-add-mcp`; verify the exact current SHA with `git ls-remote` |
 | Database-free MCP code | LOCAL-PASS | code checkpoint `cf31647` |
 | Local test suite | PASS | 70 tests, compileall PASS, banned runtime references 0 |
 | Dependency audit | PASS | no known vulnerabilities; unpublished local package skipped |
 | MCP protocol | PASS | Python SDK stdio tests and external Inspector five-tool listing |
-| AI application package | PUSHED | `docs/mcp/` and `mcp_server/README.md` at verified checkpoint `fb4680c` |
+| AI application package | IN COLLABORATION BRANCH | `docs/mcp/`, including `AI-SAFETY-BASELINE.md`, and `mcp_server/README.md` |
 | GitHub work registration | MANUAL-PENDING | Copy `docs/mcp/GITHUB-ISSUE-HANDOFF.md` into a GitHub issue |
 | Main developer hand-back | WAITING | PostgreSQL, Alembic, backend, OpenAPI, legacy UI evidence not received |
 | Real API, canary, rollback | NOT-RUN | blocked until the documented joint Gates and separate user approval |
-| Merge and deployment | NOT-GRANTED | requires G0009 `COMPLETE/PASS` and separate user approval |
+| Working-branch integration | GRANTED | main developer may branch from or merge into a separate backend working branch |
+| origin/main merge and deployment | NOT-GRANTED | requires G0009 `COMPLETE/PASS` and separate user approval |
 
 This snapshot records implementation progress without promoting G0005 through
 G0009 out of order. `LSS-MCP-G0001` remains the only active management Goal.

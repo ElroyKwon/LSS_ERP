@@ -2,19 +2,39 @@
 
 ## Start here
 
-This branch is a collaboration checkpoint for development only. It is not
-approval to merge, deploy, or enable real ERP writes.
+This branch is a collaboration checkpoint for development only. A main
+developer may branch from it or merge it into a separate backend working
+branch. It is not approval to merge into `origin/main`, deploy, or enable real
+ERP writes.
 
 1. Check out `khlee-add-mcp` and record `git rev-parse HEAD`.
 2. Read
    `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`.
 3. Read `docs/mcp/API-CONTRACT.md`.
-4. Read `docs/mcp/APPLY-AND-ROLLBACK.md`.
-5. Implement only the main-developer-owned backend and PostgreSQL lane.
-6. Return reproduced evidence using
+4. Read `docs/mcp/AI-SAFETY-BASELINE.md`.
+5. Read `docs/mcp/APPLY-AND-ROLLBACK.md`.
+6. Implement only the main-developer-owned backend and PostgreSQL lane.
+7. Return reproduced evidence using
    `docs/mcp/EVIDENCE-HAND-BACK.md`.
 
 Do not replace `NONE`, `NOT-RUN`, or `UNKNOWN` with an assumption.
+
+## Working-branch integration
+
+Use one of these development-only flows:
+
+```powershell
+git fetch origin
+git switch -c main-dev-mcp-backend origin/khlee-add-mcp
+git rev-parse HEAD
+```
+
+Or merge the collaboration branch into an existing separate backend working
+branch after reviewing `git diff origin/main...origin/khlee-add-mcp`.
+
+Do not merge directly into `origin/main`. Return the exact working-branch SHA
+with the evidence hand-back. Release integration remains gated by G0009 and a
+separate user approval.
 
 ## Ownership
 
@@ -23,6 +43,10 @@ Do not replace `NONE`, `NOT-RUN`, or `UNKNOWN` with an assumption.
 | Backend and database | Main developer | PostgreSQL, Alembic, token hash and scope, `AuthContext`, REST endpoints, audit, idempotency, development and actual-server application, rollback |
 | Isolated MCP | MCP lane | Database-free contract stub, REST client, stdio tools, local confirmation, unit/contract/protocol/security/fault/performance tests |
 | Joint Gate | Both | Real API read-only, separately approved one-user canary, rollback reproduction, G0009 decision |
+
+The current package exposes exactly five timesheet-focused MCP tools over four
+REST endpoints. It does not expose every ERP API. Additional ERP capabilities
+require separate scope, contract, threat, and test Goals.
 
 The isolated MCP lane must not edit backend models, migrations, authentication
 middleware, deployment files, or database configuration. The main developer
@@ -42,8 +66,8 @@ must not add direct database access to `mcp_server/`.
   deployed API authority.
 - Keep the write tool disabled until a separate user approval and the
   documented canary prerequisites are satisfied.
-- Do not merge or deploy because this branch exists. Its release state is
-  `DEVELOPMENT/NOT-RELEASED`.
+- Do not merge into `origin/main` or deploy because this branch exists. Its
+  release state is `DEVELOPMENT/NOT-RELEASED`.
 
 ## Backend work expected
 

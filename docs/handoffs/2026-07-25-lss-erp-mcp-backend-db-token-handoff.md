@@ -665,13 +665,15 @@ secret scan 결과
 
 ## 8. Branch·commit·push 경계
 
-- 메인 개발자는 별도 branch 또는 PR에서 backend·DB 변경 수행
+- 메인 개발자는 `origin/khlee-add-mcp`에서 별도 backend 작업 branch를
+  만들거나 기존 별도 작업 branch에 병합해 backend·DB 변경 수행
 - 반환 시 commit SHA와 변경 파일 목록 제공
 - `khlee-add-mcp` 통합은 MCP 담당자의 계약·회귀 검증 후 수행
 - 검증된 협업 체크포인트는 `origin/khlee-add-mcp`에만 push 허용
 - 모든 G0009 이전 체크포인트는 `DEVELOPMENT/NOT-RELEASED`
-- `main` merge·PR merge·실제 서버 배포·실 ERP write 활성화는 G0009
-  `COMPLETE/PASS`와 사용자 별도 승인 전 금지
+- 별도 backend 작업 branch 내부 병합은 개발 작업으로 허용
+- `origin/main` release merge·실제 서버 배포·실 ERP write 활성화는
+  G0009 `COMPLETE/PASS`와 사용자 별도 승인 전 금지
 - token·DB 계정·`DATABASE_URL`·`SECRET_KEY`·원문 업무일지 push 금지
 - 실제 서버 migration·배포는 메인 개발자 승인·운영 절차로 별도 수행
 
@@ -681,15 +683,19 @@ secret scan 결과
 - Obsidian: `99. LS사우타 ERP/2026-07-24_LSS-ERP-MCP-G0001-G0010-개발-최적화-테스트-계획.md`
 - Obsidian: `99. LS사우타 ERP/2026-07-25_LSS-ERP-MCP-통합-설계도.md`
 - Repo: `docs/superpowers/plans/2026-07-25-lss-erp-mcp-isolated-implementation.md`
+- Repo: `docs/mcp/AI-MAIN-DEVELOPER-ENTRYPOINT.md`
+- Repo: `docs/mcp/AI-SAFETY-BASELINE.md`
+- Repo: `docs/mcp/API-CONTRACT.md`
 - MCP transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
 - MCP authorization: <https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization>
 - MCP tools: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
 
 ## 10. 다음 행동
 
-1. `LSS-MCP-G0001` 단일 ACTIVE Goal 발행
-2. 이 문서와 구현 계획을 `origin/khlee-add-mcp`에 협업 체크포인트로 push
-3. 메인 개발자 AI가 이 문서를 읽고 branch·PostgreSQL test lane 회신
-4. 우리 쪽은 DB 없는 stub·독립 `mcp_server` TDD를 병렬 실행
-5. backend hand-back package 수령 후 G0001~G0004 순차 수락
-6. G0009에서 실제 API·canary·rollback 증거 공동 검증
+1. `LSS-MCP-G0001`을 유일한 ACTIVE Goal로 유지
+2. 메인 개발자 AI가 `docs/mcp/AI-MAIN-DEVELOPER-ENTRYPOINT.md`부터 읽음
+3. 메인 개발자가 별도 backend 작업 branch와 PostgreSQL test lane 회신
+4. token-derived identity·default deny·self-only를 포함한 backend 구현
+5. `docs/mcp/EVIDENCE-HAND-BACK.md` 형식으로 증거 반환
+6. backend hand-back 수령 후 G0001~G0004 순차 수락
+7. G0009에서 실제 API·canary·rollback 증거 공동 검증

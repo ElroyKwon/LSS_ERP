@@ -16,4 +16,6 @@ Rule: exactly one Goal may be ACTIVE.
 
 Verified development checkpoints may be pushed only to
 `origin/khlee-add-mcp`. They remain `DEVELOPMENT/NOT-RELEASED` until G0009
-`COMPLETE/PASS` and separate user approval for merge or deployment.
+`COMPLETE/PASS` and separate user approval for `origin/main` release merge or
+deployment. Main developers may branch from the collaboration branch or merge
+it into a separate backend working branch for the requested hand-back.

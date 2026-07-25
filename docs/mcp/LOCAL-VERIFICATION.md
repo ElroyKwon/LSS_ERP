@@ -30,9 +30,12 @@ The suite covers:
 - no backend import, ORM, database driver, or `DATABASE_URL` reference;
 - allowlisted HTTP methods and paths, redirect rejection, response-size limit;
 - strict response and error schemas through a database-free FastAPI stub;
+- strict request models reject client-supplied identity and status fields;
 - MCP stdio initialization and tool listing;
 - external MCP Inspector `tools/list` over stdio;
 - read tools, local prepare/diff, expiring confirmation, and protected state;
+- commit confirmation is re-bound to the current token-derived user before
+  write;
 - confirmed draft commit, version conflict, idempotent replay, timeout recovery,
   response-loss readback reconciliation, and post-write readback mismatch;
 - telemetry allowlist helper drops secret and business-content fields;
@@ -82,6 +85,9 @@ It must list exactly these five tools:
 
 The exact latest result and commit are recorded in
 `goals/LSS-MCP-G0001/STATUS.md`.
+
+The control rationale, verified claim boundary, and main-developer proof
+requirements are recorded in `docs/mcp/AI-SAFETY-BASELINE.md`.
 
 ## Not proved by the local Gate
 

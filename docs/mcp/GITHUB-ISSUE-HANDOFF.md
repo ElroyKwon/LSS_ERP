@@ -17,8 +17,13 @@
 재현 가능한 evidence hand-back을 요청합니다.
 
 이 이슈는 개발 업무 전달용입니다. 현재 상태는
-`DEVELOPMENT/NOT-RELEASED`이며 merge, 실제 서버 배포, 실제 ERP write
-활성화를 승인하지 않습니다.
+`DEVELOPMENT/NOT-RELEASED`입니다. 메인 개발자의 별도 backend 작업
+branch 생성이나 그 작업 branch로의 병합은 허용하지만, `origin/main`
+병합·실제 서버 배포·실제 ERP write 활성화를 승인하지 않습니다.
+
+현재 MCP 범위는 타임시트 중심 5개 도구와 4개 REST endpoint입니다.
+ERP의 모든 API를 MCP로 공개하는 작업이 아니며, 추가 기능은 별도
+scope·contract·위협 검토·테스트 Goal이 필요합니다.
 
 ### 기준점
 
@@ -35,9 +40,10 @@
 1. `docs/mcp/AI-MAIN-DEVELOPER-ENTRYPOINT.md`
 2. `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`
 3. `docs/mcp/API-CONTRACT.md`
-4. `docs/mcp/APPLY-AND-ROLLBACK.md`
-5. `docs/mcp/EVIDENCE-HAND-BACK.md`
-6. `docs/mcp/LOCAL-VERIFICATION.md`
+4. `docs/mcp/AI-SAFETY-BASELINE.md`
+5. `docs/mcp/APPLY-AND-ROLLBACK.md`
+6. `docs/mcp/EVIDENCE-HAND-BACK.md`
+7. `docs/mcp/LOCAL-VERIFICATION.md`
 
 ### 메인 개발자 작업
 
@@ -47,6 +53,8 @@
 - [ ] Alembic revision 작성, upgrade와 downgrade 재현
 - [ ] API token hash·expiry·revocation·client/resource/scope default-deny 구현
 - [ ] token identity를 기존 `AuthContext`로 연결
+- [ ] token에서 검증한 `user_id`·`employee_id`만 사용하고
+      client가 identity·status를 선택하지 못함을 테스트
 - [ ] 아래 최소 REST 계약 구현
   - `GET /api/auth/me` — `mcp:discover`
   - `GET /api/timesheets/week` — `timesheet:read:self`
@@ -88,7 +96,7 @@
   path를 Git·Markdown·이슈·로그·스크린샷에 기록
 - SQLite-only 결과로 PostgreSQL migration을 PASS 처리
 - 제출·승인·반려 상태를 MCP로 변경
-- 이 branch 존재만으로 merge·배포·실제 write 활성화
+- 이 branch 존재만으로 `origin/main` 병합·배포·실제 write 활성화
 
 ### 현재 로컬 evidence
 
@@ -98,7 +106,7 @@
 - compileall: PASS
 - banned runtime references: 0
 - Python dependency audit: 알려진 취약점 0
-- Mermaid: 11/11 실제 렌더 PASS
+- Mermaid: 12/12 실제 렌더 PASS
 - secret pattern scan: 0
 - frontend build: 3,841 modules PASS
 - 독립 review: Critical 0, Important 0
@@ -114,5 +122,5 @@ PostgreSQL, deployed API, read-only integration, one-user canary, rollback은
 - [ ] real API read-only 검증을 시작할 수 있는 credential-free endpoint 제공
 - [ ] blocker와 `UNKNOWN`이 명시됨
 
-G0009 `COMPLETE/PASS`와 사용자 별도 승인 전에는 merge, deployment, real
-ERP write activation을 진행하지 않습니다.
+G0009 `COMPLETE/PASS`와 사용자 별도 승인 전에는 `origin/main` release
+merge, deployment, real ERP write activation을 진행하지 않습니다.

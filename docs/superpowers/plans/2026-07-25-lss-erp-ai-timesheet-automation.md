@@ -1168,7 +1168,7 @@ git commit -m "docs: hand off AI timesheet backend contract"
 - Modify: `docs/mcp/LOCAL-VERIFICATION.md`
 - Modify: `goals/LSS-MCP-G0001/STATUS.md`
 
-- [ ] **Step 1: Run the complete local test suite**
+- [x] **Step 1: Run the complete local test suite**
 
 ```powershell
 .\mcp_server\.venv\Scripts\python.exe -m pytest mcp_server\tests -q
@@ -1176,7 +1176,7 @@ git commit -m "docs: hand off AI timesheet backend contract"
 
 Expected: zero failures.
 
-- [ ] **Step 2: Run compile and dependency Gates**
+- [x] **Step 2: Run compile and dependency Gates**
 
 ```powershell
 .\mcp_server\.venv\Scripts\python.exe -m compileall -q mcp_server\src mcp_server\tests
@@ -1186,7 +1186,7 @@ Expected: zero failures.
 Expected: exit code zero and zero known vulnerabilities in resolved published
 dependencies. Keep the local unpublished-package caveat.
 
-- [ ] **Step 3: Run source isolation and secret scans**
+- [x] **Step 3: Run source isolation and secret scans**
 
 ```powershell
 rg -n "DATABASE_URL|create_engine|sqlalchemy|backend\\.app|G:\\\\|_Obsidian" mcp_server/src
@@ -1195,12 +1195,12 @@ rg -n "(Bearer\\s+[A-Za-z0-9._-]{12,}|postgres(?:ql)?://|SECRET_KEY\\s*=|LSS_ERP
 
 Expected: zero forbidden runtime and secret findings.
 
-- [ ] **Step 4: Reproduce stdio tool evidence**
+- [x] **Step 4: Reproduce stdio tool evidence**
 
 Run the protocol test and, when available, MCP Inspector. Record the exact tool
 count and result without exposing credentials.
 
-- [ ] **Step 5: Re-read requirements and record evidence**
+- [x] **Step 5: Re-read requirements and record evidence**
 
 Compare every design requirement to code, tests, and handoff documents. Update
 local evidence only from this run. Do not convert backend/PostgreSQL/OpenAPI,

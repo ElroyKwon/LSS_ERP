@@ -593,8 +593,8 @@ backend/tests/integration/test_mcp_transaction_atomicity.py
 ```text
 ENVIRONMENT=development
 AUTO_CREATE_SCHEMA=false
-DATABASE_URL=SERVER-SIDE-SECRET
-SECRET_KEY=SERVER-SIDE-SECRET
+DATABASE_URL=<server-side credential reference>
+SECRET_KEY=<server-side credential reference>
 ```
 
 MCP 담당자에게는 `DATABASE_URL`과 `SECRET_KEY`를 전달하지 않는다.

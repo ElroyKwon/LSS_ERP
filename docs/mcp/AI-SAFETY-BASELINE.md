@@ -91,10 +91,12 @@ Required token constraints:
 
 ### Verified locally
 
-- 101 database-free unit, contract, integration, protocol, security, fault, and
+- 108 database-free unit, contract, integration, protocol, security, fault, and
   performance tests pass.
 - Official MCP SDK stdio initialize/list/call passes.
 - Official SDK lists exactly seven tools with AI-oriented annotations.
+- External MCP Inspector lists exactly the same seven tools over stdio.
+- All 13 repository Mermaid blocks render successfully.
 - MCP source has zero backend/ORM/DB-driver imports and banned runtime
   references.
 - Secret-pattern scan reports zero findings.

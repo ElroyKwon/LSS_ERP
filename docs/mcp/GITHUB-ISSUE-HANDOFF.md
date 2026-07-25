@@ -110,17 +110,18 @@ scope·contract·위협 검토·테스트 Goal이 필요합니다.
 
 ### 현재 로컬 evidence
 
-- pytest: `101 passed`
+- pytest: `108 passed`
 - MCP Python SDK stdio initialize/list/call: PASS
 - MCP Python SDK `tools/list`: 7개 도구와 annotations PASS
-- external MCP Inspector 새 7개 도구 확인: 세션 최종 검증 전 `NOT-RUN`
+- external MCP Inspector `tools/list`: 정확히 7개 도구 PASS
 - compileall: PASS
 - banned runtime references: 0
 - Python dependency audit: 알려진 취약점 0
-- Mermaid: 12/12 실제 렌더 PASS
+- Mermaid: 13/13 실제 렌더 PASS
 - secret pattern scan: 0
 - frontend build: 3,841 modules PASS
-- 독립 review: Critical 0, Important 0
+- 이번 checkpoint 자체 review: 발견된 중요 결함 5건 수정 후 회귀 테스트 PASS
+- 이번 checkpoint 독립 review: `NOT-RUN`; main developer가 별도 backend branch에서 재검토
 
 위 결과는 DB 없는 로컬 MCP lane만 증명합니다. 실제 Credential Manager,
 PostgreSQL, deployed API, read-only integration, one-user canary, rollback은

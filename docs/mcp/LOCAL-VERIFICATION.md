@@ -64,6 +64,23 @@ From the repository root:
 rg -n -i 'backend\.app|sqlalchemy|pg8000|database_url' mcp_server\src
 ```
 
+## Latest reproduced result
+
+- Code checkpoint under test: `bc466b5`
+- pytest: `PASS`, 108 passed
+- compileall: `PASS`
+- dependency audit: `PASS`, zero known vulnerabilities in resolved published
+  dependencies; local unpublished `lss-erp-mcp` skipped
+- banned runtime references: `PASS`, zero findings
+- secret-pattern scan: `PASS`, zero findings
+- personal-vault reference scan in MCP source: `PASS`, zero findings
+- official MCP SDK protocol coverage: `PASS`, exactly seven tools
+- external MCP Inspector `tools/list`: `PASS`, exactly seven tools
+- repository Mermaid rendering: `PASS`, 13/13 blocks
+
+This is local, database-free evidence only. It does not change any real-system
+item below from `NOT-RUN` or `UNKNOWN`.
+
 The external Inspector check below is self-contained and uses a literal
 non-secret test token. It performs `tools/list` only and does not call the REST
 API. Never replace the literal test value with a real token:

@@ -826,7 +826,7 @@ git commit -m "feat: prepare timesheets from structured worklogs"
 - Modify: `mcp_server/tests/fault/test_commit_replay.py`
 - Modify: `mcp_server/tests/contract/test_contract_stub.py`
 
-- [ ] **Step 1: Add failing expanded-entry commit tests**
+- [x] **Step 1: Add expanded-entry commit regression tests**
 
 Add a successful leave/common commit and a successful execution-project commit.
 Assert exact readback of:
@@ -845,7 +845,7 @@ Assert exact readback of:
 Add a test that accepted exception IDs remain confirmation-bound but are absent
 from the ERP write body.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify current generalized commit behavior**
 
 Run:
 
@@ -853,10 +853,11 @@ Run:
 .\mcp_server\.venv\Scripts\python.exe -m pytest mcp_server\tests\integration\test_commit.py mcp_server\tests\fault\test_commit_replay.py -q
 ```
 
-Expected: at least the worklog-prepared confirmation path fails before commit
-compatibility is added.
+Observed: the worklog-prepared confirmation path passed immediately because
+Tasks 1 and 3 expanded the shared strict request/readback model without adding
+a second commit implementation. No production-code change was required.
 
-- [ ] **Step 3: Update readback and confirmation handling**
+- [x] **Step 3: Confirm readback and confirmation handling**
 
 `commit_draft` continues to build only this write request:
 
@@ -873,7 +874,7 @@ text, or local correlation data to the backend.
 
 Update semantic sorting/readback to include all canonical entry fields.
 
-- [ ] **Step 4: Run commit, fault, and contract tests**
+- [x] **Step 4: Run commit, fault, and contract tests**
 
 Run:
 
@@ -883,7 +884,7 @@ Run:
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add mcp_server/src/lss_erp_mcp/tools/timesheets.py mcp_server/tests/integration/test_commit.py mcp_server/tests/fault mcp_server/tests/contract

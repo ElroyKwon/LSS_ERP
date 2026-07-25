@@ -148,6 +148,22 @@ async def test_stub_returns_error_envelope_for_validation_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stub_rejects_a_week_other_than_its_bound_state() -> None:
+    transport = httpx.ASGITransport(app=create_contract_app())
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/timesheets/week",
+            params={"week_start": "2026-07-27"},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "timesheet_not_found"
+
+
+@pytest.mark.asyncio
 async def test_contract_server_fixture_serves_a_real_loopback_socket(
     contract_server_url: str,
 ) -> None:

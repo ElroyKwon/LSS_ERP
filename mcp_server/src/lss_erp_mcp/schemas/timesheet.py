@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from .common import StrictModel
 
@@ -62,6 +62,16 @@ class DraftWriteRequest(StrictModel):
         if value.weekday() != 0:
             raise ValueError("week_start must be Monday")
         return value
+
+    @model_validator(mode="after")
+    def require_entries_in_week(self) -> "DraftWriteRequest":
+        week_end = self.week_start + timedelta(days=6)
+        if any(
+            entry.work_date < self.week_start or entry.work_date > week_end
+            for entry in self.entries
+        ):
+            raise ValueError("entry work_date must be within the requested week")
+        return self
 
 
 class DraftWriteResult(StrictModel):

@@ -60,3 +60,23 @@ def test_consumed_confirmation_is_unavailable() -> None:
     store.consume(token)
     with pytest.raises(ConfirmationUnavailable):
         store.get(token)
+
+
+def test_confirmation_claim_is_exclusive_and_idempotency_bound() -> None:
+    store = ConfirmationStore()
+    token = store.put(
+        user_id=10,
+        week_start="2026-07-20",
+        expected_version=3,
+        proposal={"entries": []},
+    )
+
+    store.claim(token, "key-1")
+    with pytest.raises(ConfirmationUnavailable, match="in progress"):
+        store.claim(token, "key-1")
+
+    store.release(token)
+    store.claim(token, "key-1")
+    store.release(token)
+    with pytest.raises(ConfirmationUnavailable, match="idempotency"):
+        store.claim(token, "key-2")

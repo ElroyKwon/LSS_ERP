@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from lss_erp_mcp.confirmation import ConfirmationStore
 from lss_erp_mcp.erp_client import ERPClient
@@ -102,4 +103,29 @@ async def test_prepare_non_draft_status_never_posts() -> None:
 
     assert result["can_commit"] is False
     assert result["current_status"] == "승인"
+    assert state.post_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [],
+        [proposed_entry(description=f"entry-{index}") for index in range(51)],
+        [
+            {
+                **proposed_entry(),
+                "work_date": "2026-07-27",
+            }
+        ],
+    ],
+)
+async def test_prepare_rejects_empty_unbounded_or_out_of_week_entries(
+    entries: list[dict[str, object]],
+) -> None:
+    state = ContractState()
+
+    with pytest.raises(ValidationError):
+        await run_prepare(state, entries)
+
     assert state.post_count == 0

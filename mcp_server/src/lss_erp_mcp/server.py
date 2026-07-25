@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Annotated
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
+from pydantic import Field
 
 from .confirmation import ConfirmationStore
 from .config import McpSettings
@@ -65,9 +67,9 @@ async def timesheet_get_week(
 
 @mcp.tool()
 async def timesheet_search_projects(
-    query: str,
+    query: Annotated[str, Field(max_length=100)],
     ctx: Context[ServerSession, AppContext],
-    limit: int = 20,
+    limit: Annotated[int, Field(ge=1, le=50)] = 20,
 ) -> dict[str, object]:
     """Search active projects through the minimum timesheet contract."""
     return await search_projects(
@@ -80,7 +82,10 @@ async def timesheet_search_projects(
 @mcp.tool()
 async def timesheet_prepare_draft(
     week_start: str,
-    entries: list[DraftEntry],
+    entries: Annotated[
+        list[DraftEntry],
+        Field(min_length=1, max_length=50),
+    ],
     ctx: Context[ServerSession, AppContext],
 ) -> dict[str, object]:
     """Build a local diff and confirmation token without writing ERP."""

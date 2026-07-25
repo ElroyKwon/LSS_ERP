@@ -19,9 +19,13 @@ class ContractState:
     week_start: date = date(2026, 7, 20)
     status: str = "작성중"
     version: int = 3
+    version_increment: int = 1
     entries: list[dict[str, object]] = field(default_factory=list)
     idempotency: dict[str, tuple[str, dict[str, object]]] = field(
         default_factory=dict
     )
     post_count: int = 0
     readback_entries_override: list[dict[str, object]] | None = None
+    forced_error_status: int | None = None
+    forced_error_code: str = "forced_error"
+    forced_error_retryable: bool = False

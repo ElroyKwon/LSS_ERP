@@ -40,6 +40,22 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
     app = FastAPI()
     app.state.contract = state or ContractState()
 
+    @app.middleware("http")
+    async def forced_error(request: Request, call_next):
+        current = app.state.contract
+        if current.forced_error_status is not None:
+            return _error_response(
+                status_code=current.forced_error_status,
+                code=current.forced_error_code,
+                message="Forced contract error.",
+                correlation_id=(
+                    request.headers.get("X-Correlation-ID")
+                    or "forced-correlation"
+                ),
+                retryable=current.forced_error_retryable,
+            )
+        return await call_next(request)
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(
         request: Request,
@@ -73,9 +89,18 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
             "scopes": sorted(current.scopes),
         }
 
-    @app.get("/api/timesheets/week")
-    def week(week_start: date = Query(...)) -> dict[str, object]:
+    @app.get("/api/timesheets/week", response_model=None)
+    def week(
+        week_start: date = Query(...),
+    ) -> dict[str, object] | JSONResponse:
         current = app.state.contract
+        if week_start != current.week_start:
+            return _error_response(
+                status_code=404,
+                code="timesheet_not_found",
+                message="Timesheet week was not found.",
+                correlation_id=str(uuid4()),
+            )
         return {
             "timesheet_id": 100,
             "week_start": str(current.week_start),
@@ -156,7 +181,7 @@ def create_contract_app(state: ContractState | None = None) -> FastAPI:
             )
 
         current.post_count += 1
-        current.version += 1
+        current.version += current.version_increment
         current.entries = [
             {"entry_id": index + 1, **entry.model_dump(mode="json")}
             for index, entry in enumerate(body.entries)

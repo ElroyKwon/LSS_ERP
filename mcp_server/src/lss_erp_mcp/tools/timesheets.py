@@ -8,7 +8,10 @@ from uuid import UUID, uuid4
 from lss_erp_mcp.confirmation import ConfirmationStore
 from lss_erp_mcp.erp_client import ERPClient
 from lss_erp_mcp.errors import ERPError
-from lss_erp_mcp.schemas.timesheet import DraftEntry, DraftWriteRequest
+from lss_erp_mcp.schemas.timesheet import (
+    DraftWriteRequest,
+    TimesheetWeek,
+)
 
 
 async def get_week(client: ERPClient, week_start: str) -> dict[str, object]:
@@ -66,11 +69,16 @@ async def prepare_draft(
     entries: list[dict[str, object]],
 ) -> dict[str, object]:
     parsed_week = date.fromisoformat(week_start)
+    proposal = DraftWriteRequest(
+        week_start=parsed_week,
+        expected_version=0,
+        entries=entries,
+    )
     user = await client.get_current_user()
     current = await client.get_week(parsed_week)
     proposed = [
-        DraftEntry.model_validate(item).model_dump(mode="json")
-        for item in entries
+        entry.model_dump(mode="json")
+        for entry in proposal.entries
     ]
 
     unresolved: list[int] = []
@@ -136,35 +144,95 @@ async def commit_draft(
     confirmation_token: str,
     idempotency_key: str,
 ) -> dict[str, object]:
-    confirmation = store.get(confirmation_token)
-    user = await client.get_current_user()
-    if user.user_id != confirmation.user_id:
-        raise PermissionError("confirmation user mismatch")
-
-    request = DraftWriteRequest(
-        week_start=confirmation.week_start,
-        expected_version=confirmation.expected_version,
-        entries=confirmation.proposal["entries"],
-    )
     parsed_idempotency_key = UUID(idempotency_key)
-    correlation_id = uuid4()
-    saved = None
-    for attempt in range(2):
-        try:
-            saved = await client.save_draft(
-                request,
-                idempotency_key=parsed_idempotency_key,
-                correlation_id=correlation_id,
-            )
-            break
-        except ERPError as exc:
-            if attempt == 0 and exc.code == "upstream_timeout" and exc.retryable:
-                continue
-            raise
-    if saved is None:
-        raise RuntimeError("commit did not produce a result")
+    confirmation = store.claim(
+        confirmation_token,
+        str(parsed_idempotency_key),
+    )
+    try:
+        user = await client.get_current_user()
+        if user.user_id != confirmation.user_id:
+            raise PermissionError("confirmation user mismatch")
 
-    persisted = await client.get_week(request.week_start)
+        request = DraftWriteRequest(
+            week_start=confirmation.week_start,
+            expected_version=confirmation.expected_version,
+            entries=confirmation.proposal["entries"],
+        )
+        correlation_id = uuid4()
+        saved = None
+        persisted: TimesheetWeek | None = None
+        reconciled_after_timeout = False
+        for attempt in range(2):
+            try:
+                saved = await client.save_draft(
+                    request,
+                    idempotency_key=parsed_idempotency_key,
+                    correlation_id=correlation_id,
+                )
+                break
+            except ERPError as exc:
+                if exc.code != "upstream_timeout" or not exc.retryable:
+                    raise
+                persisted = await client.get_week(request.week_start)
+                if _readback_matches_request(persisted, request):
+                    reconciled_after_timeout = True
+                    break
+                unchanged = (
+                    persisted.week_start == request.week_start
+                    and persisted.status == "작성중"
+                    and persisted.version == request.expected_version
+                )
+                if attempt == 0 and unchanged:
+                    persisted = None
+                    continue
+                raise RuntimeError("uncertain_commit_state") from exc
+        if saved is None and not reconciled_after_timeout:
+            raise RuntimeError("commit did not produce a result")
+
+        if persisted is None:
+            persisted = await client.get_week(request.week_start)
+        response_verified = (
+            saved is None
+            or (
+                saved.week_start == request.week_start
+                and saved.status == "작성중"
+                and saved.version == request.expected_version + 1
+                and saved.version == persisted.version
+                and saved.timesheet_id == persisted.timesheet_id
+                and saved.correlation_id == str(correlation_id)
+            )
+        )
+        if (
+            not response_verified
+            or not _readback_matches_request(persisted, request)
+            or persisted.timesheet_id is None
+        ):
+            raise RuntimeError("verification_failed")
+
+        store.consume(confirmation_token)
+        return {
+            "verified": True,
+            "timesheet_id": persisted.timesheet_id,
+            "version": persisted.version,
+            "correlation_id": (
+                saved.correlation_id
+                if saved is not None
+                else str(correlation_id)
+            ),
+            "idempotency_replayed": (
+                saved.idempotency_replayed if saved is not None else False
+            ),
+            "reconciled_after_timeout": reconciled_after_timeout,
+        }
+    finally:
+        store.release(confirmation_token)
+
+
+def _readback_matches_request(
+    persisted: TimesheetWeek,
+    request: DraftWriteRequest,
+) -> bool:
     expected_entries = sorted(
         [item.model_dump(mode="json") for item in request.entries],
         key=entry_key,
@@ -180,22 +248,9 @@ async def commit_draft(
         ],
         key=entry_key,
     )
-    verified = (
-        saved.week_start == request.week_start
-        and persisted.week_start == request.week_start
-        and saved.version == persisted.version
-        and saved.status == "작성중"
+    return (
+        persisted.week_start == request.week_start
         and persisted.status == "작성중"
+        and persisted.version == request.expected_version + 1
         and expected_entries == actual_entries
     )
-    if not verified:
-        raise RuntimeError("verification_failed")
-
-    store.consume(confirmation_token)
-    return {
-        "verified": True,
-        "timesheet_id": saved.timesheet_id,
-        "version": saved.version,
-        "correlation_id": saved.correlation_id,
-        "idempotency_replayed": saved.idempotency_replayed,
-    }

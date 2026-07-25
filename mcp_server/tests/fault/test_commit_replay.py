@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -178,9 +179,17 @@ async def test_stale_or_protected_state_never_commits(
                 confirmation_token=token,
                 idempotency_key=str(uuid4()),
             )
-    assert caught.value.code == expected_code
+        assert caught.value.code == expected_code
+        assert state.post_count == 0
+        assert store.get(token).user_id == 10
+        with pytest.raises(ConfirmationUnavailable, match="idempotency"):
+            await commit_draft(
+                client,
+                store,
+                confirmation_token=token,
+                idempotency_key=str(uuid4()),
+            )
     assert state.post_count == 0
-    assert store.get(token).user_id == 10
 
 
 @pytest.mark.asyncio
@@ -202,7 +211,65 @@ async def test_response_loss_retries_same_key_and_writes_once() -> None:
         )
 
     assert result["verified"] is True
-    assert result["idempotency_replayed"] is True
+    assert result["reconciled_after_timeout"] is True
+    assert result["idempotency_replayed"] is False
+    assert state.post_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unexpected_version_jump_is_not_reported_as_success() -> None:
+    state = ContractState(version_increment=2)
+    store = ConfirmationStore()
+    transport = httpx.ASGITransport(app=create_contract_app(state))
+    async with ERPClient(
+        base_url="http://testserver",
+        token="test-token",
+        transport=transport,
+    ) as client:
+        token = await prepare(client, store)
+        with pytest.raises(RuntimeError, match="verification_failed"):
+            await commit_draft(
+                client,
+                store,
+                confirmation_token=token,
+                idempotency_key=str(uuid4()),
+            )
+
+    assert state.post_count == 1
+    assert store.get(token).user_id == 10
+
+
+@pytest.mark.asyncio
+async def test_concurrent_confirmation_reuse_allows_only_one_commit() -> None:
+    state = ContractState()
+    store = ConfirmationStore()
+    transport = httpx.ASGITransport(app=create_contract_app(state))
+    async with ERPClient(
+        base_url="http://testserver",
+        token="test-token",
+        transport=transport,
+    ) as client:
+        token = await prepare(client, store)
+        results = await asyncio.gather(
+            commit_draft(
+                client,
+                store,
+                confirmation_token=token,
+                idempotency_key=str(uuid4()),
+            ),
+            commit_draft(
+                client,
+                store,
+                confirmation_token=token,
+                idempotency_key=str(uuid4()),
+            ),
+            return_exceptions=True,
+        )
+
+    assert sum(isinstance(item, dict) for item in results) == 1
+    assert sum(
+        isinstance(item, ConfirmationUnavailable) for item in results
+    ) == 1
     assert state.post_count == 1
 
 

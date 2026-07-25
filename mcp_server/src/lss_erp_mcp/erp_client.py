@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from typing import TypeVar
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -206,9 +206,23 @@ class ERPClient:
             "/api/timesheets/week",
             params={"week_start": week_start.isoformat()},
         )
-        return _validate_response(TimesheetWeek, data)
+        result = _validate_response(TimesheetWeek, data)
+        if (
+            result.week_start != week_start
+            or result.week_end != week_start + timedelta(days=6)
+        ):
+            raise ERPError(
+                "upstream_invalid_response",
+                "ERP API week mismatch",
+                False,
+            )
+        return result
 
     async def search_projects(self, query: str, limit: int = 20) -> ProjectSearch:
+        if len(query) > 100:
+            raise ValueError("project query must not exceed 100 characters")
+        if not 1 <= limit <= 50:
+            raise ValueError("project limit must be between 1 and 50")
         data = await self._request(
             "GET",
             "/api/timesheets/projects",

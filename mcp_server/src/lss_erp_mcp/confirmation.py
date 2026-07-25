@@ -45,6 +45,8 @@ class ConfirmationStore:
         self.ttl = ttl
         self.clock = clock
         self._items: dict[str, Confirmation] = {}
+        self._idempotency_bindings: dict[str, str] = {}
+        self._inflight: set[str] = set()
 
     def put(
         self,
@@ -69,13 +71,13 @@ class ConfirmationStore:
     def get(self, token: str) -> Confirmation:
         item = self._items.get(token)
         if item is None or item.expires_at <= self.clock():
-            self._items.pop(token, None)
+            self._drop(token)
             raise ConfirmationUnavailable("confirmation is unavailable")
         if not hmac.compare_digest(
             _proposal_hash(item.proposal),
             item.proposal_hash,
         ):
-            self._items.pop(token, None)
+            self._drop(token)
             raise ConfirmationUnavailable("confirmation integrity check failed")
         return Confirmation(
             user_id=item.user_id,
@@ -86,5 +88,27 @@ class ConfirmationStore:
             expires_at=item.expires_at,
         )
 
+    def claim(self, token: str, idempotency_key: str) -> Confirmation:
+        item = self.get(token)
+        bound_key = self._idempotency_bindings.get(token)
+        if bound_key is None:
+            self._idempotency_bindings[token] = idempotency_key
+        elif not hmac.compare_digest(bound_key, idempotency_key):
+            raise ConfirmationUnavailable(
+                "confirmation idempotency key mismatch"
+            )
+        if token in self._inflight:
+            raise ConfirmationUnavailable("confirmation commit is in progress")
+        self._inflight.add(token)
+        return item
+
+    def release(self, token: str) -> None:
+        self._inflight.discard(token)
+
     def consume(self, token: str) -> None:
+        self._drop(token)
+
+    def _drop(self, token: str) -> None:
         self._items.pop(token, None)
+        self._idempotency_bindings.pop(token, None)
+        self._inflight.discard(token)

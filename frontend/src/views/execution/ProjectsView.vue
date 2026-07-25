@@ -143,18 +143,28 @@
         :pagination="orderTablePagination"
         row-key="id"
         size="middle"
-        :scroll="{ x: 3000 }"
+        :scroll="{ x: orderTableScrollX }"
         :row-class-name="rowClass"
         @change="handleOrderTableChange"
         @row-click="(record) => handleRowClick(record)"
       
         :sticky="{ offsetHeader: 56 }">
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'project_name'">
+            <div class="project-name-header">
+              <span>PJT명</span>
+              <span class="project-name-resizer" @mousedown.stop.prevent="startProjectNameColumnResize" />
+            </div>
+          </template>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'project_name'">
-            <div class="name-cell">
-              <span :class="selectedId === record.id ? 'name-selected' : ''">{{ record.project_name }}</span>
-              <a-tag v-if="selectedId === record.id" color="blue" style="margin-left:6px;font-size:10px">선택됨</a-tag>
-            </div>
+            <a-tooltip :title="record.project_name">
+              <div class="name-cell">
+                <span :class="selectedId === record.id ? 'name-selected' : ''">{{ record.project_name }}</span>
+                <a-tag v-if="selectedId === record.id" color="blue" style="margin-left:6px;font-size:10px">선택됨</a-tag>
+              </div>
+            </a-tooltip>
           </template>
           <template v-if="column.key === 'contract_amount'">
             <span class="num-cell">{{ record.contract_amount > 0 ? Number(record.contract_amount).toLocaleString() : '—' }}</span>
@@ -764,7 +774,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ProjectOutlined, PlayCircleOutlined, CheckCircleOutlined, PauseCircleOutlined, PlusOutlined,
@@ -941,6 +951,9 @@ const selectedId = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
 const projectEditorSnapshot = ref('')
+const projectNameColumnWidth = ref(220)
+const projectNameResizeState = ref(null)
+const orderTableScrollX = computed(() => 2780 + projectNameColumnWidth.value)
 const TABLE_PAGE_SIZE_OPTIONS = ['10', '20', '50', '100']
 const createTablePagination = () => reactive({
   current: 1,
@@ -967,6 +980,28 @@ function handleSalesPlanTableChange(pagination) {
 
 function handlePurchasePlanTableChange(pagination) {
   updateTablePagination(purchasePlanTablePagination, pagination)
+}
+
+function startProjectNameColumnResize(event) {
+  projectNameResizeState.value = {
+    startX: event.clientX,
+    startWidth: projectNameColumnWidth.value,
+  }
+  document.addEventListener('mousemove', handleProjectNameColumnResize)
+  document.addEventListener('mouseup', stopProjectNameColumnResize)
+}
+
+function handleProjectNameColumnResize(event) {
+  const state = projectNameResizeState.value
+  if (!state) return
+  const nextWidth = state.startWidth + event.clientX - state.startX
+  projectNameColumnWidth.value = Math.min(520, Math.max(160, nextWidth))
+}
+
+function stopProjectNameColumnResize() {
+  projectNameResizeState.value = null
+  document.removeEventListener('mousemove', handleProjectNameColumnResize)
+  document.removeEventListener('mouseup', stopProjectNameColumnResize)
 }
 
 const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
@@ -1255,9 +1290,9 @@ const purchasePlanColumns = [
 const purchasePlanScrollX = 12900
 
 // ── 테이블 컬럼 ──
-const columns = [
+const columns = computed(() => [
   { title: 'PJT NO.',   dataIndex: 'project_no',  width: 140, align: 'center' },
-  { title: 'PJT명',     key: 'project_name',      width: 220, align: 'center', ellipsis: true },
+  { title: 'PJT명',     key: 'project_name',      width: projectNameColumnWidth.value, align: 'center', ellipsis: true },
   { title: '발주처',    dataIndex: 'client_name',  width: 160, align: 'center', ellipsis: true },
   { title: '사업부',    dataIndex: 'business_division', width: 150, align: 'center' },
   { title: '팀',        dataIndex: 'team_name',    width: 140, align: 'center' },
@@ -1288,7 +1323,7 @@ const columns = [
   { title: '담당 PM',   dataIndex: 'pm_name',     width: 100, align: 'center' },
   { title: '진행상태',  key: 'status',            width: 110, align: 'center' },
   { title: '관리',      key: 'action',            width: 100, align: 'center', fixed: 'right' },
-]
+])
 
 const salesColumns = [
   { title: 'No',        key: 'no',               width: 55,  align: 'center',
@@ -2332,6 +2367,7 @@ async function load() {
 }
 
 onMounted(load)
+onBeforeUnmount(stopProjectNameColumnResize)
 </script>
 
 <style scoped>
@@ -2339,6 +2375,35 @@ onMounted(load)
 .tab-content { display: flex; flex-direction: column; gap: 16px; }
 .project-tabs :deep(.ant-tabs-nav) { margin: 0 0 16px; }
 .project-tabs :deep(.ant-tabs-tab) { font-weight: 600; }
+.project-name-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 22px;
+}
+.project-name-resizer {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 12px;
+  height: calc(100% + 16px);
+  cursor: col-resize;
+  user-select: none;
+}
+.project-name-resizer::after {
+  content: "";
+  position: absolute;
+  top: 22%;
+  right: 5px;
+  width: 1px;
+  height: 56%;
+  background: #c8d6e5;
+}
+.project-name-resizer:hover::after {
+  background: #1677ff;
+}
 
 /* ── 통계 카드 ── */
 .stat-card   { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }

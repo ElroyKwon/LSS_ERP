@@ -3,6 +3,8 @@
 - status: ACTIVE
 - code_baseline: khlee-add-mcp@1e46a0c
 - design_commit: 3b4f001
+- remote_main_at_first_push: 8cb295c
+- remote_main_overlap: NONE (frontend ProjectsView only)
 - owner: coordinator
 - backend_owner: main developer
 - local_database: UNAVAILABLE

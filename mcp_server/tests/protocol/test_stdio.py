@@ -27,13 +27,33 @@ async def test_stdio_lists_only_expected_read_tools(
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.list_tools()
-    assert {tool.name for tool in result.tools} == {
+    tools = {tool.name: tool for tool in result.tools}
+    assert set(tools) == {
         "erp_get_current_user",
         "timesheet_commit_draft",
+        "timesheet_get_entry_context",
         "timesheet_get_week",
         "timesheet_prepare_draft",
+        "timesheet_prepare_from_worklog",
         "timesheet_search_projects",
     }
+    worklog_tool = tools["timesheet_prepare_from_worklog"]
+    assert worklog_tool.annotations is not None
+    assert worklog_tool.annotations.readOnlyHint is True
+    assert worklog_tool.annotations.destructiveHint is False
+    assert worklog_tool.annotations.idempotentHint is True
+    assert worklog_tool.annotations.openWorldHint is False
+    assert "구조화" in (worklog_tool.description or "")
+    assert "추측" in (worklog_tool.description or "")
+
+    replace_tool = tools["timesheet_prepare_draft"]
+    assert "전체 교체" in (replace_tool.description or "")
+
+    commit_tool = tools["timesheet_commit_draft"]
+    assert commit_tool.annotations is not None
+    assert commit_tool.annotations.readOnlyHint is False
+    assert commit_tool.annotations.destructiveHint is True
+    assert commit_tool.annotations.idempotentHint is True
 
 
 @pytest.mark.asyncio

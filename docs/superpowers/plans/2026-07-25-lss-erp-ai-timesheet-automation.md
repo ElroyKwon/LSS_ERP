@@ -898,7 +898,7 @@ git commit -m "test: verify expanded timesheet commit contract"
 - Modify: `mcp_server/src/lss_erp_mcp/server.py`
 - Modify: `mcp_server/tests/protocol/test_stdio.py`
 
-- [ ] **Step 1: Write failing list and metadata tests**
+- [x] **Step 1: Write failing list and metadata tests**
 
 Require exactly:
 
@@ -919,7 +919,7 @@ the two preparation tools are read-only with no remote mutation. Assert the
 worklog prepare description contains the structured-facts and no-hour-guessing
 instructions.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run:
 
@@ -929,7 +929,7 @@ Run:
 
 Expected: tool-list and annotation failures.
 
-- [ ] **Step 3: Register tools and annotations**
+- [x] **Step 3: Register tools and annotations**
 
 Use `mcp.types.ToolAnnotations`. Example:
 
@@ -973,7 +973,7 @@ async def timesheet_prepare_from_worklog(
 The commit tool remains disabled by configuration before it can claim the
 confirmation. Metadata does not replace runtime enforcement.
 
-- [ ] **Step 4: Run protocol tests**
+- [x] **Step 4: Run protocol tests**
 
 Run:
 
@@ -983,7 +983,7 @@ Run:
 
 Expected: stdio initialize/list/call tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add mcp_server/src/lss_erp_mcp/server.py mcp_server/tests/protocol/test_stdio.py

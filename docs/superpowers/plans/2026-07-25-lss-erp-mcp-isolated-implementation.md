@@ -10,6 +10,26 @@
 
 ---
 
+## Execution snapshot — 2026-07-25
+
+| Area | State | Evidence |
+|---|---|---|
+| Single active Goal | PASS | `LSS-MCP-G0001` is the only `ACTIVE` Goal |
+| Collaboration branch | PUSHED BASELINE | `origin/khlee-add-mcp`; every checkpoint is `DEVELOPMENT/NOT-RELEASED` |
+| Database-free MCP code | LOCAL-PASS | code checkpoint `26b3522` |
+| Local test suite | PASS | 54 tests, compileall PASS, banned runtime references 0 |
+| Dependency audit | PASS | no known vulnerabilities; unpublished local package skipped |
+| MCP protocol | PASS | Python SDK stdio tests and external Inspector five-tool listing |
+| AI application package | READY FOR VERIFIED PUSH | `docs/mcp/` and `mcp_server/README.md` |
+| Main developer hand-back | WAITING | PostgreSQL, Alembic, backend, OpenAPI, legacy UI evidence not received |
+| Real API, canary, rollback | NOT-RUN | blocked until the documented joint Gates and separate user approval |
+| Merge and deployment | NOT-GRANTED | requires G0009 `COMPLETE/PASS` and separate user approval |
+
+This snapshot records implementation progress without promoting G0005 through
+G0009 out of order. `LSS-MCP-G0001` remains the only active management Goal.
+
+---
+
 ## 0. Scope and ownership
 
 ### Our implementation lane

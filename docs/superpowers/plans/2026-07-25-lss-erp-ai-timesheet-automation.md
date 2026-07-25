@@ -1206,7 +1206,7 @@ Compare every design requirement to code, tests, and handoff documents. Update
 local evidence only from this run. Do not convert backend/PostgreSQL/OpenAPI,
 Credential Manager live, real API, canary, or rollback to PASS.
 
-- [ ] **Step 6: Final commit**
+- [x] **Step 6: Final commit**
 
 ```powershell
 git add docs/mcp/LOCAL-VERIFICATION.md goals/LSS-MCP-G0001/STATUS.md

@@ -1,9 +1,10 @@
 # LSS ERP MCP Future Capability Separation
 
-These are future Goal candidates, not implemented features and not implied by
-the current seven-tool MCP package.
+These are registered deferred Goals, not implemented features and not implied
+by the current seven-tool MCP package. Each Goal has an inactive `STATUS.md`
+under `goals/LSS-MCP-G00xx/`.
 
-| Proposed Goal | Capability | Current state | Required new boundary |
+| Goal | Capability | Current state | Required new boundary |
 |---|---|---|---|
 | G0011 | Weekly narrative work report | DEFERRED/NOT-DESIGNED | report source, factual grounding, approval, persistence |
 | G0012 | Transcript/audio work intake | DEFERRED/NOT-DESIGNED | transcription provider, consent, retention, raw-content minimization |

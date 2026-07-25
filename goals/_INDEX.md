@@ -12,6 +12,12 @@
 | LSS-MCP-G0008 | Confirmed expanded-draft commit | IMPLEMENTED/LOCAL-PASS/DISABLED | MCP implementer |
 | LSS-MCP-G0009 | Security, AI quality, fault, rollback, release gate | PLANNED/LOCAL-PARTIAL | coordinator |
 | LSS-MCP-G0010 | Schedule capability | DEFERRED/NOT-RUN | separate approval |
+| LSS-MCP-G0011 | Weekly narrative work report | DEFERRED/NOT-DESIGNED | separate approval |
+| LSS-MCP-G0012 | Transcript and audio work intake | DEFERRED/NOT-DESIGNED | separate approval |
+| LSS-MCP-G0013 | Project registration and information mutation | DEFERRED/NOT-DESIGNED | separate approval |
+| LSS-MCP-G0014 | Telegram command intake and status reply | DEFERRED/NOT-DESIGNED | separate approval |
+| LSS-MCP-G0015 | Company email ingestion and analysis | DEFERRED/NOT-DESIGNED | separate approval |
+| LSS-MCP-G0016 | Manager and cross-employee functions | DEFERRED/NOT-DESIGNED | separate approval |
 
 Rule: exactly one Goal may be ACTIVE.
 
@@ -25,6 +31,7 @@ Verified development checkpoints may be pushed only to
 deployment. Main developers may branch from the collaboration branch or merge
 it into a separate backend working branch for the requested hand-back.
 
-Weekly report, transcript, project mutation, Telegram, email, and other broader
-ERP functions are listed in `FUTURE-CAPABILITIES.md`. They are not implied by
-the current seven-tool package.
+Weekly report, transcript, project mutation, Telegram, email, and manager
+functions are registered as inactive deferred Goals G0011 through G0016 and
+summarized in `FUTURE-CAPABILITIES.md`. They are not implied by the current
+seven-tool package.

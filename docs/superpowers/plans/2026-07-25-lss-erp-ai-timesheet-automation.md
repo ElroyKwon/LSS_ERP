@@ -79,7 +79,7 @@ those files.
 - Create: `mcp_server/src/lss_erp_mcp/schemas/worklog.py`
 - Create: `mcp_server/tests/unit/test_worklog_schema.py`
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Add tests that require:
 
@@ -117,7 +117,7 @@ def test_expanded_entry_rejects_projectless_execution_row() -> None:
         )
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -128,7 +128,7 @@ Run:
 Expected: collection fails because `schemas.worklog` and expanded fields do not
 exist.
 
-- [ ] **Step 3: Implement strict models**
+- [x] **Step 3: Implement strict models**
 
 Add these interfaces:
 
@@ -175,7 +175,7 @@ project IDs and names for sales/common rows.
 Add `DailyTarget` and `TimesheetEntryContext` with strict Monday/week matching,
 allowed sources, work types, labor type, and exactly seven daily targets.
 
-- [ ] **Step 4: Run schema tests and full unit tests**
+- [x] **Step 4: Run schema tests and full unit tests**
 
 Run:
 
@@ -185,7 +185,7 @@ Run:
 
 Expected: all unit tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add mcp_server/src/lss_erp_mcp/schemas mcp_server/tests/unit/test_worklog_schema.py

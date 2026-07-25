@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
 from .common import StrictModel
+
+ProjectSource = Literal["실행", "영업", "공통"]
 
 
 class CurrentUser(StrictModel):
@@ -20,10 +23,23 @@ class CurrentUser(StrictModel):
 
 class DraftEntry(StrictModel):
     work_date: date
-    project_id: int
+    project_id: int | None = Field(default=None, gt=0)
+    project_name: str | None = Field(default=None, min_length=1, max_length=200)
+    project_source: ProjectSource = "실행"
+    spg: str | None = Field(default=None, min_length=1, max_length=100)
     hours: Decimal = Field(gt=0, le=24, multiple_of=Decimal("0.25"))
     work_type: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def require_project_identity(self) -> "DraftEntry":
+        if self.project_source == "실행" and self.project_id is None:
+            raise ValueError("execution entry project_id is required")
+        if self.project_source != "실행" and self.project_id is not None:
+            raise ValueError("non-execution entry project_id must be omitted")
+        if self.project_source in {"영업", "공통"} and not self.project_name:
+            raise ValueError("non-execution entry project_name is required")
+        return self
 
 
 class PersistedEntry(DraftEntry):
@@ -40,15 +56,48 @@ class TimesheetWeek(StrictModel):
 
 
 class ProjectItem(StrictModel):
-    project_id: int
+    project_id: int | None = Field(default=None, gt=0)
     project_code: str
     project_name: str
+    project_source: ProjectSource = "실행"
+    spg: str | None = None
     active: bool
 
 
 class ProjectSearch(StrictModel):
     items: list[ProjectItem]
     truncated: bool
+
+
+class DailyTarget(StrictModel):
+    work_date: date
+    target_hours: Decimal = Field(ge=0, le=24)
+    reason: str = Field(min_length=1, max_length=100)
+
+
+class TimesheetEntryContext(StrictModel):
+    week_start: date
+    week_end: date
+    labor_type: Literal["원가", "판관"]
+    project_sources: list[ProjectSource] = Field(min_length=1, max_length=3)
+    work_types: list[str] = Field(min_length=1, max_length=100)
+    daily_targets: list[DailyTarget] = Field(min_length=7, max_length=7)
+
+    @model_validator(mode="after")
+    def require_exact_week_shape(self) -> "TimesheetEntryContext":
+        expected_end = self.week_start + timedelta(days=6)
+        if self.week_start.weekday() != 0 or self.week_end != expected_end:
+            raise ValueError("entry context must describe one Monday-to-Sunday week")
+        expected_dates = [
+            self.week_start + timedelta(days=offset) for offset in range(7)
+        ]
+        if [target.work_date for target in self.daily_targets] != expected_dates:
+            raise ValueError("daily_targets must contain the seven ordered week dates")
+        if len(set(self.project_sources)) != len(self.project_sources):
+            raise ValueError("project_sources must not contain duplicates")
+        if len(set(self.work_types)) != len(self.work_types):
+            raise ValueError("work_types must not contain duplicates")
+        return self
 
 
 class DraftWriteRequest(StrictModel):

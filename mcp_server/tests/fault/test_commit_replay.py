@@ -193,7 +193,7 @@ async def test_stale_or_protected_state_never_commits(
 
 
 @pytest.mark.asyncio
-async def test_response_loss_retries_same_key_and_writes_once() -> None:
+async def test_response_loss_reconciles_by_readback_and_writes_once() -> None:
     state = ContractState()
     store = ConfirmationStore()
     transport = TimeoutAfterFirstCommit(create_contract_app(state))

@@ -34,7 +34,7 @@ The suite covers:
 - external MCP Inspector `tools/list` over stdio;
 - read tools, local prepare/diff, expiring confirmation, and protected state;
 - confirmed draft commit, version conflict, idempotent replay, timeout recovery,
-  response-loss replay, and post-write readback mismatch;
+  response-loss readback reconciliation, and post-write readback mismatch;
 - telemetry allowlist helper drops secret and business-content fields;
 - response-loss readback reconciliation before any same-key retry;
 - exact `expected_version + 1`, timesheet, entry, and correlation verification;

@@ -22,9 +22,18 @@ dependency_audit:
   command: NONE
   result: NOT-RUN
 tests:
-  backend_contract:
-    command: NONE
-    result: NOT-RUN
+    backend_contract:
+      command: NONE
+      result: NOT-RUN
+    entry_context_contract:
+      command: NONE
+      result: NOT-RUN
+    expanded_timesheet_dto:
+      command: NONE
+      result: NOT-RUN
+    work_type_catalog_parity:
+      command: NONE
+      result: NOT-RUN
   backend_security:
     command: NONE
     result: NOT-RUN
@@ -40,13 +49,22 @@ tests:
   legacy_ui_smoke:
     command: NONE
     result: NOT-RUN
-authorization:
+  authorization:
   token_identity_to_auth_context: NOT-RUN
   client_identity_fields_rejected: NOT-RUN
   self_only_idor_denied: NOT-RUN
   unregistered_endpoint_default_deny: NOT-RUN
   protected_state_write_denied: NOT-RUN
-  jwt_and_api_token_privileges_not_unionized: NOT-RUN
+    jwt_and_api_token_privileges_not_unionized: NOT-RUN
+    entry_context_has_no_employee_selector: NOT-RUN
+    labor_type_is_server_derived: NOT-RUN
+  timesheet_mapping:
+    execution_project: NOT-RUN
+    sales_project: NOT-RUN
+    common_work: NOT-RUN
+    annual_leave: NOT-RUN
+    existing_unmentioned_rows_preserved: NOT-RUN
+    daily_weekly_totals_match_legacy_ui: NOT-RUN
 token_policy:
   raw_token_stored_in_database: FORBIDDEN
   client_id: lss-erp-mcp-local
@@ -85,6 +103,9 @@ unknowns:
 - OpenAPI artifact hash output;
 - migration current/upgrade/downgrade output;
 - backend and legacy UI test output;
+- entry-context and expanded execution/sales/common/leave DTO test output;
+- frontend/backend work-type catalog parity evidence, including
+  `영업 > SHOP작업`;
 - token-derived identity, self-only, default-deny, scope, and protected-state
   security test output;
 - redacted canary and rollback correlation IDs, if separately approved and run.

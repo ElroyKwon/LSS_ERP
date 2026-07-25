@@ -18,12 +18,13 @@
 - release_state: DEVELOPMENT/NOT-RELEASED
 - parallel_local_lane: IMPLEMENTED/LOCAL-PASS
 - local_code_checkpoint: cf31647
-- local_pytest: PASS (70 passed)
+- local_pytest: PASS (101 passed; refresh at final verification)
 - local_compileall: PASS
 - local_banned_runtime_refs: PASS (0)
 - local_dependency_audit: PASS (0 known vulnerabilities; local unpublished package skipped)
 - local_mcp_sdk_stdio: PASS
-- local_mcp_inspector_tools_list: PASS (5 tools)
+- local_mcp_sdk_tools_list: PASS (7 tools and annotations)
+- local_mcp_inspector_tools_list: NOT-RUN for the new seven-tool checkpoint
 - local_mermaid_docs: PASS (12/12 rendered)
 - credential_manager_live: NOT-RUN
 - backend_handback: WAITING
@@ -31,7 +32,11 @@
 - deployed_real_api: NOT-RUN
 - real_erp_read_and_write: NOT-RUN
 - canary_and_rollback: NOT-RUN
-- exposed_mcp_scope: exactly 5 timesheet-focused tools over 4 REST endpoints
+- exposed_mcp_scope: exactly 7 timesheet-focused tools over 5 REST endpoints
+- ai_timesheet_scope: structured worklog facts, self entry context, safe merge,
+  exception questions, daily/weekly totals, confirmed own-draft commit
+- personal_worklog_raw_text_or_path: FORBIDDEN
+- future_weekly_report_transcript_telegram_email_project_mutation: DEFERRED
 - all_erp_api_access: NOT-IN-SCOPE
 
 ## Done-When

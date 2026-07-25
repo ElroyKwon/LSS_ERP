@@ -6,16 +6,25 @@
 | LSS-MCP-G0002 | API token scope and default deny | PLANNED | main developer |
 | LSS-MCP-G0003 | Timesheet self, state, version, unique | PLANNED | main developer |
 | LSS-MCP-G0004 | Idempotency and audit transaction | PLANNED | main developer |
-| LSS-MCP-G0005 | Isolated stdio MCP package | PLANNED | MCP implementer |
-| LSS-MCP-G0006 | Read-only REST tools | PLANNED | MCP implementer |
-| LSS-MCP-G0007 | Local prepare and diff | PLANNED | MCP implementer |
-| LSS-MCP-G0008 | Confirmed draft commit | PLANNED | MCP implementer |
-| LSS-MCP-G0009 | Security, fault, performance, rollback, release gate | PLANNED | coordinator |
+| LSS-MCP-G0005 | Isolated stdio MCP package and AI tool metadata | IMPLEMENTED/LOCAL-PASS | MCP implementer |
+| LSS-MCP-G0006 | Self reads, entry context, and project candidates | IMPLEMENTED/LOCAL-PASS | MCP implementer |
+| LSS-MCP-G0007 | Worklog facts, safe merge, totals, exception questions | IMPLEMENTED/LOCAL-PASS | MCP implementer |
+| LSS-MCP-G0008 | Confirmed expanded-draft commit | IMPLEMENTED/LOCAL-PASS/DISABLED | MCP implementer |
+| LSS-MCP-G0009 | Security, AI quality, fault, rollback, release gate | PLANNED/LOCAL-PARTIAL | coordinator |
+| LSS-MCP-G0010 | Schedule capability | DEFERRED/NOT-RUN | separate approval |
 
 Rule: exactly one Goal may be ACTIVE.
+
+`IMPLEMENTED/LOCAL-PASS` is evidence classification, not another active Goal.
+G0001 remains the only `ACTIVE` Goal until the main-developer backend hand-back
+is accepted.
 
 Verified development checkpoints may be pushed only to
 `origin/khlee-add-mcp`. They remain `DEVELOPMENT/NOT-RELEASED` until G0009
 `COMPLETE/PASS` and separate user approval for `origin/main` release merge or
 deployment. Main developers may branch from the collaboration branch or merge
 it into a separate backend working branch for the requested hand-back.
+
+Weekly report, transcript, project mutation, Telegram, email, and other broader
+ERP functions are listed in `FUTURE-CAPABILITIES.md`. They are not implied by
+the current seven-tool package.

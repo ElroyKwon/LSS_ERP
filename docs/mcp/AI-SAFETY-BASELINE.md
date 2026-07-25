@@ -11,15 +11,17 @@ system is safe.
 - Main-developer evidence: `WAITING`
 - Real API, PostgreSQL, canary, and rollback: `NOT-RUN`
 
-The current MCP does **not** expose every ERP API. It exposes exactly five MCP
-tools over four allowlisted REST endpoints:
+The current MCP does **not** expose every ERP API. It exposes exactly seven MCP
+tools over five allowlisted REST endpoints:
 
 | MCP tool | Purpose | Remote write |
 |---|---|---|
 | `erp_get_current_user` | Return minimum identity bound to the API token | No |
 | `timesheet_get_week` | Read the token owner's requested week | No |
+| `timesheet_get_entry_context` | Read token-owner entry rules and daily targets | No |
 | `timesheet_search_projects` | Search the minimum active-project view | No |
-| `timesheet_prepare_draft` | Build a local diff and expiring confirmation | No |
+| `timesheet_prepare_draft` | Build an explicit complete-replacement diff | No |
+| `timesheet_prepare_from_worklog` | Merge structured facts and ask only unresolved exceptions | No |
 | `timesheet_commit_draft` | Save the token owner's draft after all write Gates | Yes; disabled by default |
 
 Any additional ERP function or endpoint requires a new inventory, scope,
@@ -72,13 +74,16 @@ Required token constraints:
 | Risk | Required control | Local evidence in this branch | Main developer or joint proof still required |
 |---|---|---|---|
 | AI accesses another employee | Server derives identity from token; self-only endpoints; strict schemas reject extra identity fields | Contract oracle, strict Pydantic models, same-user confirmation check | Real `AuthContext`, IDOR tests, deployed OpenAPI |
-| Broad ERP access | Four-method/path REST allowlist; three explicit scopes; default deny | REST client allowlist and contract/error tests | Backend endpoint mapping and unregistered-path `403` |
+| Broad ERP access | Five-method/path REST allowlist; three explicit scopes; default deny | REST client allowlist and contract/error tests | Backend endpoint mapping and unregistered-path `403` |
 | Direct database bypass | Separate stdio process; no backend, ORM, DB driver, account, or `DATABASE_URL` | Import isolation test and banned-reference scan | Deployment configuration review |
 | Unapproved write | Write disabled by default; prepare is local/no-write; expiring confirmation required | Prepare/commit integration and confirmation tests | Approved canary configuration and operator evidence |
 | Cross-user or stale confirmation | Confirmation bound to user, week, version, proposal hash, and one idempotency key | Integrity, expiry, mismatch, and concurrent-claim tests | Backend self/state/version enforcement |
 | Duplicate or uncertain write | Expected version, idempotency key, response-loss readback, exact post-write verification | Fault/replay/concurrency tests against contract oracle | PostgreSQL unique, single transaction, real response-loss test |
 | Protected record modification | Only `작성중 → 작성중`; submitted/approved/rejected immutable | Local prepare rejects non-draft state | Backend protected-state tests |
 | Secret or business-content leak | Credential Manager, redacted telemetry, no raw body/vault path, no stdout diagnostics | Credential loader, redaction, secret scan, stdio tests | Live Credential Manager and deployed log inspection |
+| Raw personal worklog leak | AI host extracts locally; MCP accepts bounded structured facts only; path-like IDs and extra raw/authority fields rejected | Strict worklog schema, vault-reference scan, no-POST prepare tests | Approved host configuration and deployed log inspection |
+| Silent loss of existing rows | Worklog preparation is merge-only and reports preserved rows; complete replacement remains a separately described compatibility tool | No-silent-deletion, merge, diff, and golden-case tests | Real API mapping and legacy UI regression |
+| AI invents missing time or project | Missing hours/work type and ambiguous projects return deterministic blocking questions; only coverage exceptions can be explicitly accepted | Ambiguity, missing-field, deterministic-question, and golden-case tests | Representative user shadow review |
 | SSRF or response abuse | Origin-only base URL, HTTPS outside loopback, redirects rejected, response-size bound | Configuration, SSRF, client contract tests | Development endpoint and network policy evidence |
 | Unsafe release inference | Collaboration push is not release approval; kill switch, revoke, rollback Gates | State and handoff documents | G0009 joint PASS and separate user approval |
 
@@ -86,10 +91,10 @@ Required token constraints:
 
 ### Verified locally
 
-- 70 database-free unit, contract, integration, protocol, security, fault, and
+- 101 database-free unit, contract, integration, protocol, security, fault, and
   performance tests pass.
 - Official MCP SDK stdio initialize/list/call passes.
-- MCP Inspector lists exactly five tools.
+- Official SDK lists exactly seven tools with AI-oriented annotations.
 - MCP source has zero backend/ORM/DB-driver imports and banned runtime
   references.
 - Secret-pattern scan reports zero findings.
@@ -99,6 +104,11 @@ Required token constraints:
   permanently bound to one idempotency key.
 - A response lost after a possible write is reconciled by readback before any
   same-key retry.
+- Structured worklog facts cover project, common, leave, and non-project rows.
+- Worklog preparation preserves unrelated existing rows and never posts.
+- Missing hours, work type, project identity, and daily coverage block
+  confirmation unless the underlying fact is corrected or a same-proposal
+  coverage exception is explicitly accepted.
 
 ### Not yet verified
 
@@ -107,6 +117,9 @@ Required token constraints:
 - real default-deny, IDOR, protected-state, and audit behavior;
 - live Windows Credential Manager use;
 - development API read-only integration;
+- real entry-context and expanded execution/sales/common/leave DTO parity;
+- frontend/backend work-type catalog parity;
+- representative personal-worklog shadow evaluation;
 - one-user draft canary;
 - token revocation, backend rollback, and legacy UI recovery.
 

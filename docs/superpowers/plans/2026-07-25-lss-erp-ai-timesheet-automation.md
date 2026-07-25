@@ -1067,13 +1067,13 @@ git commit -m "test: gate AI timesheet safety and quality"
 - Create: `goals/LSS-MCP-G0009/STATUS.md`
 - Create: `goals/FUTURE-CAPABILITIES.md`
 
-- [ ] **Step 1: Update exact surface counts and schemas**
+- [x] **Step 1: Update exact surface counts and schemas**
 
 Document exactly seven tools and five endpoints. Include full request/response
 examples for entry context, expanded entries, structured facts, preparation
 questions, merge output, and commit.
 
-- [ ] **Step 2: Update main-developer ownership**
+- [x] **Step 2: Update main-developer ownership**
 
 Require the main developer to implement:
 
@@ -1087,14 +1087,14 @@ Require the main developer to implement:
 
 Keep every unverified real-system field as `NOT-RUN` or `UNKNOWN`.
 
-- [ ] **Step 3: Update Goal files**
+- [x] **Step 3: Update Goal files**
 
 Maintain exactly one active Goal, G0001. Record local implementation evidence
 under G0006-G0008 without activating those Goals. Add future capability
 separation for weekly report, transcript, project mutation, Telegram, email,
 and schedule.
 
-- [ ] **Step 4: Self-review documents**
+- [x] **Step 4: Self-review documents**
 
 Run:
 
@@ -1106,7 +1106,7 @@ rg -n "placeholder-marker|implement-later-marker|assume|blanket guarantee" docs/
 Expected: no stale count outside clearly labeled historical evidence and no
 placeholder that could be mistaken for reproduced proof.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add docs mcp_server/README.md goals

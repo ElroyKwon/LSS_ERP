@@ -10,11 +10,15 @@ ERP writes.
 1. Check out `khlee-add-mcp` and record `git rev-parse HEAD`.
 2. Read
    `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`.
-3. Read `docs/mcp/API-CONTRACT.md`.
-4. Read `docs/mcp/AI-SAFETY-BASELINE.md`.
-5. Read `docs/mcp/APPLY-AND-ROLLBACK.md`.
-6. Implement only the main-developer-owned backend and PostgreSQL lane.
-7. Return reproduced evidence using
+3. Read
+   `docs/superpowers/specs/2026-07-25-lss-erp-ai-timesheet-automation-design.md`.
+4. Read
+   `docs/superpowers/plans/2026-07-25-lss-erp-ai-timesheet-automation.md`.
+5. Read `docs/mcp/API-CONTRACT.md`.
+6. Read `docs/mcp/AI-SAFETY-BASELINE.md`.
+7. Read `docs/mcp/APPLY-AND-ROLLBACK.md`.
+8. Implement only the main-developer-owned backend and PostgreSQL lane.
+9. Return reproduced evidence using
    `docs/mcp/EVIDENCE-HAND-BACK.md`.
 
 Do not replace `NONE`, `NOT-RUN`, or `UNKNOWN` with an assumption.
@@ -44,9 +48,12 @@ separate user approval.
 | Isolated MCP | MCP lane | Database-free contract stub, REST client, stdio tools, local confirmation, unit/contract/protocol/security/fault/performance tests |
 | Joint Gate | Both | Real API read-only, separately approved one-user canary, rollback reproduction, G0009 decision |
 
-The current package exposes exactly five timesheet-focused MCP tools over four
-REST endpoints. It does not expose every ERP API. Additional ERP capabilities
-require separate scope, contract, threat, and test Goals.
+The current package exposes exactly seven timesheet-focused MCP tools over five
+REST endpoints. The new local lane accepts minimal structured worklog facts,
+preserves unrelated existing rows, and asks deterministic exception questions.
+It does not read a vault path or send raw worklog text to ERP. It does not
+expose every ERP API. Additional ERP capabilities require separate scope,
+contract, threat, and test Goals.
 
 The isolated MCP lane must not edit backend models, migrations, authentication
 middleware, deployment files, or database configuration. The main developer
@@ -74,11 +81,17 @@ must not add direct database access to `mcp_server/`.
 1. Identify a non-production PostgreSQL 16 test lane.
 2. Run employee/week and parking duplicate preflight queries.
 3. Add and test the minimum schema constraints and token/scope model.
-4. Implement the four REST endpoints in `API-CONTRACT.md`.
-5. Prove authentication, ownership, protected-state, version, idempotency,
+4. Implement the five REST endpoints in `API-CONTRACT.md`, including the
+   token-owner `entry-context` read.
+5. Map expanded daily entries to the existing weekly ERP rows for execution,
+   sales, common, and leave without accepting an employee or labor-type
+   selector.
+6. Resolve the existing frontend/backend work-type catalog drift, including
+   `영업 > SHOP작업`, with regression evidence.
+7. Prove authentication, ownership, protected-state, version, idempotency,
    audit, and rollback behavior.
-6. Export the deployed development OpenAPI document and calculate SHA-256.
-7. Return a credential-free development API base URL and the Windows
+8. Export the deployed development OpenAPI document and calculate SHA-256.
+9. Return a credential-free development API base URL and the Windows
    Credential Manager target name only.
 
 Stop and report evidence if duplicates exist, the target could be production,
@@ -93,6 +106,8 @@ the backend commit cannot be identified, or a required test is unavailable.
 - dependency audit command and output;
 - backend contract, security, PostgreSQL integration, migration
   upgrade/downgrade, and legacy UI test output;
+- entry-context, expanded DTO mapping, work-type parity, and execution/sales/
+  common/leave regression output;
 - employee/week and parking duplicate preflight counts;
 - development API base URL without credentials;
 - Credential Manager service and target names without the token value;

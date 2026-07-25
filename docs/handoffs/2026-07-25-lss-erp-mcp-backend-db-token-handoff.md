@@ -268,12 +268,15 @@ MCP가 호출할 수 있는 endpoint만 등록한다.
 |---|---|---|---|
 | GET | `/api/auth/me` | `mcp:discover` | token user |
 | GET | `/api/timesheets/week` | `timesheet:read:self` | server-side self |
+| GET | `/api/timesheets/entry-context` | `timesheet:read:self` | server-side self·week rules |
 | GET | `/api/timesheets/projects` | `timesheet:read:self` | 최소 active project |
 | POST | `/api/timesheets/mcp-draft` | `timesheet:write:self:draft` | self·작성중·version |
 
 기존 `/api/projects`와 기존 broad `/api/timesheets` 응답을 MCP에서 사용하지 않는다.
 
-API token 요청은 `employee_id`, `user_id`, `approver_id`, `status`를 body/query에서 받지 않는다. server-side token identity에서 employee를 계산한다.
+API token 요청은 `employee_id`, `user_id`, `approver_id`, `status`,
+`labor_type`을 body/query에서 받지 않는다. server-side token identity에서
+employee와 labor type을 계산한다.
 
 ### B5. 응답 계약
 
@@ -305,8 +308,11 @@ API token 요청은 `employee_id`, `user_id`, `approver_id`, `status`를 body/qu
       "entry_id": 1001,
       "work_date": "2026-07-20",
       "project_id": 123,
-      "hours": 7.5,
-      "work_type": "개발",
+      "project_name": "MCP 개발",
+      "project_source": "실행",
+      "spg": "에너지",
+      "hours": "7.5",
+      "work_type": "실행 > 업무지원",
       "description": "MCP API 계약 검토"
     }
   ]
@@ -314,6 +320,35 @@ API token 요청은 `employee_id`, `user_id`, `approver_id`, `status`를 body/qu
 ```
 
 현재 ERP는 요일별 컬럼 구조다. endpoint service에서 MCP의 일자별 entry 계약으로 변환하되 DB schema를 MCP 표현에 맞추기 위해 불필요하게 전면 재설계하지 않는다.
+
+#### `GET /api/timesheets/entry-context?week_start=2026-07-20`
+
+```json
+{
+  "week_start": "2026-07-20",
+  "week_end": "2026-07-26",
+  "labor_type": "원가",
+  "project_sources": ["실행", "영업", "공통"],
+  "work_types": [
+    "공통 > 연차",
+    "공통 > 교육",
+    "공통 > 기타",
+    "실행 > 업무지원"
+  ],
+  "daily_targets": [
+    {
+      "work_date": "2026-07-20",
+      "target_hours": "8",
+      "reason": "normal"
+    }
+  ]
+}
+```
+
+실제 응답은 월요일부터 일요일까지 정확히 7개 `daily_targets`를
+반환한다. 휴일·주말·근무제 판정은 backend 소유이며, employee selector를
+받지 않는다. 기존 frontend/backend 작업유형 목록 차이, 특히
+`영업 > SHOP작업`을 조사하고 한 계약으로 고정한 회귀 증거를 반환한다.
 
 #### `GET /api/timesheets/projects?q=MCP&limit=20`
 
@@ -324,6 +359,8 @@ API token 요청은 `employee_id`, `user_id`, `approver_id`, `status`를 body/qu
       "project_id": 123,
       "project_code": "P-2026-001",
       "project_name": "MCP 개발",
+      "project_source": "실행",
+      "spg": "에너지",
       "active": true
     }
   ],
@@ -351,14 +388,29 @@ X-Correlation-ID: 33776663-98f1-4dc0-8e7b-271f0c8d8cd8
   "entries": [
     {
       "work_date": "2026-07-20",
-      "project_id": 123,
-      "hours": 7.5,
-      "work_type": "개발",
-      "description": "MCP API 계약 검토"
+      "project_id": null,
+      "project_name": "연차",
+      "project_source": "공통",
+      "spg": null,
+      "hours": "8",
+      "work_type": "공통 > 연차",
+      "description": "연차"
     }
   ]
 }
 ```
+
+expanded entry는 다음을 증명한다.
+
+- 실행: active `project_id`와 프로젝트명·출처·SPG 매핑
+- 영업: `project_id=null`, 영업 프로젝트명과 출처 보존
+- 공통: `project_id=null`, 공통 업무명과 업무유형 보존
+- 연차: `project_name=연차`, `project_source=공통`,
+  `work_type=공통 > 연차` 정규화
+- `description`을 기존 row `notes`에 매핑
+- AI 입력이 아닌 token 소유 직원에서 `labor_type` 결정
+- MCP가 전송한 일자별 entry와 기존 요일별 컬럼의 양방향 합계 일치
+- 업무일지 병합에서 언급하지 않은 기존 row 보존
 
 성공:
 

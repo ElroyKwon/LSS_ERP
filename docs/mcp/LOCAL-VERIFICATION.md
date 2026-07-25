@@ -12,10 +12,10 @@
 
 ```mermaid
 flowchart LR
-    UNIT["Configuration<br/>credentials<br/>confirmation/diff"] --> SUITE["Local pytest suite"]
-    CONTRACT["FastAPI contract stub<br/>REST client/schema"] --> SUITE
-    PROTOCOL["MCP stdio<br/>initialize + tools/list"] --> SUITE
-    SECURITY["Isolation<br/>SSRF<br/>secret redaction"] --> SUITE
+    UNIT["Configuration<br/>worklog schema<br/>merge/totals"] --> SUITE["Local pytest suite"]
+    CONTRACT["Five-path FastAPI oracle<br/>REST client/schema"] --> SUITE
+    PROTOCOL["Seven MCP tools<br/>initialize + tools/list"] --> SUITE
+    SECURITY["Isolation<br/>privacy<br/>no silent deletion"] --> SUITE
     FAULT["Timeout replay<br/>idempotency<br/>readback mismatch"] --> SUITE
     PERF["In-process adapter<br/>p95 budget"] --> SUITE
     SUITE --> LOCAL["Local Gate"]
@@ -33,7 +33,16 @@ The suite covers:
 - strict request models reject client-supplied identity and status fields;
 - MCP stdio initialization and tool listing;
 - external MCP Inspector `tools/list` over stdio;
-- read tools, local prepare/diff, expiring confirmation, and protected state;
+- exactly seven tools with AI-oriented read/destructive/idempotent annotations;
+- entry-context week, work-type, project-source, labor-type, and daily-target
+  response validation;
+- structured project/common/leave/non-project worklog facts;
+- unique project resolution and ambiguous candidate questions;
+- missing-hours and missing-work-type questions without inference;
+- merge-only worklog preparation that preserves unrelated existing rows;
+- deterministic daily-coverage questions and explicit same-proposal acceptance;
+- daily/weekly totals, no-POST shadow preparation, and expanded entry diff;
+- local complete-replacement prepare, expiring confirmation, and protected state;
 - commit confirmation is re-bound to the current token-derived user before
   write;
 - confirmed draft commit, version conflict, idempotent replay, timeout recovery,
@@ -75,12 +84,14 @@ try {
 }
 ```
 
-It must list exactly these five tools:
+It must list exactly these seven tools:
 
 - `erp_get_current_user`
 - `timesheet_get_week`
+- `timesheet_get_entry_context`
 - `timesheet_search_projects`
 - `timesheet_prepare_draft`
+- `timesheet_prepare_from_worklog`
 - `timesheet_commit_draft`
 
 The exact latest result and commit are recorded in
@@ -96,6 +107,8 @@ requirements are recorded in `docs/mcp/AI-SAFETY-BASELINE.md`.
 - PostgreSQL constraints, duplicate preflight, and Alembic migration;
 - deployed OpenAPI compatibility and network/TLS behavior;
 - real ERP read-only integration;
+- real entry-context and execution/sales/common/leave DTO mapping;
+- representative personal-worklog shadow review;
 - a one-user own-draft canary;
 - token-revoke, data, migration, and legacy UI rollback.
 

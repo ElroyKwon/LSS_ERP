@@ -21,15 +21,17 @@
 branch 생성이나 그 작업 branch로의 병합은 허용하지만, `origin/main`
 병합·실제 서버 배포·실제 ERP write 활성화를 승인하지 않습니다.
 
-현재 MCP 범위는 타임시트 중심 5개 도구와 4개 REST endpoint입니다.
+현재 MCP 범위는 타임시트 중심 7개 도구와 5개 REST endpoint입니다.
+AI 호스트는 개인 업무일지를 로컬에서 읽고 최소 구조화 사실만 MCP에
+전달하며, MCP는 기존 행을 보존한 병합 초안·일별/주간 합계·예외 질문을
+만듭니다. 개인 업무일지 원문이나 경로는 ERP로 전달하지 않습니다.
 ERP의 모든 API를 MCP로 공개하는 작업이 아니며, 추가 기능은 별도
 scope·contract·위협 검토·테스트 Goal이 필요합니다.
 
 ### 기준점
 
 - branch: `khlee-add-mcp`
-- verified implementation checkpoint:
-  `fb4680c560e8315ffd84a53bdc6d2e633eefda90`
+- verified implementation checkpoint: push 후 `git rev-parse HEAD` 결과 사용
 - active Goal: `LSS-MCP-G0001`
 - release state: `DEVELOPMENT/NOT-RELEASED`
 - local database: 없음
@@ -39,11 +41,13 @@ scope·contract·위협 검토·테스트 Goal이 필요합니다.
 
 1. `docs/mcp/AI-MAIN-DEVELOPER-ENTRYPOINT.md`
 2. `docs/handoffs/2026-07-25-lss-erp-mcp-backend-db-token-handoff.md`
-3. `docs/mcp/API-CONTRACT.md`
-4. `docs/mcp/AI-SAFETY-BASELINE.md`
-5. `docs/mcp/APPLY-AND-ROLLBACK.md`
-6. `docs/mcp/EVIDENCE-HAND-BACK.md`
-7. `docs/mcp/LOCAL-VERIFICATION.md`
+3. `docs/superpowers/specs/2026-07-25-lss-erp-ai-timesheet-automation-design.md`
+4. `docs/superpowers/plans/2026-07-25-lss-erp-ai-timesheet-automation.md`
+5. `docs/mcp/API-CONTRACT.md`
+6. `docs/mcp/AI-SAFETY-BASELINE.md`
+7. `docs/mcp/APPLY-AND-ROLLBACK.md`
+8. `docs/mcp/EVIDENCE-HAND-BACK.md`
+9. `docs/mcp/LOCAL-VERIFICATION.md`
 
 ### 메인 개발자 작업
 
@@ -58,10 +62,16 @@ scope·contract·위협 검토·테스트 Goal이 필요합니다.
 - [ ] 아래 최소 REST 계약 구현
   - `GET /api/auth/me` — `mcp:discover`
   - `GET /api/timesheets/week` — `timesheet:read:self`
+  - `GET /api/timesheets/entry-context` — `timesheet:read:self`
   - `GET /api/timesheets/projects` — `timesheet:read:self`
   - `POST /api/timesheets/mcp-draft` —
     `timesheet:write:self:draft`
 - [ ] self-only·draft-only·protected-state·expected-version 검증
+- [ ] 실행·영업·공통·연차 expanded DTO를 기존 요일별 row로 무손실 변환
+- [ ] `labor_type`은 AI 입력이 아니라 token 소유 직원에서 서버가 결정
+- [ ] frontend/backend 작업유형 목록 차이(`영업 > SHOP작업` 포함) 해소
+- [ ] entry-context의 일별 기준시간과 기존 UI 합계가 일치함을 테스트
+- [ ] 업무일지에서 언급하지 않은 기존 row가 보존됨을 실제 API에서 검증
 - [ ] `(employee_id, week_start)` PostgreSQL unique 보장
 - [ ] idempotency key + request hash + audit + mutation 단일 transaction 보장
 - [ ] success 및 401/403/404/409/422/429/5xx contract/security 테스트
@@ -100,9 +110,10 @@ scope·contract·위협 검토·테스트 Goal이 필요합니다.
 
 ### 현재 로컬 evidence
 
-- pytest: `70 passed`
+- pytest: `101 passed`
 - MCP Python SDK stdio initialize/list/call: PASS
-- external MCP Inspector `tools/list`: 5개 도구 PASS
+- MCP Python SDK `tools/list`: 7개 도구와 annotations PASS
+- external MCP Inspector 새 7개 도구 확인: 세션 최종 검증 전 `NOT-RUN`
 - compileall: PASS
 - banned runtime references: 0
 - Python dependency audit: 알려진 취약점 0

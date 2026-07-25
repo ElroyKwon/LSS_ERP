@@ -4,7 +4,7 @@ This is an isolated MCP stdio process for the LSS ERP REST contract. It has no
 database dependency and must not receive a database account, `DATABASE_URL`,
 backend `SECRET_KEY`, or backend imports.
 
-The current package exposes exactly five timesheet-focused tools over four
+The current package exposes exactly seven timesheet-focused tools over five
 allowlisted ERP REST endpoints. It is not a generic ERP API bridge. See
 `docs/mcp/AI-SAFETY-BASELINE.md` for the token-derived identity, least
 privilege, write Gate, evidence, and non-claim boundaries.
@@ -43,6 +43,15 @@ MCP host configuration.
 
 The process uses stdio transport. Do not write diagnostic text to stdout
 because stdout carries MCP protocol messages.
+
+For AI-assisted timesheets, the approved host reads a personal worklog locally
+and calls `timesheet_prepare_from_worklog` with minimal structured facts. Do
+not send raw worklog text, a vault path, an employee selector, or a guessed
+duration. The tool preserves unrelated draft rows and returns focused questions
+plus daily/weekly totals before a commit can be requested.
+
+`timesheet_prepare_draft` is a complete-replacement compatibility tool. Omitted
+rows become removals, so an AI host must not use it for a partial worklog.
 
 The write tool is disabled by default. `LSS_ERP_CANARY_WRITE=true` is not
 ordinary configuration: it may be set only for a separately approved canary

@@ -57,6 +57,9 @@ baseline until that artifact is returned.
 - idempotency key and request hash enforced together;
 - the same key and hash replay the original result;
 - the same key with another hash returns `409`;
+- an uncertain timeout is reconciled by readback before any same-key retry;
+- a verified write advances exactly from `expected_version` to
+  `expected_version + 1`;
 - mutation and audit record commit in one transaction;
 - post-write readback must match before the MCP reports success;
 - submitted, approved, and rejected records are immutable through MCP.

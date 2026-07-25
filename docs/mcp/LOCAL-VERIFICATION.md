@@ -35,7 +35,10 @@ The suite covers:
 - read tools, local prepare/diff, expiring confirmation, and protected state;
 - confirmed draft commit, version conflict, idempotent replay, timeout recovery,
   response-loss replay, and post-write readback mismatch;
-- secret/business-content log field dropping;
+- telemetry allowlist helper drops secret and business-content fields;
+- response-loss readback reconciliation before any same-key retry;
+- exact `expected_version + 1`, timesheet, entry, and correlation verification;
+- one in-flight commit per confirmation with permanent idempotency-key binding;
 - local in-process adapter p95 budget.
 
 ## Reproduction
@@ -49,12 +52,24 @@ From the repository root:
 rg -n -i 'backend\.app|sqlalchemy|pg8000|database_url' mcp_server\src
 ```
 
-The external Inspector check uses inherited test-only environment variables and
-does not call the REST API:
+The external Inspector check below is self-contained and uses a literal
+non-secret test token. It performs `tools/list` only and does not call the REST
+API. Never replace the literal test value with a real token:
 
 ```powershell
-npx --yes @modelcontextprotocol/inspector --cli `
-  .\mcp_server\.venv\Scripts\python.exe -m lss_erp_mcp --method tools/list
+$env:LSS_ERP_ENVIRONMENT = 'test'
+$env:LSS_ERP_BASE_URL = 'http://127.0.0.1:8765'
+$env:LSS_ERP_ALLOW_ENV_TOKEN = 'true'
+$env:LSS_ERP_API_TOKEN = 'inspector-test-token'
+try {
+  npx --yes @modelcontextprotocol/inspector --cli `
+    .\mcp_server\.venv\Scripts\python.exe -m lss_erp_mcp --method tools/list
+} finally {
+  Remove-Item Env:LSS_ERP_ENVIRONMENT -ErrorAction SilentlyContinue
+  Remove-Item Env:LSS_ERP_BASE_URL -ErrorAction SilentlyContinue
+  Remove-Item Env:LSS_ERP_ALLOW_ENV_TOKEN -ErrorAction SilentlyContinue
+  Remove-Item Env:LSS_ERP_API_TOKEN -ErrorAction SilentlyContinue
+}
 ```
 
 It must list exactly these five tools:

@@ -16,8 +16,8 @@
 |---|---|---|
 | Single active Goal | PASS | `LSS-MCP-G0001` is the only `ACTIVE` Goal |
 | Collaboration branch | PUSHED BASELINE | `origin/khlee-add-mcp`; every checkpoint is `DEVELOPMENT/NOT-RELEASED` |
-| Database-free MCP code | LOCAL-PASS | code checkpoint `26b3522` |
-| Local test suite | PASS | 54 tests, compileall PASS, banned runtime references 0 |
+| Database-free MCP code | LOCAL-PASS | code checkpoint `cf31647` |
+| Local test suite | PASS | 70 tests, compileall PASS, banned runtime references 0 |
 | Dependency audit | PASS | no known vulnerabilities; unpublished local package skipped |
 | MCP protocol | PASS | Python SDK stdio tests and external Inspector five-tool listing |
 | AI application package | READY FOR VERIFIED PUSH | `docs/mcp/` and `mcp_server/README.md` |

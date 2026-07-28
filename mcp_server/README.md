@@ -102,5 +102,6 @@ boundaries and `docs/mcp/LOCAL-VERIFICATION.md` for the evidence classification.
 
 The local test suite does not prove PostgreSQL row-lock contention, a real ERP
 transport, Google Calendar, deployed process restart/cancellation, canary
-writes, rollback, release, commit, or push. These remain `NOT-RUN` until
-separately exercised and recorded.
+writes, rollback, release merge, or deployment. The reviewed implementation
+was committed and pushed only to the development collaboration branch; all
+external/runtime/release gates remain `NOT-RUN`.

@@ -11,7 +11,7 @@
 | LSS-MCP-G0007 | Worklog facts, safe merge, totals, exception questions | IMPLEMENTED/LOCAL-PASS | MCP implementer |
 | LSS-MCP-G0008 | Confirmed expanded-draft commit | IMPLEMENTED/LOCAL-PASS/DISABLED | MCP implementer |
 | LSS-MCP-G0009 | Security, AI quality, fault, rollback, release gate | PLANNED/LOCAL-PARTIAL | coordinator |
-| LSS-MCP-G0010 | Schedule capability | DEFERRED/NOT-RUN | separate approval |
+| LSS-MCP-G0010 | Enterprise schedule capability | IMPLEMENTED/LOCAL-PASS/WRITE-DISABLED/EXTERNAL-WAITING | MCP implementer + main developer |
 | LSS-MCP-G0011 | Weekly narrative work report | DEFERRED/NOT-DESIGNED | separate approval |
 | LSS-MCP-G0012 | Transcript and audio work intake | DEFERRED/NOT-DESIGNED | separate approval |
 | LSS-MCP-G0013 | Project registration and information mutation | DEFERRED/NOT-DESIGNED | separate approval |
@@ -34,4 +34,4 @@ it into a separate backend working branch for the requested hand-back.
 Weekly report, transcript, project mutation, Telegram, email, and manager
 functions are registered as inactive deferred Goals G0011 through G0016 and
 summarized in `FUTURE-CAPABILITIES.md`. They are not implied by the current
-seven-tool package.
+fourteen-tool package.

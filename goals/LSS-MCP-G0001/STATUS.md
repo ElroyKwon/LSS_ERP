@@ -1,7 +1,7 @@
 # LSS-MCP-G0001 Status
 
 - status: ACTIVE
-- code_baseline: khlee-add-mcp@1e46a0c
+- code_baseline: khlee-add-mcp@8a5b1ed
 - design_commit: 3b4f001
 - remote_main_at_first_push: 8cb295c
 - remote_main_overlap: NONE (frontend ProjectsView only)
@@ -10,15 +10,17 @@
 - local_database: UNAVAILABLE
 - execution_model: parallel backend handoff and database-free MCP lane
 - collaboration_push: GRANTED
-- collaboration_remote_checkpoint: PUSHED (verify current branch HEAD)
+- collaboration_remote_checkpoint: PUSHED (8a5b1ed)
 - github_issue_registration: MANUAL-PENDING
 - github_issue_draft: docs/mcp/GITHUB-ISSUE-HANDOFF.md
 - ai_safety_baseline: docs/mcp/AI-SAFETY-BASELINE.md
 - release_merge_deploy: NOT-GRANTED
 - release_state: DEVELOPMENT/NOT-RELEASED
-- parallel_local_lane: IMPLEMENTED/LOCAL-PASS
-- local_code_checkpoint: bc466b5
-- local_pytest: PASS (108 passed)
+- parallel_local_lane: IMPLEMENTED/LOCAL-PASS/WRITE-DISABLED
+- local_code_checkpoint: 8a5b1ed
+- local_timesheet_checkpoint: PASS (108 passed historical focused package)
+- local_schedule_backend_pytest: PASS (124 passed)
+- local_mcp_pytest: PASS (379 passed)
 - local_compileall: PASS
 - local_banned_runtime_refs: PASS (0)
 - local_dependency_audit: PASS (0 known vulnerabilities; local unpublished package skipped)
@@ -32,7 +34,7 @@
 - deployed_real_api: NOT-RUN
 - real_erp_read_and_write: NOT-RUN
 - canary_and_rollback: NOT-RUN
-- exposed_mcp_scope: exactly 7 timesheet-focused tools over 5 REST endpoints
+- exposed_mcp_scope: exactly 14 tools over 12 fixed REST method/path pairs
 - ai_timesheet_scope: structured worklog facts, self entry context, safe merge,
   exception questions, daily/weekly totals, confirmed own-draft commit
 - personal_worklog_raw_text_or_path: FORBIDDEN
@@ -50,10 +52,11 @@
 
 ## Local Evidence Boundary
 
-The database-free MCP implementation and local test oracle are available for
-main-developer collaboration, but they do not complete G0001. G0001 remains
-the only `ACTIVE` Goal until the backend dependency, PostgreSQL, migration,
-contract, security, and legacy UI evidence is returned and accepted.
+The database-free MCP implementation, enterprise-schedule controls, and local
+test oracle are pushed for main-developer collaboration, but they do not
+complete G0001. G0001 remains the only `ACTIVE` Goal until the backend
+dependency, PostgreSQL, migration, contract, security, and legacy UI evidence
+is returned and accepted.
 
 Reproduction commands and explicit non-claims are recorded in
 `docs/mcp/LOCAL-VERIFICATION.md`.

@@ -12,8 +12,8 @@
   dependency/remediation gate
 - PostgreSQL migration execution and row-lock contention: `NOT-RUN`
 - Real API, Google Calendar, canary, deployment, rollback: `NOT-RUN`
-- Local Task 13 commit: this verification record is included in that commit
-- Remote push: `NOT-RUN`
+- Task 13 implementation commit: `8a5b1ed11c68bc2edbc7feb23686106b9f8e3954`
+- Collaboration branch push: `PASS`, local/remote implementation SHA matched
 
 Local PASS means only that the checked source and test doubles satisfy their
 documented contracts. It does not mean the system is operationally deployed or

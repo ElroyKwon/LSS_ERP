@@ -25,7 +25,8 @@ Current evidence:
 - the local schedule write gate defaults disabled and accepts only the exact
   lowercase environment literals `true` or `false`;
 - external backend runtime, PostgreSQL runtime, Google Calendar, deployment,
-  commit, and push remain `NOT-RUN`.
+  rollback, and release remain `NOT-RUN`; the reviewed implementation was
+  committed and pushed to `origin/khlee-add-mcp` at `8a5b1ed`.
 
 This document does not authorize a canary or production write.
 

@@ -29,7 +29,7 @@ MCP Python SDK v1, httpx, Pydantic v2, pytest.
 
 **Status:** `LOCAL-IMPLEMENTATION-PASS / TASKS-1-11-LOCAL-PASS /
 TASK-12-EXTERNAL-GATES-NOT-RUN /
-TASK-13-COMMIT-PUSH-NOT-AUTHORIZED / WRITE-DISABLED /
+TASK-13-COMMIT-PUSH-PASS / WRITE-DISABLED /
 POSTGRESQL-ROW-LOCK-RUNTIME-NOT-RUN`
 
 - Tasks 1 through 5 were implemented with TDD and passed independent
@@ -127,11 +127,12 @@ POSTGRESQL-ROW-LOCK-RUNTIME-NOT-RUN`
 - Task 12 prerequisites were not provided, so PostgreSQL migration rehearsal
   and contention, external backend integration/runtime, real API and Google
   canary, deployment, and rollback remain `NOT-RUN`.
-- Task 13 local commit was authorized on 2026-07-28 after review remediation;
-  remote push remains `NOT-RUN`, and this branch is still
-  `DEVELOPMENT/NOT-RELEASED`.
-- Next gate: provide the isolated Task 12 environment/authority or separately
-  authorize the remote push after reviewing the local commit.
+- Task 13 local commit and collaboration-branch push passed on 2026-07-28 after
+  review remediation. Implementation commit:
+  `8a5b1ed11c68bc2edbc7feb23686106b9f8e3954`.
+- The branch remains `DEVELOPMENT/NOT-RELEASED`. Next gate: provide the
+  isolated Task 12 environment/authority; `origin/main` merge, deployment, and
+  production writes remain unauthorized.
 
 ## 0. Fixed Scope and Entry Gate
 
@@ -880,7 +881,8 @@ FINAL-SPEC-AND-QUALITY-REVIEW-PENDING / WRITE-NOT-REGISTERED`
   only existing LF-to-CRLF working-copy warnings.
 - Task 8 passed final specification and code-quality review. Task 9 is now
   implemented separately and pending its own reviews. All external
-  runtime/write/deployment/commit/push gates remain `NOT-RUN`.
+  runtime/write/deployment gates remain `NOT-RUN`; commit/push later passed as
+  Task 13 at implementation commit `8a5b1ed`.
 
 **Files:**
 
@@ -1320,5 +1322,6 @@ git rev-parse origin/khlee-add-mcp
 
 Tasks 1 through 10 passed final specification and code-quality/security review;
 Task 11 passed fresh local verification. Task 12 external runtime evidence
-remains `NOT-RUN`. Task 13 local commit was authorized after review remediation;
-remote push remains `NOT-RUN`.
+remains `NOT-RUN`. Task 13 local commit and collaboration-branch push passed at
+implementation commit `8a5b1ed`; release merge and deployment remain
+unauthorized.

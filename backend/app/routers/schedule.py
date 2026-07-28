@@ -5,7 +5,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional, Dict, Tuple
-from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
@@ -20,6 +20,21 @@ from ..database import get_db
 from ..models.common import User, CalendarSchedule
 from ..models.master import Employee
 from ..models.timesheet import Timesheet, TimesheetEntry
+from ..services.mcp_schedule_control import (
+    attach_if_match,
+    begin_mcp_mutation,
+    begin_mcp_create,
+    complete_mcp_mutation,
+    complete_mcp_create,
+    is_expected_mcp_create_event,
+    lock_mcp_timesheet_rows,
+    normalize_kst_datetime,
+    record_mcp_mutation_failure,
+    record_mcp_create_failure,
+)
+from ..services.timesheet_locking import (
+    lock_revalidated_schedule_timesheet_scope,
+)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=BASE_DIR / "google_calendar.env")
@@ -425,6 +440,42 @@ def _payload_end_date(payload: ScheduleCreate) -> date | None:
     return end_dt.date() if end_dt else _payload_start_date(payload)
 
 
+def _week_starts_for_payload(payload: ScheduleCreate) -> set[date]:
+    start = _payload_start_date(payload)
+    end = _payload_end_date(payload)
+    if start is None or end is None:
+        return set()
+    cursor = _week_of(start)[0]
+    last = _week_of(end)[0]
+    weeks: set[date] = set()
+    while cursor <= last:
+        weeks.add(cursor)
+        cursor += timedelta(days=7)
+    return weeks
+
+
+def _lock_ordinary_schedule_timesheet_scope(
+    db: Session,
+    *,
+    employee: Employee | None,
+    payload: ScheduleCreate | None,
+    event_id: str | None,
+    category: str,
+) -> None:
+    """Re-read actual scope after parent locks before ordinary mutation."""
+    lock_revalidated_schedule_timesheet_scope(
+        db,
+        event_id=event_id,
+        category=category,
+        employee_id=employee.id if employee is not None else None,
+        desired_weeks=(
+            _week_starts_for_payload(payload)
+            if payload is not None
+            else []
+        ),
+    )
+
+
 def _upsert_schedule_row(
     db: Session,
     event_id: str,
@@ -600,22 +651,181 @@ def get_schedules(category: str = Query("company", description="company 또는 r
         )
 
 
+def _mcp_create_failure_response(
+    db: Session,
+    hook,
+    *,
+    google_observed: bool,
+    compensation_succeeded: bool,
+    google_known_absent: bool = False,
+    safe_http_status: int = 500,
+) -> HTTPException:
+    correlation_headers = {"X-Correlation-ID": hook.correlation_id}
+    if google_observed and compensation_succeeded:
+        record_mcp_create_failure(
+            db, hook, operation_status="FAILED", code="create_compensated", http_status=safe_http_status,
+        )
+        return HTTPException(status_code=safe_http_status, detail="create_compensated", headers=correlation_headers)
+    if google_known_absent:
+        record_mcp_create_failure(
+            db, hook, operation_status="FAILED", code="create_not_observed", http_status=502,
+        )
+        return HTTPException(status_code=502, detail="create_not_observed", headers=correlation_headers)
+    record_mcp_create_failure(
+        db, hook, operation_status="RECONCILIATION_REQUIRED", code="reconciliation_required", http_status=502,
+    )
+    return HTTPException(status_code=502, detail="reconciliation_required", headers=correlation_headers)
+
+
+def _is_explicit_mcp_create(request: Request | None) -> bool:
+    return bool(request and request.headers.get("X-LSS-MCP-Schedule") == "1")
+
+
+def _mcp_mutation_failure_response(db: Session, hook, *, status_value: str, code: str, http_status: int) -> HTTPException:
+    record_mcp_mutation_failure(
+        db, hook, operation_status=status_value, code=code, http_status=http_status,
+    )
+    return HTTPException(
+        status_code=http_status,
+        detail="manual_review" if status_value == "MANUAL_REVIEW" else code,
+        headers={"X-Correlation-ID": hook.correlation_id},
+    )
+
+
+def _mcp_delete_readback_state(
+    db: Session,
+    operation,
+    event_id: str,
+    category: str,
+    *,
+    google_missing: bool,
+) -> str:
+    """Classify delete evidence; a readback 404 is not proof on its own."""
+    local_row = db.query(CalendarSchedule).filter(
+        CalendarSchedule.google_event_id == event_id,
+        CalendarSchedule.category == category,
+    ).one_or_none()
+    if not google_missing:
+        return "MANUAL_REVIEW"
+    matching_journal = (
+        getattr(operation, "action", None) == "DELETE"
+        and getattr(operation, "status", None) == "IN_PROGRESS"
+        and getattr(operation, "event_id", None) == event_id
+        and getattr(operation, "category", None) == category
+    )
+    if local_row is None and matching_journal:
+        return "SUCCEEDED"
+    return "RECONCILIATION_REQUIRED"
+
+
+def _mcp_google_404(error: Exception) -> bool:
+    return isinstance(error, HttpError) and getattr(getattr(error, "resp", None), "status", None) == 404
+
+
+def _mcp_http_outcome_uncertain(status_code: int) -> bool:
+    return status_code in {408, 429} or status_code >= 500
+
+
+def _mcp_legacy_payload(payload: ScheduleCreate) -> ScheduleCreate:
+    """Adapt only MCP timed input to the legacy builder's KST string contract."""
+    effective = payload.model_copy(deep=True)
+    if effective.is_all_day:
+        return effective
+    try:
+        start = datetime.fromisoformat((effective.start_time or "").replace("Z", "+00:00"))
+        end = datetime.fromisoformat((effective.end_time or "").replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid_schedule_time") from None
+    effective.start_time = normalize_kst_datetime(start).strftime("%Y-%m-%d %H:%M:%S")
+    effective.end_time = normalize_kst_datetime(end).strftime("%Y-%m-%d %H:%M:%S")
+    return effective
+
+
+def _mcp_effect_snapshot(payload: ScheduleCreate, user_name: str, event: dict) -> dict:
+    """One hashable snapshot of the existing builder/local/timesheet effects."""
+    meta = _schedule_meta(payload)
+    start_date = _payload_start_date(payload)
+    end_date = _payload_end_date(payload)
+    project_source = meta["timesheet_project_source"]
+    return {
+        "google_event": event,
+        "calendar": {
+            "category": payload.category or "company",
+            "content": payload.content,
+            "type": payload.type,
+            "user_name": user_name,
+            "is_all_day": bool(payload.is_all_day),
+            "date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
+            "start_time": payload.start_time if not payload.is_all_day else None,
+            "end_time": payload.end_time if not payload.is_all_day else None,
+            "schedule_kind": _schedule_kind(payload),
+            "timesheet_project_id": payload.timesheet_project_id,
+            "timesheet_project_name": meta["timesheet_project_name"],
+            "timesheet_project_source": project_source,
+        },
+        "timesheet": {
+            "schedule_kind": _schedule_kind(payload),
+            "project_id": payload.timesheet_project_id if project_source == "실행" else None,
+            "project_name": _schedule_kind(payload) if payload.category == "refresh" else meta["timesheet_project_name"],
+            "project_source": "공통" if payload.category == "refresh" else project_source,
+        },
+    }
+
+
 @router.post("")
-def create_schedule(payload: ScheduleCreate, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def create_schedule(payload: ScheduleCreate, current_user=Depends(get_current_user), db: Session = Depends(get_db), request: Request = None):
     service = None
     target_calendar_id = None
     event_id = None
+    mcp_hook = None
+    google_inserted = False
+    insert_attempted_by_current_invocation = False
     try:
         service, target_calendar_id = get_calendar_config_and_service(payload.category)
+        create_payload = _mcp_legacy_payload(payload) if _is_explicit_mcp_create(request) else payload
         user_name = (getattr(current_user, 'name', None) or payload.user_name or '미확인').strip()
-        if not _current_employee(db, current_user):
+        user_name = (getattr(current_user, 'name', None) or create_payload.user_name or user_name).strip()
+        employee = _current_employee(db, current_user)
+        if not employee:
             raise HTTPException(status_code=400, detail="로그인 사용자의 사원 정보를 찾을 수 없어 타임시트에 자동 반영할 수 없습니다.")
-        event = build_google_event(payload, user_name)
-        google_result = service.events().insert(calendarId=target_calendar_id, body=event).execute()
+        try:
+            event = build_google_event(create_payload, user_name)
+        except HTTPException:
+            if _is_explicit_mcp_create(request):
+                raise HTTPException(status_code=400, detail="create_rejected") from None
+            raise
+        effect_snapshot = _mcp_effect_snapshot(create_payload, user_name, event) if _is_explicit_mcp_create(request) else None
+        mcp_hook = begin_mcp_create(
+            db, request=request, current_user=current_user, payload=create_payload,
+            effect_snapshot=effect_snapshot, service=service, calendar_id=target_calendar_id,
+        )
+        if mcp_hook and mcp_hook.replay_succeeded:
+            return {"status": "success", "id": mcp_hook.event_id}
+        if mcp_hook:
+            lock_mcp_timesheet_rows(db, mcp_hook)
+            event_id = mcp_hook.event_id
+            mcp_hook.apply_to_event(event)
+        else:
+            _lock_ordinary_schedule_timesheet_scope(
+                db,
+                employee=employee,
+                payload=create_payload,
+                event_id=None,
+                category=create_payload.category or "company",
+            )
+        if mcp_hook and mcp_hook.reconcile_observed:
+            google_result = {"id": event_id}
+        else:
+            insert_attempted_by_current_invocation = True
+            google_result = service.events().insert(calendarId=target_calendar_id, body=event).execute()
         event_id = google_result.get('id')
+        google_inserted = bool(event_id) and insert_attempted_by_current_invocation
         if event_id:
-            _upsert_schedule_row(db, event_id, payload, current_user, user_name)
-            _sync_schedule_to_timesheet(db, payload, event_id, current_user)
+            _upsert_schedule_row(db, event_id, create_payload, current_user, user_name)
+            _sync_schedule_to_timesheet(db, create_payload, event_id, current_user)
+            if mcp_hook:
+                complete_mcp_create(mcp_hook)
             db.commit()
         else:
             raise HTTPException(status_code=500, detail="구글 캘린더 일정 ID를 받지 못했습니다.")
@@ -624,30 +834,91 @@ def create_schedule(payload: ScheduleCreate, current_user=Depends(get_current_us
             "id": event_id
         }
 
-    except HTTPException:
+    except HTTPException as exc:
         db.rollback()
-        if service and target_calendar_id and event_id:
+        compensation_succeeded = False
+        # Compensation ownership is defined in docs/mcp/SCHEDULE-MUTATION-LOCKING.md.
+        if service and target_calendar_id and event_id and (
+            not mcp_hook
+            or (insert_attempted_by_current_invocation and google_inserted)
+        ):
             try:
                 service.events().delete(calendarId=target_calendar_id, eventId=event_id).execute()
+                compensation_succeeded = True
             except Exception:
                 print(f"\n=== GOOGLE CALENDAR COMPENSATING DELETE FAILED ({payload.category}, {event_id}) ===")
                 traceback.print_exc()
                 print("==================================================\n")
+        if mcp_hook:
+            if google_inserted or mcp_hook.reconcile_observed:
+                safe_status = exc.status_code if 400 <= exc.status_code <= 599 else 500
+                raise _mcp_create_failure_response(
+                    db, mcp_hook, google_observed=True, compensation_succeeded=compensation_succeeded,
+                    safe_http_status=safe_status,
+                ) from None
+            record_mcp_create_failure(
+                db,
+                mcp_hook,
+                operation_status="FAILED",
+                code=exc.detail if isinstance(exc.detail, str) else "create_rejected",
+                http_status=exc.status_code,
+            )
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=exc.detail if isinstance(exc.detail, str) else "create_rejected",
+                headers={"X-Correlation-ID": mcp_hook.correlation_id},
+            ) from None
+        record_mcp_create_failure(
+            db, mcp_hook, operation_status="FAILED", code="create_rejected", http_status=400,
+        )
         raise
     except HttpError as he:
         db.rollback()
+        record_mcp_create_failure(
+            db, mcp_hook, operation_status="RECONCILIATION_REQUIRED",
+            code="reconciliation_required", http_status=502,
+        )
+        if mcp_hook:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="reconciliation_required",
+                headers={"X-Correlation-ID": mcp_hook.correlation_id},
+            ) from None
         print(f"\n=== GOOGLE CALENDAR API HTTP ERROR ({payload.category}) ===")
         print(f"Status Code: {he.resp.status}, Reason: {he.content}")
         raise HTTPException(status_code=he.resp.status, detail="구글 캘린더 쓰기 권한이 없거나 API 오류가 발생했습니다.")
     except Exception as e:
         db.rollback()
-        if service and target_calendar_id and event_id:
+        google_observed = google_inserted or bool(mcp_hook and mcp_hook.reconcile_observed)
+        google_known_absent = False
+        if mcp_hook and not google_observed and service and target_calendar_id and event_id:
+            try:
+                observed = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
+                google_observed = is_expected_mcp_create_event(mcp_hook, observed)
+            except HttpError as observation_error:
+                google_known_absent = getattr(getattr(observation_error, "resp", None), "status", None) == 404
+            except Exception:
+                pass
+        compensation_succeeded = False
+        # Compensation ownership is defined in docs/mcp/SCHEDULE-MUTATION-LOCKING.md.
+        if service and target_calendar_id and event_id and (
+            not mcp_hook
+            or (insert_attempted_by_current_invocation and google_observed)
+        ):
             try:
                 service.events().delete(calendarId=target_calendar_id, eventId=event_id).execute()
+                compensation_succeeded = True
             except Exception:
                 print(f"\n=== GOOGLE CALENDAR COMPENSATING DELETE FAILED ({payload.category}, {event_id}) ===")
                 traceback.print_exc()
                 print("==================================================\n")
+        if mcp_hook:
+            raise _mcp_create_failure_response(
+                db, mcp_hook, google_observed=google_observed,
+                compensation_succeeded=compensation_succeeded,
+                google_known_absent=google_known_absent,
+                safe_http_status=500,
+            ) from None
         print(f"\n=== GOOGLE CALENDAR INSERT ERROR ({payload.category}) ===")
         traceback.print_exc()
         print("==================================================\n")
@@ -658,32 +929,94 @@ def create_schedule(payload: ScheduleCreate, current_user=Depends(get_current_us
 
 
 @router.put("/{event_id}")
-def update_schedule(event_id: str, payload: ScheduleCreate, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def update_schedule(
+    event_id: str,
+    payload: ScheduleCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
     service = None
     target_calendar_id = None
     existing = None
+    mcp_hook = None
+    google_attempted = False
     google_updated = False
     try:
         service, target_calendar_id = get_calendar_config_and_service(payload.category)
-        existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
-        require_event_owner(existing, current_user)
-        user_name = (getattr(current_user, 'name', None) or payload.user_name or '미확인').strip()
-        if not _current_employee(db, current_user):
+        update_payload = _mcp_legacy_payload(payload) if _is_explicit_mcp_create(request) else payload
+        mcp_hook = begin_mcp_mutation(
+            db, request=request, current_user=current_user, action="UPDATE",
+            category=update_payload.category, event_id=event_id, desired=update_payload,
+            service=service, calendar_id=target_calendar_id,
+        )
+        if mcp_hook and mcp_hook.replay_succeeded:
+            return {"status": "success", "id": mcp_hook.operation.event_id}
+        if mcp_hook:
+            lock_mcp_timesheet_rows(db, mcp_hook)
+            existing = mcp_hook.existing_event
+        else:
+            existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
+            require_event_owner(existing, current_user)
+        user_name = (getattr(current_user, 'name', None) or update_payload.user_name or '미확인').strip()
+        employee = _current_employee(db, current_user)
+        if not employee:
             raise HTTPException(status_code=400, detail="로그인 사용자의 사원 정보를 찾을 수 없어 타임시트에 자동 반영할 수 없습니다.")
-        event = build_google_event(payload, user_name)
-        _upsert_schedule_row(db, event_id, payload, current_user, user_name)
-        _sync_schedule_to_timesheet(db, payload, event_id, current_user)
-        service.events().update(calendarId=target_calendar_id, eventId=event_id, body=event).execute()
+        event = build_google_event(update_payload, user_name)
+        if mcp_hook:
+            mcp_hook.apply_to_update_event(event)
+        else:
+            _lock_ordinary_schedule_timesheet_scope(
+                db,
+                employee=employee,
+                payload=update_payload,
+                event_id=event_id,
+                category=update_payload.category or "company",
+            )
+        _upsert_schedule_row(db, event_id, update_payload, current_user, user_name)
+        _sync_schedule_to_timesheet(db, update_payload, event_id, current_user)
+        google_request = service.events().update(
+            calendarId=target_calendar_id, eventId=event_id, body=event,
+        )
+        if mcp_hook:
+            attach_if_match(google_request, mcp_hook.expected_etag)
+        google_attempted = True
+        google_result = google_request.execute()
         google_updated = True
+        if mcp_hook:
+            complete_mcp_mutation(
+                mcp_hook,
+                etag=google_result.get("etag") if isinstance(google_result, dict) else None,
+            )
         db.commit()
         return {"status": "success", "id": event_id}
 
-    except HTTPException:
+    except HTTPException as exc:
         db.rollback()
+        if mcp_hook and not google_attempted:
+            record_mcp_mutation_failure(
+                db, mcp_hook, operation_status="FAILED",
+                code=exc.detail if isinstance(exc.detail, str) else "update_rejected",
+                http_status=exc.status_code,
+            )
         raise
     except HttpError as he:
         db.rollback()
         status_code = getattr(he.resp, 'status', 500)
+        if mcp_hook:
+            uncertain = _mcp_http_outcome_uncertain(status_code)
+            code = (
+                "stale_event" if status_code == 412
+                else "reconciliation_required" if uncertain
+                else "upstream_rejected"
+            )
+            safe_status = 409 if status_code == 412 else 502
+            raise _mcp_mutation_failure_response(
+                db, mcp_hook,
+                status_value="RECONCILIATION_REQUIRED" if uncertain else "FAILED",
+                code=code,
+                http_status=safe_status,
+            ) from None
         if status_code == 404:
             raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
         print(f"\n=== GOOGLE CALENDAR UPDATE ERROR ({payload.category}) ===")
@@ -691,6 +1024,16 @@ def update_schedule(event_id: str, payload: ScheduleCreate, current_user=Depends
         raise HTTPException(status_code=status_code, detail="구글 캘린더 일정 수정 중 오류가 발생했습니다.")
     except Exception as e:
         db.rollback()
+        if mcp_hook:
+            if google_attempted:
+                raise _mcp_mutation_failure_response(
+                    db, mcp_hook, status_value="RECONCILIATION_REQUIRED",
+                    code="reconciliation_required", http_status=502,
+                ) from None
+            raise _mcp_mutation_failure_response(
+                db, mcp_hook, status_value="FAILED",
+                code="update_rejected", http_status=500,
+            ) from None
         if service and target_calendar_id and existing and google_updated:
             try:
                 service.events().update(calendarId=target_calendar_id, eventId=event_id, body=existing).execute()
@@ -708,11 +1051,38 @@ def update_schedule(event_id: str, payload: ScheduleCreate, current_user=Depends
 
 
 @router.delete("/{event_id}")
-def delete_schedule(event_id: str, category: str = Query("company"), current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def delete_schedule(
+    event_id: str,
+    category: str = Query("company"),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    service = None
+    target_calendar_id = None
+    mcp_hook = None
+    google_attempted = False
     try:
         service, target_calendar_id = get_calendar_config_and_service(category)
-        existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
-        require_event_owner(existing, current_user)
+        mcp_hook = begin_mcp_mutation(
+            db, request=request, current_user=current_user, action="DELETE",
+            category=category, event_id=event_id, desired=None,
+            service=service, calendar_id=target_calendar_id,
+        )
+        if mcp_hook and mcp_hook.replay_succeeded:
+            return {"status": "success"}
+        if not mcp_hook:
+            existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
+            require_event_owner(existing, current_user)
+            _lock_ordinary_schedule_timesheet_scope(
+                db,
+                employee=_current_employee(db, current_user),
+                payload=None,
+                event_id=event_id,
+                category=category,
+            )
+        else:
+            lock_mcp_timesheet_rows(db, mcp_hook)
         _remove_schedule_from_timesheet(db, event_id, category)
         row = db.query(CalendarSchedule).filter(
             CalendarSchedule.google_event_id == event_id,
@@ -720,16 +1090,57 @@ def delete_schedule(event_id: str, category: str = Query("company"), current_use
         ).first()
         if row:
             db.delete(row)
-        service.events().delete(calendarId=target_calendar_id, eventId=event_id).execute()
+        google_request = service.events().delete(
+            calendarId=target_calendar_id, eventId=event_id,
+        )
+        if mcp_hook:
+            attach_if_match(google_request, mcp_hook.expected_etag)
+        google_attempted = True
+        google_request.execute()
+        if mcp_hook:
+            complete_mcp_mutation(mcp_hook)
         db.commit()
         return {"status": "success"}
 
-    except HTTPException:
+    except HTTPException as exc:
         db.rollback()
+        if mcp_hook and not google_attempted:
+            record_mcp_mutation_failure(
+                db, mcp_hook, operation_status="FAILED",
+                code=exc.detail if isinstance(exc.detail, str) else "delete_rejected",
+                http_status=exc.status_code,
+            )
         raise
     except HttpError as he:
         db.rollback()
         status_code = getattr(he.resp, 'status', 500)
+        if mcp_hook:
+            if status_code == 412:
+                raise _mcp_mutation_failure_response(
+                    db, mcp_hook, status_value="FAILED",
+                    code="stale_event", http_status=409,
+                ) from None
+            if status_code == 404:
+                evidence_state = _mcp_delete_readback_state(
+                    db, mcp_hook.operation, event_id, category, google_missing=True,
+                )
+                if evidence_state == "SUCCEEDED":
+                    complete_mcp_mutation(mcp_hook)
+                    db.commit()
+                    return {"status": "success"}
+                raise _mcp_mutation_failure_response(
+                    db, mcp_hook, status_value=evidence_state,
+                    code="reconciliation_required", http_status=502,
+                ) from None
+            if _mcp_http_outcome_uncertain(status_code):
+                raise _mcp_mutation_failure_response(
+                    db, mcp_hook, status_value="RECONCILIATION_REQUIRED",
+                    code="reconciliation_required", http_status=502,
+                ) from None
+            raise _mcp_mutation_failure_response(
+                db, mcp_hook, status_value="FAILED",
+                code="upstream_rejected", http_status=502,
+            ) from None
         if status_code == 404:
             raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
         print(f"\n=== GOOGLE CALENDAR DELETE ERROR ({category}) ===")
@@ -737,6 +1148,34 @@ def delete_schedule(event_id: str, category: str = Query("company"), current_use
         raise HTTPException(status_code=status_code, detail="구글 캘린더 일정 삭제 중 오류가 발생했습니다.")
     except Exception as e:
         db.rollback()
+        if mcp_hook:
+            if google_attempted:
+                evidence_state = "RECONCILIATION_REQUIRED"
+                try:
+                    service.events().get(
+                        calendarId=target_calendar_id, eventId=event_id,
+                    ).execute()
+                    evidence_state = _mcp_delete_readback_state(
+                        db, mcp_hook.operation, event_id, category, google_missing=False,
+                    )
+                except Exception as readback_error:
+                    if _mcp_google_404(readback_error):
+                        evidence_state = _mcp_delete_readback_state(
+                            db, mcp_hook.operation, event_id, category, google_missing=True,
+                        )
+                if evidence_state == "SUCCEEDED":
+                    complete_mcp_mutation(mcp_hook)
+                    db.commit()
+                    return {"status": "success"}
+                raise _mcp_mutation_failure_response(
+                    db, mcp_hook, status_value=evidence_state,
+                    code="conflicting_evidence" if evidence_state == "MANUAL_REVIEW" else "reconciliation_required",
+                    http_status=502,
+                ) from None
+            raise _mcp_mutation_failure_response(
+                db, mcp_hook, status_value="FAILED",
+                code="delete_rejected", http_status=500,
+            ) from None
         print(f"\n=== GOOGLE CALENDAR DELETE ERROR ({category}) ===")
         traceback.print_exc()
         print("==================================================\n")

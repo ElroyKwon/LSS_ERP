@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from lss_erp_mcp.config import McpSettings
 
@@ -51,3 +52,40 @@ def test_base_url_must_not_contain_credentials() -> None:
             credential_service="LSS ERP MCP",
             credential_name="lss-erp-mcp-local",
         )
+
+
+def test_schedule_canary_write_defaults_false_and_is_independent() -> None:
+    settings = McpSettings(
+        environment="development",
+        base_url="http://127.0.0.1:8000",
+        canary_write=True,
+    )
+
+    assert settings.canary_write is True
+    assert settings.schedule_canary_write is False
+
+
+@pytest.mark.parametrize("value", ["TRUE", "True", "1", "yes", "false "])
+def test_schedule_canary_write_rejects_non_exact_literals(value: str) -> None:
+    with pytest.raises(ValidationError, match="exact lowercase"):
+        McpSettings(
+            environment="development",
+            base_url="http://127.0.0.1:8000",
+            schedule_canary_write=value,
+        )
+
+
+def test_schedule_canary_write_accepts_exact_lowercase_literals() -> None:
+    enabled = McpSettings(
+        environment="development",
+        base_url="http://127.0.0.1:8000",
+        schedule_canary_write="true",
+    )
+    disabled = McpSettings(
+        environment="development",
+        base_url="http://127.0.0.1:8000",
+        schedule_canary_write="false",
+    )
+
+    assert enabled.schedule_canary_write is True
+    assert disabled.schedule_canary_write is False

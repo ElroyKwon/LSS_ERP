@@ -4,7 +4,7 @@ from datetime import date
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, Field, model_validator
+from pydantic import AnyHttpUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,20 @@ class McpSettings(BaseSettings):
     real_api_test_project_id: int | None = None
     real_api_test_work_type: str | None = None
     canary_write: bool = False
+    schedule_canary_write: bool = False
+
+    @field_validator("schedule_canary_write", mode="before")
+    @classmethod
+    def require_exact_schedule_write_gate(cls, value: object) -> object:
+        if isinstance(value, bool):
+            return value
+        if value == "true":
+            return True
+        if value == "false":
+            return False
+        raise ValueError(
+            "schedule canary write requires exact lowercase true or false"
+        )
 
     @model_validator(mode="after")
     def validate_origin(self) -> "McpSettings":

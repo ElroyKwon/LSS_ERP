@@ -339,6 +339,49 @@ def ensure_calendar_schedule_tables(engine):
     })
 
 
+def ensure_mcp_schedule_operation_tables(engine):
+    id_ddl = "SERIAL PRIMARY KEY"
+    if engine.dialect.name == "sqlite":
+        id_ddl = "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS mcp_schedule_operations (
+                id {id_ddl},
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                category VARCHAR(20) NOT NULL,
+                action VARCHAR(20) NOT NULL,
+                event_id VARCHAR(255),
+                idempotency_key VARCHAR(128) NOT NULL,
+                correlation_id VARCHAR(128) NOT NULL,
+                request_hash VARCHAR(64) NOT NULL,
+                expected_etag VARCHAR(255),
+                desired_state_hash VARCHAR(64),
+                status VARCHAR(32) NOT NULL,
+                result_json JSON,
+                error_json JSON,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_mcp_schedule_operations_user_idempotency_key
+                    UNIQUE (user_id, idempotency_key),
+                CONSTRAINT uq_mcp_schedule_operations_correlation_id
+                    UNIQUE (correlation_id),
+                CONSTRAINT ck_mcp_schedule_operations_status CHECK (
+                    status IN ('IN_PROGRESS', 'SUCCEEDED', 'FAILED',
+                    'RECONCILIATION_REQUIRED', 'MANUAL_REVIEW')
+                )
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_mcp_schedule_operations_user_id "
+            "ON mcp_schedule_operations (user_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_mcp_schedule_operations_event_id "
+            "ON mcp_schedule_operations (event_id)"
+        ))
+
+
 def ensure_timesheet_admin_tables(engine):
     with engine.begin() as conn:
         conn.execute(text("""

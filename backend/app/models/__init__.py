@@ -23,6 +23,7 @@ from .accounting import (JournalEntry, JournalLine, AccountsReceivable, Accounts
 from .management import DeptBudget, ManagementSalesBusinessPlanRow
 from .timesheet import Timesheet, TimesheetEntry, TimesheetLaborAllocation
 from .vehicle import Vehicle, VehicleLog
+from .mcp_schedule import McpScheduleOperation
 
 __all__ = [
     "User", "Department", "AuditLog", "UserRegistration", "ApiToken", "Notice", "NoticeAttachment",
@@ -38,4 +39,5 @@ __all__ = [
     "DeptBudget", "ManagementSalesBusinessPlanRow",
     "Timesheet", "TimesheetEntry", "TimesheetLaborAllocation",
     "Vehicle", "VehicleLog",
+    "McpScheduleOperation",
 ]

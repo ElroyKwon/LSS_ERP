@@ -7,6 +7,13 @@ from ..database import Base
 class Timesheet(Base):
     """타임시트 헤더 — 직원별 주간 단위"""
     __tablename__ = "timesheets"
+    __table_args__ = (
+        UniqueConstraint(
+            "employee_id",
+            "week_start",
+            name="uq_timesheets_employee_week_start",
+        ),
+    )
     id            = Column(Integer, primary_key=True, index=True)
     employee_id   = Column(Integer, ForeignKey("employees.id"), nullable=False)
     week_start    = Column(Date, nullable=False)   # 주 시작 (월요일)

@@ -15,6 +15,10 @@ from ..utils.auth import get_current_user
 from ..utils import to_kst, to_kst_date
 from ..utils.permissions import is_system_admin, normalize_role
 from ..utils.system_accounts import exclude_system_account_employees, is_system_account_employee
+from ..services.timesheet_locking import (
+    lock_employee_then_timesheets,
+    lock_timesheet_by_id,
+)
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["타임시트"])
@@ -561,10 +565,12 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
                    current=Depends(get_current_user)):
     _require_employee_access(data.employee_id, db, current)
     monday, sunday = _week_of(data.week_start)
-    ts = db.query(Timesheet).filter(
-        Timesheet.employee_id == data.employee_id,
-        Timesheet.week_start  == monday,
-    ).first()
+    _, locked_rows = lock_employee_then_timesheets(
+        db,
+        employee_id=data.employee_id,
+        weeks=[monday],
+    )
+    ts = next((row for row in locked_rows if row.week_start == monday), None)
 
     if ts:
         ts.notes = data.notes
@@ -600,7 +606,7 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
 @router.post("/timesheets/{tid}/submit")
 def submit_timesheet(tid: int, db: Session = Depends(get_db),
                      current=Depends(get_current_user)):
-    ts = db.query(Timesheet).filter(Timesheet.id == tid).first()
+    ts = lock_timesheet_by_id(db, timesheet_id=tid)
     if not ts: raise HTTPException(404, "타임시트를 찾을 수 없습니다.")
     if ts.status != "작성중": raise HTTPException(400, f"현재 상태({ts.status})에서 제출할 수 없습니다.")
     ts.status = "제출"
@@ -613,7 +619,7 @@ def submit_timesheet(tid: int, db: Session = Depends(get_db),
 @router.post("/timesheets/{tid}/approve")
 def approve_timesheet(tid: int, db: Session = Depends(get_db),
                       current=Depends(get_current_user)):
-    ts = db.query(Timesheet).filter(Timesheet.id == tid).first()
+    ts = lock_timesheet_by_id(db, timesheet_id=tid)
     if not ts: raise HTTPException(404, "타임시트를 찾을 수 없습니다.")
     if ts.status != "제출": raise HTTPException(400, "제출된 타임시트만 승인할 수 있습니다.")
 
@@ -648,7 +654,7 @@ def approve_timesheet(tid: int, db: Session = Depends(get_db),
 @router.post("/timesheets/{tid}/reject")
 def reject_timesheet(tid: int, data: RejectIn, db: Session = Depends(get_db),
                      current=Depends(get_current_user)):
-    ts = db.query(Timesheet).filter(Timesheet.id == tid).first()
+    ts = lock_timesheet_by_id(db, timesheet_id=tid)
     if not ts: raise HTTPException(404, "타임시트를 찾을 수 없습니다.")
     if ts.status != "제출": raise HTTPException(400, "제출된 타임시트만 반려할 수 있습니다.")
     ts.status = "반려"

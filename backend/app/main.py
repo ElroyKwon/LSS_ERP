@@ -30,7 +30,7 @@ from .utils.schema import (
     ensure_timesheet_admin_tables,
 )
 
-from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule, ai
+from .routers import auth, master, sales, forecast, execution, management, timesheet, vehicle, opinion, holiday, schedule, ai, mcp_schedule
 
 # Development convenience. Production deployments should run Alembic migrations
 # and set AUTO_CREATE_SCHEMA=false to keep schema changes explicit.
@@ -81,6 +81,7 @@ app.include_router(vehicle.router)
 app.include_router(opinion.router)
 app.include_router(holiday.router)
 app.include_router(schedule.router)
+app.include_router(mcp_schedule.router)
 app.include_router(ai.router)
 
 def _seconds_until_next_sunday(hour: int = 3) -> float:

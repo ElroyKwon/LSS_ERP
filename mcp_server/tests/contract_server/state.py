@@ -4,6 +4,23 @@ from dataclasses import dataclass, field
 from datetime import date
 
 
+def _default_schedules() -> dict[str, dict[str, object]]:
+    return {
+        "abcde123": {
+            "event_id": "abcde123",
+            "content": "contract schedule",
+            "type": "#123456",
+            "category": "company",
+            "is_all_day": True,
+            "date": "2026-07-28",
+            "end_date": "2026-07-28",
+            "schedule_kind": "project",
+            "etag": '"etag-1"',
+            "owner_user_id": 10,
+        }
+    }
+
+
 @dataclass
 class ContractState:
     user_id: int = 10
@@ -13,6 +30,8 @@ class ContractState:
     scopes: set[str] = field(
         default_factory=lambda: {
             "mcp:discover",
+            "schedule:read",
+            "schedule:write",
             "timesheet:read:self",
             "timesheet:write:self:draft",
         }
@@ -42,3 +61,17 @@ class ContractState:
     forced_error_status: int | None = None
     forced_error_code: str = "forced_error"
     forced_error_retryable: bool = False
+    schedules: dict[str, dict[str, object]] = field(
+        default_factory=_default_schedules
+    )
+    schedule_owner_state: str = "BOUND"
+    schedule_timesheet_status: str = "작성중"
+    schedule_idempotency: dict[
+        tuple[int, str],
+        tuple[str, int, dict[str, object]],
+    ] = field(default_factory=dict)
+    schedule_operations: dict[tuple[int, str], dict[str, object]] = field(
+        default_factory=dict
+    )
+    schedule_faults: dict[str, str] = field(default_factory=dict)
+    schedule_write_count: int = 0

@@ -24,12 +24,12 @@
           <span class="num-cell">{{ formatAmount(record[column.key]) }}</span>
         </template>
         <template v-else-if="column.key === 'project_name'">
-          <a-button type="link" class="title-link" @click.stop="openDrawer(record, 'view')">
+          <a-button type="link" class="title-link" @click.stop="openEstimateViewer(record)">
             {{ record.project_name || '-' }}
           </a-button>
         </template>
         <template v-else-if="column.key === 'action'">
-          <a-space>
+          <a-space @click.stop>
             <a-button v-if="canManageEstimate(record)" size="small" type="link" @click.stop="openDrawer(record, 'edit')">수정</a-button>
             <a-popconfirm
               v-if="canManageEstimate(record)"
@@ -216,6 +216,54 @@
         </div>
       </template>
     </a-modal>
+
+    <RecordDetailViewer
+      v-model:open="viewerOpen"
+      title="견적 상세"
+      kicker="ESTIMATE"
+      :heading="selectedItem?.project_name || selectedItem?.estimate_no"
+      :subheading="selectedItem?.estimate_no"
+      :record="selectedItem"
+      :sections="viewerSections"
+      :notes="selectedItem?.notes || ''"
+      @edit="editFromViewer"
+    >
+      <template #extra="{ record }">
+        <section class="viewer-section-like">
+          <h3>첨부파일</h3>
+          <a-list
+            v-if="viewerAttachments.length"
+            size="small"
+            :data-source="viewerAttachments"
+          >
+            <template #renderItem="{ item }">
+              <a-list-item>
+                <template #actions>
+                  <a-button type="link" size="small" @click.stop="downloadAttachment(item)">다운로드</a-button>
+                </template>
+                <a-list-item-meta>
+                  <template #title>{{ item.original_name }}</template>
+                  <template #description>{{ formatFileSize(item.file_size) }}</template>
+                </a-list-item-meta>
+              </a-list-item>
+            </template>
+          </a-list>
+          <a-empty v-else description="첨부파일 없음" />
+        </section>
+      </template>
+      <template #leftActions="{ record }">
+        <a-popconfirm
+          v-if="canManageEstimate(record)"
+          title="견적을 삭제하시겠습니까?"
+          ok-text="삭제"
+          ok-type="danger"
+          cancel-text="취소"
+          @confirm="deleteEstimateFromViewer(record)"
+        >
+          <a-button danger>삭제</a-button>
+        </a-popconfirm>
+      </template>
+    </RecordDetailViewer>
   </div>
 </template>
 
@@ -224,6 +272,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { UploadOutlined } from '@ant-design/icons-vue'
 import CrudTable from '@/components/common/CrudTable.vue'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 import { salesApi, masterApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 
@@ -241,6 +290,9 @@ const viewOnly = ref(false)
 const search = ref('')
 const formRef = ref()
 const attachments = ref([])
+const viewerOpen = ref(false)
+const selectedItem = ref(null)
+const viewerAttachments = ref([])
 const pendingFiles = ref([])
 
 const form = reactive(createEmptyForm())
@@ -281,6 +333,41 @@ const modalTitle = computed(() => {
   return editItem.value ? '견적 수정' : '견적 등록'
 })
 const currentUserId = computed(() => auth.user?.id ?? auth.user?.user_id ?? null)
+const viewerSections = computed(() => [
+  {
+    title: '기본 정보',
+    fields: [
+      { label: '견적번호', value: selectedItem.value?.estimate_no },
+      { label: '설계번호', value: selectedItem.value?.design_no },
+      { label: '프로젝트명', value: selectedItem.value?.project_name },
+      { label: '지역', value: selectedItem.value?.region },
+      { label: '사업부명', value: selectedItem.value?.business_division },
+      { label: '영업담당자', value: selectedItem.value?.sales_manager },
+      { label: '경쟁사', value: selectedItem.value?.competitor },
+    ],
+  },
+  {
+    title: '거래 및 일정',
+    fields: [
+      { label: '제출처', value: selectedItem.value?.submit_to },
+      { label: '발주처', value: selectedItem.value?.client_name },
+      { label: '발주예정일', value: selectedItem.value?.expected_order_date },
+      { label: '납기', value: selectedItem.value?.delivery_date },
+      { label: '견적일자', value: selectedItem.value?.estimate_date },
+      { label: '작성자', value: selectedItem.value?.creator_name },
+      { label: '작성일시', value: selectedItem.value?.created_at },
+    ],
+  },
+  {
+    title: '금액',
+    fields: [
+      { label: '견적가', value: formatAmount(selectedItem.value?.estimate_price) },
+      { label: '매출원가', value: formatAmount(selectedItem.value?.sales_cost) },
+      { label: '원가비', value: formatAmount(selectedItem.value?.overhead_amount) },
+      { label: '한전이익', value: formatAmount(selectedItem.value?.profit_amount) },
+    ],
+  },
+])
 
 function createEmptyForm() {
   return {
@@ -373,8 +460,29 @@ function canManageEstimate(item) {
 
 function estimateRowEvents(record) {
   return {
-    onClick: () => openDrawer(record, 'view'),
+    onClick: () => openEstimateViewer(record),
+    onDblclick: () => openEstimateViewer(record),
+    class: 'clickable-data-row',
   }
+}
+
+async function openEstimateViewer(item) {
+  selectedItem.value = item
+  viewerAttachments.value = []
+  viewerOpen.value = true
+  if (item?.id) {
+    try {
+      const res = await salesApi.getEstimateAttachments(item.id)
+      viewerAttachments.value = res.data || []
+    } catch {
+      viewerAttachments.value = []
+    }
+  }
+}
+
+function editFromViewer(item) {
+  viewerOpen.value = false
+  openDrawer(item, 'edit')
 }
 
 function openDrawer(item, mode = 'edit') {
@@ -485,6 +593,11 @@ async function deleteEstimate(item) {
   }
 }
 
+async function deleteEstimateFromViewer(item) {
+  await deleteEstimate(item)
+  viewerOpen.value = false
+}
+
 function beforeUpload() {
   return false
 }
@@ -548,10 +661,12 @@ onMounted(load)
 .page-wrap { display: flex; flex-direction: column; gap: 16px; }
 .num-cell { display: block; text-align: right; }
 .title-link { padding: 0; height: auto; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.page-wrap :deep(.ant-table-row) { cursor: pointer; }
+.page-wrap :deep(.clickable-data-row) { cursor: pointer; }
 .field-hint { color: #8c8c8c; font-size: 12px; font-weight: 400; }
 .attachment-list { margin-top: 10px; border: 1px solid #f0f0f0; border-radius: 6px; }
 .drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.viewer-section-like { padding: 18px 0; border-bottom: 1px solid #e5e7eb; }
+.viewer-section-like h3 { margin: 0 0 12px; font-size: 14px; font-weight: 800; color: #1f4f8f; }
 .estimate-form :deep(.ant-col-8),
 .estimate-form :deep(.ant-col-12),
 .estimate-form :deep(.ant-col-24) {

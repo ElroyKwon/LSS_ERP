@@ -33,6 +33,7 @@
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 950 }"
+               :custom-row="releaseRowEvents"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'material_name'">
@@ -44,8 +45,8 @@
             <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
           </template>
           <template v-if="column.key === 'action'">
-            <a-space size="small">
-              <a @click="openModal(record)">수정</a>
+            <a-space size="small" @click.stop>
+              <a @click.stop="openModal(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
               <a-popconfirm title="삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소"
                             @confirm="handleDelete(record.id)">
@@ -125,6 +126,38 @@
         </a-row>
       </a-form>
     </a-modal>
+
+    <RecordDetailViewer
+      v-model:open="viewerOpen"
+      title="출고 요청 상세"
+      kicker="RELEASE REQUEST"
+      :heading="selectedItem?.request_no || selectedItem?.project_name"
+      :record="selectedItem"
+      :sections="viewerSections"
+      :notes="selectedItem?.notes || ''"
+      @edit="editFromViewer"
+    >
+      <template #badge="{ record }">
+        <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
+      </template>
+      <template #extra="{ record }">
+        <section class="viewer-section-like">
+          <h3>출고 자재</h3>
+          <a-table
+            :columns="viewerMaterialColumns"
+            :data-source="releaseItemsOf(record)"
+            row-key="uid"
+            size="small"
+            :pagination="false"
+          />
+        </section>
+      </template>
+      <template #leftActions="{ record }">
+        <a-popconfirm title="삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소" @confirm="handleDeleteFromViewer(record.id)">
+          <a-button danger>삭제</a-button>
+        </a-popconfirm>
+      </template>
+    </RecordDetailViewer>
   </div>
 </template>
 
@@ -134,6 +167,7 @@ import { message } from 'ant-design-vue'
 import { InboxOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
 import { createClientPagination } from '@/utils/pagination'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 
 const clientPagination = createClientPagination()
 const RELEASE_ITEMS_MARKER = '\n---출고요청자재목록---\n'
@@ -143,6 +177,7 @@ const statusColor = { 요청: 'orange', 승인: 'blue', 출고: 'green', 취소:
 const items = ref([]), projects = ref([]), materials = ref([])
 const loading = ref(false), saving = ref(false), modalOpen = ref(false)
 const editItem = ref(null), formRef = ref()
+const viewerOpen = ref(false), selectedItem = ref(null)
 const filterProject = ref(null), filterStatus = ref(null)
 
 const emptyForm = { request_no:'', project_id:null, material_name:'', material_id:null,
@@ -184,6 +219,25 @@ const materialColumns = [
   { title: '규격', dataIndex: 'spec', width: 220, align: 'center', ellipsis: true },
   { title: '수량', key: 'quantity', width: 120, align: 'center' },
 ]
+
+const viewerMaterialColumns = [
+  { title: '품명', dataIndex: 'material_name', width: 260 },
+  { title: '규격', dataIndex: 'spec', width: 220 },
+  { title: '수량', dataIndex: 'quantity', width: 120, align: 'right' },
+]
+
+const viewerSections = computed(() => [
+  {
+    title: '요청 정보',
+    fields: [
+      { label: '요청번호', value: selectedItem.value?.request_no },
+      { label: '프로젝트', value: selectedItem.value?.project_name },
+      { label: '요청일', value: selectedItem.value?.request_date },
+      { label: '상태', value: selectedItem.value?.status },
+      { label: '총 수량', value: selectedItem.value ? totalReleaseQuantity(selectedItem.value).toLocaleString() : '' },
+    ],
+  },
+])
 
 function filterMaterialOption(input, option) {
   return (option?.searchText || '').includes((input || '').toLowerCase())
@@ -302,6 +356,29 @@ function openModal(item) {
   modalOpen.value = true
 }
 
+function openViewer(item) {
+  selectedItem.value = item
+  viewerOpen.value = true
+}
+
+function editFromViewer(item) {
+  viewerOpen.value = false
+  openModal(item)
+}
+
+async function handleDeleteFromViewer(id) {
+  await handleDelete(id)
+  viewerOpen.value = false
+}
+
+function releaseRowEvents(record) {
+  return {
+    onClick: () => openViewer(record),
+    onDblclick: () => openViewer(record),
+    class: 'clickable-data-row',
+  }
+}
+
 async function handleSave() {
   try {
     await formRef.value.validate(); saving.value = true
@@ -349,4 +426,8 @@ onMounted(load)
 .material-table :deep(.ant-table-thead > tr > th) { text-align:center !important; background:#fafafa; }
 :deep(.ant-table-thead > tr > th) { text-align:center !important; background:#fafafa; }
 :deep(.ant-card-head) { border-bottom:1px solid #f0f0f0; min-height:52px; }
+:deep(.clickable-data-row) { cursor: pointer; }
+:deep(.clickable-data-row:hover > td) { background: #f0f7ff !important; }
+.viewer-section-like { padding: 18px 0; border-bottom: 1px solid #e5e7eb; }
+.viewer-section-like h3 { margin: 0 0 12px; font-size: 14px; font-weight: 800; color: #1f4f8f; }
 </style>

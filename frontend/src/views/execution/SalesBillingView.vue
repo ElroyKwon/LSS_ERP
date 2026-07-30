@@ -33,6 +33,7 @@
       <a-table :columns="columns" :data-source="items" :loading="loading"
                :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1280 }"
+               :custom-row="billingRowEvents"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['bill_amount','vat_amount','total_amount'].includes(column.key)">
@@ -45,8 +46,8 @@
             <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
           </template>
           <template v-if="column.key === 'action'">
-            <a-space size="small">
-              <a @click="openDrawer(record)">수정</a>
+            <a-space size="small" @click.stop>
+              <a @click.stop="openDrawer(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
               <a-popconfirm v-if="record.status !== '승인'" title="승인 처리하고 채권관리로 생성하시겠습니까?"
                             ok-text="승인" cancel-text="취소" @confirm="handleApprove(record.id)">
@@ -187,6 +188,27 @@
         </div>
       </template>
     </a-modal>
+
+    <RecordDetailViewer
+      v-model:open="viewerOpen"
+      title="매출 청구 상세"
+      kicker="SALES BILLING"
+      :heading="selectedItem?.project_name || selectedItem?.bill_no"
+      :subheading="selectedItem?.bill_no"
+      :record="selectedItem"
+      :sections="viewerSections"
+      :notes="selectedItem?.notes || ''"
+      @edit="editFromViewer"
+    >
+      <template #badge="{ record }">
+        <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
+      </template>
+      <template #leftActions="{ record }">
+        <a-popconfirm title="삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소" @confirm="handleDeleteFromViewer(record.id)">
+          <a-button danger>삭제</a-button>
+        </a-popconfirm>
+      </template>
+    </RecordDetailViewer>
   </div>
 </template>
 
@@ -196,6 +218,7 @@ import { message } from 'ant-design-vue'
 import { FileTextOutlined, ClockCircleOutlined, CheckCircleOutlined, CheckOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi } from '@/api'
 import { createClientPagination } from '@/utils/pagination'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 
 const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---매출청구요구사항---\n'
@@ -205,6 +228,7 @@ const statusColor = { 발행요청:'orange', 발행완료:'blue', 확인:'green'
 const items = ref([]), projects = ref([]), purchaseContracts = ref([])
 const loading = ref(false), saving = ref(false), drawerOpen = ref(false)
 const editItem = ref(null), formRef = ref()
+const viewerOpen = ref(false), selectedItem = ref(null)
 const filterProject = ref(null), filterStatus = ref(null)
 
 const emptyForm = { bill_no:'', project_id:null, client_name:'', bill_amount:0, vat_amount:0, total_amount:0,
@@ -259,6 +283,41 @@ const relatedPurchaseColumns = [
   { title: '발행일', key: 'issue_day', width: 70, align: 'center' },
   { title: '구분', key: 'types', width: 210, align: 'center' },
 ]
+
+const viewerSections = computed(() => [
+  {
+    title: 'PJT 정보',
+    fields: [
+      { label: 'PJT No.', value: selectedItem.value?.pjt_no },
+      { label: '프로젝트', value: selectedItem.value?.project_name },
+      { label: '발주처', value: selectedItem.value?.client_name },
+      { label: '계약 금액', value: fmtMoney(selectedItem.value?.contract_amount) },
+    ],
+  },
+  {
+    title: '청구 정보',
+    fields: [
+      { label: '귀속월', value: selectedItem.value?.attribution_month },
+      { label: '발급구분', value: selectedItem.value?.issue_type },
+      { label: '청구일', value: selectedItem.value?.bill_date },
+      { label: '기재일자', value: selectedItem.value?.invoice_date },
+      { label: '공급가액', value: fmtMoney(selectedItem.value?.bill_amount) },
+      { label: '부가세', value: fmtMoney(selectedItem.value?.vat_amount) },
+      { label: '합계', value: fmtMoney(selectedItem.value?.total_amount) },
+      { label: '수주잔', value: fmtMoney(selectedItem.value?.order_balance) },
+      { label: '세금계산서', value: selectedItem.value?.invoice_no },
+      { label: '발행 이메일', value: selectedItem.value?.issue_email },
+    ],
+  },
+  {
+    title: '거래처 담당자',
+    fields: [
+      { label: '이름', value: selectedItem.value?.client_contact_name },
+      { label: '연락처', value: selectedItem.value?.client_contact_phone },
+      { label: '이메일', value: selectedItem.value?.client_contact_email },
+    ],
+  },
+])
 
 function makeRelatedPurchase(overrides = {}) {
   return {
@@ -363,6 +422,29 @@ function onRelatedPurchaseChange(record, id) {
   record.vendor_name = p?.vendor_name || ''
   record.issue_amount = Number(p?.contract_amount) || 0
   record.types = p ? typeFromPurchase(p.contract_type) : []
+}
+
+function openViewer(item) {
+  selectedItem.value = item
+  viewerOpen.value = true
+}
+
+function editFromViewer(item) {
+  viewerOpen.value = false
+  openDrawer(item)
+}
+
+async function handleDeleteFromViewer(id) {
+  await handleDelete(id)
+  viewerOpen.value = false
+}
+
+function billingRowEvents(record) {
+  return {
+    onClick: () => openViewer(record),
+    onDblclick: () => openViewer(record),
+    class: 'clickable-data-row',
+  }
 }
 
 function addRelatedPurchase() {

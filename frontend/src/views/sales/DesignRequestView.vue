@@ -6,6 +6,7 @@
       :data="items"
       :loading="loading"
       :scroll-x="1260"
+      :custom-row="designRowEvents"
       @create="openModal(null)"
     >
       <template #filters>
@@ -32,8 +33,8 @@
           <a-tag :color="statusColor[record.status]">{{ statusLabel[record.status] }}</a-tag>
         </template>
         <template v-if="column.key === 'action'">
-          <a-space>
-            <a @click="openModal(record)">수정</a>
+          <a-space @click.stop>
+            <a @click.stop="openModal(record)">수정</a>
             <a-divider type="vertical" />
             <a-popconfirm title="삭제하시겠습니까?" @confirm="handleDelete(record.id)">
               <a style="color: #e74c3c">삭제</a>
@@ -259,11 +260,108 @@
         </div>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="viewerOpen"
+      title="설계의뢰 상세"
+      width="920px"
+      wrap-class-name="design-request-viewer-modal"
+      :footer="null"
+    >
+      <div v-if="selectedItem" class="design-viewer">
+        <header class="viewer-header">
+          <div>
+            <p class="viewer-kicker">DESIGN REQUEST</p>
+            <h2>{{ selectedItem.project_name || '-' }}</h2>
+          </div>
+          <a-tag :color="statusColor[selectedItem.status]">{{ statusLabel[selectedItem.status] || '-' }}</a-tag>
+        </header>
+
+        <section class="viewer-section">
+          <h3>기본 정보</h3>
+          <div class="viewer-grid">
+            <div><span>요청 부서</span><strong>{{ selectedItem.department || '-' }}</strong></div>
+            <div><span>요청자</span><strong>{{ selectedItem.requester_name || '-' }}</strong></div>
+            <div><span>의뢰일</span><strong>{{ selectedItem.request_date || '-' }}</strong></div>
+            <div><span>완료(요구)일</span><strong>{{ selectedItem.due_date || '-' }}</strong></div>
+            <div><span>발주처</span><strong>{{ selectedItem.order_company_name || '-' }}</strong></div>
+            <div><span>건설사</span><strong>{{ selectedItem.construction_company_name || '-' }}</strong></div>
+            <div><span>거래처</span><strong>{{ selectedItem.partner_company_name || '-' }}</strong></div>
+            <div><span>소요시간</span><strong>{{ viewerReq.required_hours ?? '-' }} h</strong></div>
+          </div>
+        </section>
+
+        <section class="viewer-section">
+          <h3>건축 정보</h3>
+          <div class="viewer-grid">
+            <div><span>면적 or 수전용량</span><strong>{{ viewerReq.area_or_capacity || '-' }}</strong></div>
+            <div><span>위치</span><strong>{{ compactText([viewerReq.location_city, viewerReq.location_district]) }}</strong></div>
+            <div><span>지상</span><strong>{{ viewerReq.floors_above ?? '-' }}</strong></div>
+            <div><span>지하</span><strong>{{ viewerReq.floors_below ?? '-' }}</strong></div>
+          </div>
+        </section>
+
+        <section class="viewer-section">
+          <h3>설계 조건</h3>
+          <div class="viewer-grid">
+            <div><span>설계단계</span><strong>{{ visibleValue(viewerReq.design_stage, viewerReq.design_stage_other) || '-' }}</strong></div>
+            <div><span>작업내용</span><strong>{{ viewerReq.work_content || '-' }}</strong></div>
+            <div><span>설계대상</span><strong>{{ designTargetsText(viewerReq) || '-' }}</strong></div>
+            <div><span>HMI</span><strong>{{ visibleValue(viewerReq.hmi, viewerReq.hmi_other) || '-' }}</strong></div>
+            <div><span>컨트롤러</span><strong>{{ visibleValue(viewerReq.controller, viewerReq.controller_other) || '-' }}</strong></div>
+            <div><span>설계작업</span><strong>{{ listText(viewerReq.design_tasks) || '-' }}</strong></div>
+          </div>
+        </section>
+
+        <section class="viewer-section">
+          <h3>거래처 정보</h3>
+          <div class="viewer-contact-table">
+            <div class="viewer-contact-head">구분</div>
+            <div class="viewer-contact-head">상호</div>
+            <div class="viewer-contact-head">담당자</div>
+            <div class="viewer-contact-head">전화</div>
+            <div class="viewer-contact-head">E-Mail</div>
+            <template v-for="row in CONTACT_ROWS" :key="row.key">
+              <div>{{ row.label }}</div>
+              <div>{{ viewerContact(row.key).company_name || '-' }}</div>
+              <div>{{ viewerContact(row.key).manager || '-' }}</div>
+              <div>{{ viewerContact(row.key).phone || '-' }}</div>
+              <div>{{ viewerContact(row.key).email || '-' }}</div>
+            </template>
+          </div>
+        </section>
+
+        <section class="viewer-section" v-if="viewerNotes.length">
+          <h3>특기사항</h3>
+          <ol class="viewer-note-list">
+            <li v-for="note in viewerNotes" :key="note.index">
+              <span>{{ note.index }}</span>
+              <p>{{ note.text }}</p>
+            </li>
+          </ol>
+        </section>
+
+        <section class="viewer-section" v-if="viewerMemo">
+          <h3>메모</h3>
+          <p class="viewer-memo">{{ viewerMemo }}</p>
+        </section>
+
+        <div class="viewer-actions">
+          <a-popconfirm title="삭제하시겠습니까?" @confirm="deleteFromViewer">
+            <a-button danger>삭제</a-button>
+          </a-popconfirm>
+          <a-space>
+            <a-button @click="viewerOpen = false">닫기</a-button>
+            <a-button type="primary" @click="editFromViewer">수정</a-button>
+          </a-space>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import CrudTable from '@/components/common/CrudTable.vue'
 import { salesApi, masterApi } from '@/api'
@@ -288,7 +386,9 @@ const companies = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const modalOpen = ref(false)
+const viewerOpen = ref(false)
 const editItem = ref(null)
+const selectedItem = ref(null)
 const search = ref('')
 const filterStatus = ref(undefined)
 const formRef = ref()
@@ -393,6 +493,10 @@ function splitNotes(notes) {
   }
 }
 
+function splitDesignNotes(item) {
+  return splitNotes(item?.raw_notes ?? item?.notes)
+}
+
 function visibleValue(value, other) {
   return value === '기타' && other ? `기타(${other})` : value || ''
 }
@@ -430,6 +534,7 @@ function withRequirementMeta(item) {
   }
   return {
     ...item,
+    raw_notes: item.notes,
     notes: memo,
     design_stage_text: visibleValue(req.design_stage, req.design_stage_other),
     design_targets_text: targets.join(', '),
@@ -470,7 +575,7 @@ function resetForm(next) {
 function openModal(item) {
   editItem.value = item
   if (item) {
-    const { memo, req } = splitNotes(item.notes)
+    const { memo, req } = splitDesignNotes(item)
     resetForm({
       project_name: item.project_name || '',
       department: item.department || '',
@@ -506,6 +611,60 @@ function openModal(item) {
     resetForm()
   }
   modalOpen.value = true
+}
+
+const viewerParts = computed(() => splitDesignNotes(selectedItem.value))
+const viewerReq = computed(() => viewerParts.value.req || {})
+const viewerMemo = computed(() => viewerParts.value.memo || '')
+const viewerNotes = computed(() =>
+  (viewerReq.value.special_notes || [])
+    .map((text, index) => ({ index: index + 1, text }))
+    .filter((item) => String(item.text || '').trim()),
+)
+
+function compactText(parts) {
+  return parts.filter(Boolean).join(' ') || '-'
+}
+
+function listText(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join(', ') : value || ''
+}
+
+function designTargetsText(req) {
+  const targets = Array.isArray(req.design_targets) ? [...req.design_targets] : []
+  if (targets.includes('기타') && req.design_targets_other) {
+    targets[targets.indexOf('기타')] = `기타(${req.design_targets_other})`
+  }
+  return targets.filter(Boolean).join(', ')
+}
+
+function viewerContact(key) {
+  return viewerReq.value.partner_contacts?.[key] || {}
+}
+
+function openViewer(item) {
+  selectedItem.value = item
+  viewerOpen.value = true
+}
+
+function editFromViewer() {
+  if (!selectedItem.value) return
+  viewerOpen.value = false
+  openModal(selectedItem.value)
+}
+
+async function deleteFromViewer() {
+  if (!selectedItem.value?.id) return
+  await handleDelete(selectedItem.value.id)
+  viewerOpen.value = false
+}
+
+function designRowEvents(record) {
+  return {
+    onClick: () => openViewer(record),
+    onDblclick: () => openViewer(record),
+    class: 'clickable-design-row',
+  }
 }
 
 function toggleArray(field, value, checked) {
@@ -710,5 +869,139 @@ onMounted(load)
 }
 :deep(.ant-table-thead > tr > th) {
   text-align: center !important;
+}
+:deep(.clickable-design-row) {
+  cursor: pointer;
+}
+:deep(.clickable-design-row:hover > td) {
+  background: #f0f7ff !important;
+}
+.design-viewer {
+  background: #fff;
+  color: #111827;
+}
+.viewer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px 18px;
+  border-bottom: 2px solid #1f2937;
+}
+.viewer-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #2563eb;
+  letter-spacing: 0;
+}
+.viewer-header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+.viewer-section {
+  padding: 18px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+.viewer-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #1f4f8f;
+}
+.viewer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #edf0f3;
+  border-left: 1px solid #edf0f3;
+}
+.viewer-grid > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  min-height: 42px;
+  border-right: 1px solid #edf0f3;
+  border-bottom: 1px solid #edf0f3;
+}
+.viewer-grid span,
+.viewer-contact-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: #f8fafc;
+  font-weight: 700;
+  color: #475569;
+}
+.viewer-grid strong {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.viewer-contact-table {
+  display: grid;
+  grid-template-columns: 100px minmax(160px, 1.2fr) minmax(100px, 0.8fr) minmax(120px, 0.9fr) minmax(180px, 1.3fr);
+  border-top: 1px solid #edf0f3;
+  border-left: 1px solid #edf0f3;
+}
+.viewer-contact-table > div {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-right: 1px solid #edf0f3;
+  border-bottom: 1px solid #edf0f3;
+  word-break: break-word;
+}
+.viewer-contact-head {
+  padding: 8px;
+}
+.viewer-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.viewer-note-list li {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  min-height: 34px;
+  border: 1px solid #edf0f3;
+}
+.viewer-note-list span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  font-weight: 700;
+  color: #64748b;
+}
+.viewer-note-list p,
+.viewer-memo {
+  margin: 0;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .viewer-grid {
+    grid-template-columns: 1fr;
+  }
+  .viewer-contact-table {
+    overflow-x: auto;
+  }
 }
 </style>

@@ -145,8 +145,8 @@
         size="middle"
         :scroll="{ x: orderTableScrollX }"
         :row-class-name="rowClass"
+        :custom-row="projectRowEvents"
         @change="handleOrderTableChange"
-        @row-click="(record) => handleRowClick(record)"
       
         :sticky="{ offsetHeader: 56 }">
         <template #headerCell="{ column }">
@@ -185,7 +185,7 @@
             </a-tooltip>
           </template>
           <template v-if="column.key === 'action'">
-            <a-space size="small">
+            <a-space size="small" @click.stop>
               <a @click.stop="openDrawer(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
               <a-popconfirm :title="`'${record.project_name}' 을(를) 삭제하시겠습니까?`"
@@ -742,6 +742,33 @@
       </template>
     </a-modal>
 
+    <RecordDetailViewer
+      v-model:open="projectViewerOpen"
+      title="프로젝트 상세"
+      :record="selectedProject"
+      :heading="selectedProject?.project_name"
+      :subheading="selectedProject?.project_no"
+      :sections="projectViewerSections"
+      :notes="selectedProjectNotes"
+      width="860px"
+      @edit="editFromProjectViewer"
+    >
+      <template #badge="{ record }">
+        <a-tag :color="statusColor[record.status]">{{ record.status || '-' }}</a-tag>
+      </template>
+      <template #leftActions="{ record }">
+        <a-popconfirm
+          :title="`'${record.project_name}' 을(를) 삭제하시겠습니까?`"
+          ok-text="삭제"
+          ok-type="danger"
+          cancel-text="취소"
+          @confirm="deleteFromProjectViewer(record)"
+        >
+          <a-button danger>삭제</a-button>
+        </a-popconfirm>
+      </template>
+    </RecordDetailViewer>
+
     <a-modal
       :mask-closable="false"
       v-model:open="businessCategoryModalOpen"
@@ -784,6 +811,7 @@ import { executionApi, masterApi, managementApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { normalizeRole } from '@/utils/permissions'
 import { flattenDepartmentTree } from '@/utils/departments'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 
 const REQ_MARKER = '\n---프로젝트리스트요구사항---\n'
 const CONTRACT_FORMS = ['원도급', '하도급', '공동도급', '위탁', '기타']
@@ -948,6 +976,8 @@ const editItem  = ref(null)
 const formRef   = ref()
 const excelInput = ref()
 const selectedId = ref(null)
+const projectViewerOpen = ref(false)
+const selectedProject = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
 const projectEditorSnapshot = ref('')
@@ -1008,6 +1038,69 @@ const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
 const canAccessSalesPurchaseTabs = computed(() =>
   SALES_PURCHASE_TAB_ROLES.has(normalizeRole(auth.user?.role))
 )
+
+const selectedProjectNotes = computed(() => selectedProject.value?.notes || '')
+
+const projectViewerSections = computed(() => {
+  const record = selectedProject.value
+  if (!record) return []
+  return [
+    {
+      title: '기본 정보',
+      fields: [
+        { label: 'PJT NO.', value: record.project_no },
+        { label: '발주처', value: record.client_name },
+        { label: '사업부', value: record.business_division },
+        { label: '팀', value: record.team_name },
+        { label: '사업구분', value: record.business_category },
+        { label: 'SPG', value: record.spg },
+        { label: '공종', value: record.work_type },
+        { label: '매출 유형', value: record.revenue_type },
+      ],
+    },
+    {
+      title: '계약 및 착공',
+      fields: [
+        { label: '도급형태', value: record.contract_form },
+        { label: '국내/국외', value: record.contract_type },
+        { label: '계약 시작일', value: record.contract_start },
+        { label: '계약 종료일', value: record.contract_end },
+        { label: '착공 시작일', value: record.construct_start },
+        { label: '착공 종료일', value: record.construct_end },
+        { label: '계약금액', value: formatAmount(record.contract_amount) },
+        { label: '도급비율', value: `${toNumber(record.contract_rate).toFixed(2)}%` },
+      ],
+    },
+    {
+      title: '담당자',
+      fields: [
+        { label: '담당 PM', value: record.pm_name },
+        { label: 'PM 부서', value: record.pm_dept },
+        { label: '영업 담당자', value: record.sales_manager },
+        { label: '실행 담당자', value: record.execution_manager },
+        { label: '수금 담당자', value: record.collection_manager },
+        { label: '수금조건', value: record.collection_terms },
+        { label: '특수관계', value: record.special_relation },
+        { label: '보증기간', value: record.warranty_period },
+      ],
+    },
+    {
+      title: '금액 정보',
+      fields: [
+        { label: '계약 자재비', value: formatAmount(projectAmountValue(record, 'contract_material_cost')) },
+        { label: '계약 노무비', value: formatAmount(projectAmountValue(record, 'contract_labor_cost')) },
+        { label: '계약금액 합계', value: formatAmount(projectAmountValue(record, 'contract_detail_total')) },
+        { label: '재료비 합계', value: formatAmount(projectAmountValue(record, 'sales_material_cost_total')) },
+        { label: '노무비', value: formatAmount(projectAmountValue(record, 'sales_labor_cost')) },
+        { label: '경비', value: formatAmount(projectAmountValue(record, 'sales_expense_cost')) },
+        { label: '직접원가 소계', value: formatAmount(projectAmountValue(record, 'sales_direct_cost_subtotal')) },
+        { label: '간접비', value: formatAmount(projectAmountValue(record, 'sales_indirect_cost')) },
+        { label: '매출원가 합계', value: formatAmount(projectAmountValue(record, 'sales_cost_total')) },
+        { label: '세전이익', value: formatAmount(projectAmountValue(record, 'pre_tax_profit')) },
+      ],
+    },
+  ]
+})
 
 watch(canAccessSalesPurchaseTabs, (allowed) => {
   if (!allowed && ['sales', 'purchases'].includes(activeTab.value)) {
@@ -1378,6 +1471,31 @@ function isOverdue(record) {
 
 function handleRowClick(record) {
   selectedId.value = selectedId.value === record.id ? null : record.id
+}
+
+function openProjectViewer(record) {
+  selectedId.value = record.id
+  selectedProject.value = record
+  projectViewerOpen.value = true
+}
+
+function editFromProjectViewer(record) {
+  projectViewerOpen.value = false
+  openDrawer(record)
+}
+
+async function deleteFromProjectViewer(record) {
+  await handleDelete(record.id)
+  projectViewerOpen.value = false
+  selectedProject.value = null
+}
+
+function projectRowEvents(record) {
+  return {
+    onClick: () => openProjectViewer(record),
+    onDblclick: () => openProjectViewer(record),
+    class: 'clickable-data-row',
+  }
 }
 
 function toNumber(value) {

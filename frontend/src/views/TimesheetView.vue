@@ -34,16 +34,25 @@
           <a-col :span="6" v-for="s in weekKpis" :key="s.key">
             <a-card :bordered="false" class="kpi-mini" :class="s.cls">
               <div class="kpi-label">{{ s.label }}</div>
-              <div class="kpi-value" :style="`color:${s.color}`">{{ s.value }}<span class="kpi-unit">h</span></div>
+              <div class="kpi-value" :style="`color:${s.color}`">{{ s.value }}<span class="kpi-unit">{{ s.unit || 'h' }}</span></div>
             </a-card>
           </a-col>
         </a-row>
 
         <!-- 주간 그리드 -->
-        <a-card :bordered="false" class="grid-card">
+        <a-card :bordered="false" class="grid-card subgrid-card">
           <div class="grid-toolbar">
-            <span class="grid-toolbar-title">{{ timesheetMode === 'week' ? '주간 입력' : monthLabel }}</span>
-            <a-segmented v-model:value="timesheetMode" :options="timesheetModeOptions" @change="handleModeChange" />
+            <span class="grid-toolbar-title">{{ timesheetMode === 'week' ? '주간 입력 (세부업무)' : monthLabel }}</span>
+            <a-space>
+              <template v-if="timesheetMode === 'week'">
+                <a-button size="small" @click="toggleAllProjectGroups(true)">전체 접기</a-button>
+                <a-button size="small" @click="toggleAllProjectGroups(false)">전체 펼치기</a-button>
+                <a-button type="primary" size="small" @click="addProjectGroup">
+                  <template #icon><PlusOutlined /></template>프로젝트 추가
+                </a-button>
+              </template>
+              <a-segmented v-model:value="timesheetMode" :options="timesheetModeOptions" @change="handleModeChange" />
+            </a-space>
           </div>
           <a-alert
             v-if="timesheetMode === 'week'"
@@ -60,132 +69,201 @@
 
           <a-spin :spinning="weekLoading || monthLoading">
             <div class="ts-grid-wrap">
-              <table v-if="timesheetMode === 'week'" class="ts-grid" :style="{ minWidth: weekTableMinWidth + 'px' }">
+              <table v-if="timesheetMode === 'week'" class="ts-grid subgrid-table">
                 <thead>
                   <tr>
-                    <th class="col-source">구분</th>
-                    <th class="col-project resizable-th" :style="columnStyle('project')">
-                      <span>프로젝트</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('project', $event)" />
-                    </th>
-                    <th class="col-task resizable-th" :style="columnStyle('task')">
-                      <span>업무 내용</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('task', $event)" />
-                    </th>
-                    <th class="col-labor resizable-th" :style="columnStyle('labor')">
-                      <span>원가 구분</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('labor', $event)" />
-                    </th>
-                    <th class="col-type resizable-th" :style="columnStyle('type')">
-                      <span>작업유형</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('type', $event)" />
-                    </th>
-                    <th v-for="(d, i) in weekDays" :key="d.date"
+                    <th style="width:125px">구분</th>
+                    <th style="width:260px">프로젝트</th>
+                    <th style="width:220px">세부 업무 내용</th>
+                    <th style="width:90px">원가 구분</th>
+                    <th style="width:150px">작업유형</th>
+                    <th v-for="d in weekDays" :key="d.date"
                         :class="['col-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
                       <div class="day-header">
                         <span class="day-name">{{ d.label }}</span>
                         <span class="day-date">{{ d.short }}</span>
                       </div>
                     </th>
-                    <th class="col-total">주계</th>
-                    <th class="col-del"></th>
+                    <th class="col-total">합계</th>
+                    <th class="col-del">관리</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, idx) in entries" :key="idx">
-                    <!-- 구분 -->
-                    <td class="col-source">
-                      <a-select v-model:value="row.project_source" style="width:100%" :disabled="isLocked" @change="() => onProjectSourceChange(row)">
-                        <a-select-option v-for="source in PROJECT_SOURCE_TYPES" :key="source" :value="source">{{ source }}</a-select-option>
-                      </a-select>
-                    </td>
-                    <!-- 프로젝트 -->
-                    <td class="col-project" :style="columnStyle('project')">
-                      <a-auto-complete
-                        v-model:value="row.project_name"
-                        :options="projectOptionsForRow(row)"
-                        :filter-option="filterProjectOption"
-                        placeholder="PJT NO. 또는 프로젝트명"
-                        :disabled="isLocked"
-                        style="width:100%"
-                        @select="(v, opt) => onProjectSelect(idx, v, opt)"
-                        @search="(v) => onProjectSearch(row, v)"
-                        @change="(v) => onProjectInputChange(idx, v)"
-                      />
-                    </td>
-                    <td class="col-task" :style="columnStyle('task')">
-                      <a-input
-                        v-model:value="row.notes"
-                        :disabled="isLocked"
-                        placeholder="업무 내용"
-                        allow-clear
-                      />
-                    </td>
-                    <!-- 원가 구분 -->
-                    <td class="col-labor" :style="columnStyle('labor')">
-                      <a-select v-model:value="row.labor_type" style="width:100%" disabled>
-                        <a-select-option v-for="labor in LABOR_TYPES" :key="labor" :value="labor">{{ labor }}</a-select-option>
-                      </a-select>
-                    </td>
-                    <!-- 작업유형 -->
-                    <td class="col-type" :style="columnStyle('type')">
-                      <a-tree-select
-                        v-model:value="row.work_type"
-                        :tree-data="WORK_TYPE_TREE"
-                        :disabled="isLocked"
-                        :tree-default-expand-all="false"
-                        :show-search="true"
-                        :multiple="true"
-                        max-tag-count="responsive"
-                        tree-node-filter-prop="title"
-                        popup-class-name="timesheet-work-type-dropdown"
-                        placeholder="작업유형"
-                        style="width:100%"
-                        @change="value => onWorkTypeChange(idx, value)"
-                      />
-                    </td>
-                    <!-- 요일별 시간 입력 -->
-                    <td v-for="(d, di) in weekDays" :key="d.date"
-                        :class="['col-day', d.isWeekend ? 'weekend' : '']">
-                      <a-input-number
-                        v-model:value="row[DAY_KEYS[di]]"
-                        :min="0" :max="24" :step="0.5"
-                        :disabled="isLocked"
-                        class="hour-input"
-                        :class="row[DAY_KEYS[di]] > 0 ? 'has-hours' : ''"
-                        controls-position="right"
-                        @change="onHoursChange"
-                      />
-                    </td>
-                    <!-- 행 합계 -->
-                    <td class="col-total">
-                      <span :class="rowTotal(row) > 0 ? 'num-active' : 'num-zero'">
-                        {{ rowTotal(row) }}
-                      </span>
-                    </td>
-                    <!-- 삭제 -->
-                    <td class="col-del">
-                      <a-button v-if="!isLocked" type="text" size="small" danger
-                                @click="removeRow(idx)">
-                        <template #icon><DeleteOutlined /></template>
-                      </a-button>
-                    </td>
-                  </tr>
+                  <template v-for="(group, gIdx) in projectGroups" :key="gIdx">
+                    <!-- 프로젝트 헤더 행 (14개 컬럼 1:1 대응) -->
+                    <tr class="project-header-row">
+                      <!-- 1. 구분 + 접기/펼치기 버튼 -->
+                      <td class="col-source">
+                        <div class="source-fold-wrap">
+                          <a-button
+                            type="text"
+                            size="small"
+                            class="fold-toggle-btn"
+                            :title="group.collapsed ? '펼치기' : '접기'"
+                            @click="toggleProjectGroupFold(group)"
+                          >
+                            <template #icon>
+                              <DownOutlined :class="{ 'is-collapsed': group.collapsed }" />
+                            </template>
+                          </a-button>
+                          <a-select v-model:value="group.project_source" style="flex:1" :disabled="isLocked" @change="() => onGroupSourceChange(group)">
+                            <a-select-option v-for="source in PROJECT_SOURCE_TYPES" :key="source" :value="source">{{ source }}</a-select-option>
+                          </a-select>
+                        </div>
+                      </td>
+                      <!-- 2. 프로젝트 Autocomplete -->
+                      <td class="col-project">
+                        <a-auto-complete
+                          v-model:value="group.project_name"
+                          :options="projectOptionsForRow(group)"
+                          :filter-option="filterProjectOption"
+                          placeholder="PJT NO. 또는 프로젝트명"
+                          :disabled="isLocked"
+                          style="width:100%"
+                          @select="(v, opt) => onProjectSelectInGroup(gIdx, v, opt)"
+                          @search="(v) => onProjectSearch(group, v)"
+                        />
+                      </td>
+                      <!-- 3~5. 프로젝트 통합 컨트롤 바 -->
+                      <td colspan="3" class="project-summary-cell">
+                        <div class="project-summary-bar">
+                          <div class="summary-bar-left">
+                            <a-button v-if="!isLocked" size="small" type="primary" ghost @click="addSubTask(gIdx)">
+                              <template #icon><PlusOutlined /></template>업무 추가
+                            </a-button>
+                            <a-popover placement="right" trigger="hover">
+                              <template #title>
+                                <div class="popover-title">
+                                  <strong>{{ group.project_name || '프로젝트' }}</strong> 세부 업무 (총 {{ group.subTasks ? group.subTasks.length : 0 }}건)
+                                </div>
+                              </template>
+                              <template #content>
+                                <div class="popover-subtask-list">
+                                  <table v-if="group.subTasks && group.subTasks.length > 0" class="popover-subtask-table">
+                                    <thead>
+                                      <tr>
+                                        <th>순번</th>
+                                        <th>세부 업무 내용</th>
+                                        <th>작업유형</th>
+                                        <th>합계</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr v-for="(task, tIdx) in group.subTasks" :key="tIdx">
+                                        <td class="pop-idx">업무 {{ tIdx + 1 }}</td>
+                                        <td class="pop-notes">{{ task.notes || '(내용 미입력)' }}</td>
+                                        <td class="pop-type">{{ displayWorkType(task.work_type) }}</td>
+                                        <td class="pop-hours">{{ taskTotal(task) }}h</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                  <div v-else class="popover-empty">등록된 세부 업무가 없습니다.</div>
+                                </div>
+                              </template>
+                              <span class="subtask-count-badge popover-hover-target">
+                                등록 {{ group.subTasks ? group.subTasks.length : 0 }}건
+                              </span>
+                            </a-popover>
+                          </div>
+                          <div class="summary-bar-right">
+                            <span class="fold-status-btn" @click="toggleProjectGroupFold(group)">
+                              <template v-if="group.collapsed">
+                                ▶ {{ group.subTasks ? group.subTasks.length : 0 }}개 업무 펼치기
+                              </template>
+                              <template v-else>
+                                ▼ {{ group.subTasks ? group.subTasks.length : 0 }}개 업무 접기
+                              </template>
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <!-- 6~12. 요일별 그룹 합계 -->
+                      <td v-for="(d, di) in weekDays" :key="d.date" :class="['col-day', 'group-day-sum', d.isWeekend ? 'weekend' : '']">
+                        <span :class="groupDayHours(group, di) > 0 ? 'num-active' : 'num-zero'">
+                          {{ groupDayHours(group, di) > 0 ? groupDayHours(group, di) : '—' }}
+                        </span>
+                      </td>
+                      <!-- 13. 그룹 주간 총 합계 -->
+                      <td class="col-total group-total-val">
+                        {{ groupTotalHours(group) }}
+                      </td>
+                      <!-- 14. 프로젝트 그룹 삭제 -->
+                      <td class="col-del">
+                        <a-button v-if="!isLocked" type="text" size="small" danger @click="removeProjectGroup(gIdx)">
+                          <template #icon><DeleteOutlined /></template>
+                        </a-button>
+                      </td>
+                    </tr>
+
+                    <!-- 프로젝트 하위 세부 업무 (Sub-Task) 행들 -->
+                    <template v-if="!group.collapsed">
+                      <tr v-for="(task, tIdx) in group.subTasks" :key="tIdx" class="subtask-item-row">
+                        <td class="col-source subtask-indent-cell" style="text-align:center">
+                          <span class="subtask-tree-prefix">↳</span>
+                        </td>
+                        <td class="col-project subtask-name-cell">
+                          <span class="subtask-label">업무 {{ tIdx + 1 }}</span>
+                        </td>
+                        <td class="col-task">
+                          <a-input v-model:value="task.notes" :disabled="isLocked" placeholder="업무 세부 내용 입력" allow-clear />
+                        </td>
+                        <td class="col-labor">
+                          <a-select v-model:value="task.labor_type" style="width:100%" disabled>
+                            <a-select-option v-for="labor in LABOR_TYPES" :key="labor" :value="labor">{{ labor }}</a-select-option>
+                          </a-select>
+                        </td>
+                        <td class="col-type">
+                          <a-tree-select
+                            v-model:value="task.work_type"
+                            :tree-data="WORK_TYPE_TREE"
+                            :disabled="isLocked"
+                            :tree-default-expand-all="false"
+                            :show-search="true"
+                            :tree-checkable="true"
+                            max-tag-count="responsive"
+                            tree-node-filter-prop="title"
+                            popup-class-name="timesheet-work-type-dropdown"
+                            placeholder="작업유형"
+                            style="width:100%"
+                            @change="value => onWorkTypeChangeInGroup(group, tIdx, value)"
+                          />
+                        </td>
+                        <td v-for="(d, di) in weekDays" :key="d.date" :class="['col-day', d.isWeekend ? 'weekend' : '']">
+                          <a-input-number
+                            v-model:value="task[DAY_KEYS[di]]"
+                            :min="0" :max="24" :step="0.5"
+                            :disabled="isLocked"
+                            class="hour-input"
+                            :class="task[DAY_KEYS[di]] > 0 ? 'has-hours' : ''"
+                            controls-position="right"
+                          />
+                        </td>
+                        <td class="col-total">
+                          <span :class="taskTotal(task) > 0 ? 'num-active' : 'num-zero'">
+                            {{ taskTotal(task) }}
+                          </span>
+                        </td>
+                        <td class="col-del">
+                          <a-button v-if="!isLocked" type="text" size="small" danger @click="removeSubTask(gIdx, tIdx)">
+                            <template #icon><DeleteOutlined /></template>
+                          </a-button>
+                        </td>
+                      </tr>
+                    </template>
+                  </template>
 
                   <!-- 빈 상태 -->
-                  <tr v-if="entries.length === 0">
+                  <tr v-if="projectGroups.length === 0">
                     <td :colspan="14" class="empty-row">
-                      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE"
-                               description='아래 "일정 추가" 버튼으로 프로젝트별 시간을 입력하세요.' />
+                      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description='상단의 "프로젝트 추가" 버튼을 눌러 프로젝트 및 세부업무를 추가하세요.' />
                     </td>
                   </tr>
 
                   <!-- 일별 합계 행 -->
                   <tr class="total-row">
-                    <td colspan="5" class="total-label">일  계</td>
-                    <td v-for="(d, di) in weekDays" :key="d.date"
-                        :class="['col-day', d.isWeekend ? 'weekend' : '']">
-                      <span :class="dayTotalClass(di)">
+                    <td colspan="5" class="total-label">일 계 (전체 합계)</td>
+                    <td v-for="(d, di) in weekDays" :key="d.date" :class="['col-day', d.isWeekend ? 'weekend' : '']">
+                      <span :class="dayTotal(di) > 0 ? 'num-active' : 'num-zero'">
                         {{ dayTotal(di) > 0 ? dayTotal(di) : '—' }}
                       </span>
                     </td>
@@ -203,18 +281,6 @@
                       <span>프로젝트</span>
                       <span class="col-resizer" @mousedown.prevent="startColumnResize('project', $event)" />
                     </th>
-                    <th class="col-task resizable-th" :style="columnStyle('task')">
-                      <span>업무 내용</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('task', $event)" />
-                    </th>
-                    <th class="col-labor resizable-th" :style="columnStyle('labor')">
-                      <span>원가 구분</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('labor', $event)" />
-                    </th>
-                    <th class="col-type resizable-th" :style="columnStyle('type')">
-                      <span>작업유형</span>
-                      <span class="col-resizer" @mousedown.prevent="startColumnResize('type', $event)" />
-                    </th>
                     <th v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
                       <div class="day-header">
@@ -229,9 +295,6 @@
                   <tr v-for="row in monthlyRows" :key="row.key">
                     <td class="col-source">{{ row.project_source || '공통' }}</td>
                     <td class="col-project text-left" :style="columnStyle('project')">{{ row.project_name || '기타' }}</td>
-                    <td class="col-task text-left" :style="columnStyle('task')">{{ row.notes || '-' }}</td>
-                    <td class="col-labor" :style="columnStyle('labor')">{{ row.labor_type }}</td>
-                    <td class="col-type" :style="columnStyle('type')">{{ displayWorkType(row.work_type) }}</td>
                     <td v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="row.days[d.day] > 0 ? 'num-active' : 'num-zero'">
@@ -241,12 +304,12 @@
                     <td class="col-total num-bold">{{ row.total }}</td>
                   </tr>
                   <tr v-if="monthlyRows.length === 0">
-                    <td :colspan="monthDays.length + 6" class="empty-row">
+                    <td :colspan="monthDays.length + 3" class="empty-row">
                       <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="해당 월의 타임시트 내용이 없습니다." />
                     </td>
                   </tr>
                   <tr class="total-row">
-                    <td colspan="5" class="total-label">일  계</td>
+                    <td colspan="2" class="total-label">일  계</td>
                     <td v-for="d in monthDays" :key="d.date"
                         :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
                       <span :class="monthlyDayTotal(d.day) > 0 ? 'num-active' : 'num-zero'">
@@ -261,12 +324,12 @@
 
             <!-- 액션 바 -->
             <div v-if="timesheetMode === 'week'" class="action-bar">
-              <a-button v-if="!isLocked" @click="addRow" icon-placement="start">
-                <template #icon><PlusOutlined /></template>일정 추가
+              <a-button v-if="!isLocked" @click="addProjectGroup" icon-placement="start">
+                <template #icon><PlusOutlined /></template>프로젝트 추가
               </a-button>
               <div style="flex:1" />
               <a-space>
-                <a-button v-if="!isLocked" :loading="saving" @click="handleSave">
+                <a-button v-if="!isLocked" :loading="saving" type="primary" @click="handleSave">
                   저장
                 </a-button>
               </a-space>
@@ -304,8 +367,7 @@
 
         <a-card :bordered="false" class="table-card">
           <a-table :columns="summaryCols" :data-source="summaryRows" :loading="summaryLoading"
-                   :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" size="middle" row-key="key" :scroll="{ x: 760 }"
-        :sticky="{ offsetHeader: 56 }">
+                   :pagination="clientPagination" size="middle" row-key="key" :scroll="{ x: 760 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'total_hours'">
                 <span :class="record.total_hours > 0 ? 'num-active' : 'num-zero'">
@@ -316,6 +378,149 @@
           </a-table>
         </a-card>
       </a-tab-pane>
+
+      <!-- ═══════════════════════════════════════════════
+           탭 3: 타임시트 관리자
+      ═══════════════════════════════════════════════ -->
+      <a-tab-pane v-if="canAccessTimesheetAdminTab" key="admin" tab="타임시트(관리자)">
+
+        <div class="week-nav" style="margin-bottom:12px">
+          <a-button @click="prevAdminMonth"><LeftOutlined /></a-button>
+          <span class="week-period">{{ adminMonthLabel }}</span>
+          <a-button @click="nextAdminMonth"><RightOutlined /></a-button>
+          <a-button size="small" @click="goAdminThisMonth" style="margin-left:8px">이번 달</a-button>
+          <div style="flex:1" />
+          <a-button type="primary" :loading="adminLaborSaving" @click="saveAdminLabor">저장</a-button>
+        </div>
+
+        <a-spin :spinning="adminLaborLoading">
+          <a-card :bordered="false" class="table-card admin-labor-card">
+            <div class="admin-section-title">인건비 배부</div>
+            <div class="admin-table-wrap compact">
+              <table class="admin-labor-table">
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>누계 금액</th>
+                    <th>도급</th>
+                    <th>기타</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in editableAllocationRows" :key="row.category" :class="{ 'total-row': row.category === '합계' }">
+                    <td>{{ row.category }}</td>
+                    <td>
+                      <a-input-number
+                        v-if="row.category !== '합계'"
+                        v-model:value="row.total_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        style="width:100%"
+                      />
+                      <span v-else>{{ formatAmount(row.total_amount) }}</span>
+                    </td>
+                    <td>
+                      <a-input-number
+                        v-if="row.category !== '합계'"
+                        v-model:value="row.contract_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        style="width:100%"
+                      />
+                      <span v-else>{{ formatAmount(row.contract_amount) }}</span>
+                    </td>
+                    <td>
+                      <a-input-number
+                        v-if="row.category !== '합계'"
+                        v-model:value="row.other_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        style="width:100%"
+                      />
+                      <span v-else>{{ formatAmount(row.other_amount) }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </a-card>
+
+          <a-card :bordered="false" class="table-card admin-labor-card">
+            <div class="admin-section-title">프로젝트별 인건비</div>
+            <div class="admin-table-wrap">
+              <table class="admin-project-labor-table" :style="{ minWidth: `${adminProjectLaborTableMinWidth}px` }">
+                <colgroup>
+                  <col :style="columnStyle('adminProject')" />
+                  <col v-for="col in 4" :key="`admin-hours-${col}`" class="admin-hours-col" />
+                  <col class="admin-meta-col" />
+                  <col class="admin-meta-col" />
+                  <col class="admin-total-amount-col" />
+                  <col v-for="month in MONTH_NUMBERS" :key="`admin-month-${month}`" class="admin-month-amount-col" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowspan="2" class="resizable-th" :style="columnStyle('adminProject')">
+                      <span>프로젝트</span>
+                      <span class="col-resizer" @mousedown.prevent="startColumnResize('adminProject', $event)" />
+                    </th>
+                    <th colspan="2">월 투입시간</th>
+                    <th colspan="2">누적 투입시간</th>
+                    <th rowspan="2">매출 유형</th>
+                    <th rowspan="2">진행 상태</th>
+                    <th rowspan="2">인건비 합계</th>
+                    <th colspan="12">월별 인건비</th>
+                  </tr>
+                  <tr>
+                    <th>원가</th>
+                    <th>판관</th>
+                    <th>원가</th>
+                    <th>판관</th>
+                    <th v-for="month in MONTH_NUMBERS" :key="month">{{ month }}월</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in pagedAdminProjectRows" :key="row.key">
+                    <td class="admin-project-name" :style="columnStyle('adminProject')">{{ row.project }}</td>
+                    <td>{{ formatHours(row.monthly_cost_hours) }}</td>
+                    <td>{{ formatHours(row.monthly_admin_hours) }}</td>
+                    <td>{{ formatHours(row.cumulative_cost_hours) }}</td>
+                    <td>{{ formatHours(row.cumulative_admin_hours) }}</td>
+                    <td>{{ row.sales_type || '-' }}</td>
+                    <td>{{ row.status || '-' }}</td>
+                    <td class="amount-cell">{{ formatAmount(row.labor_total_amount) }}</td>
+                    <td v-for="month in MONTH_NUMBERS" :key="month" class="amount-cell">
+                      {{ formatAmount(row.monthly_labor?.[month] || 0) }}
+                    </td>
+                  </tr>
+                  <tr v-if="adminProjectRows.length === 0">
+                    <td :colspan="20" class="empty-row">
+                      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="인건비 계산 대상 타임시트가 없습니다." />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="admin-project-pagination">
+              <span>총 {{ adminProjectRows.length }}건</span>
+              <a-pagination
+                size="small"
+                :current="adminProjectPagination.current"
+                :page-size="adminProjectPagination.pageSize"
+                :total="adminProjectRows.length"
+                :show-size-changer="true"
+                :page-size-options="PAGE_SIZE_OPTIONS"
+                @change="handleAdminProjectPaginationChange"
+                @show-size-change="handleAdminProjectPageSizeChange"
+              />
+            </div>
+          </a-card>
+        </a-spin>
+      </a-tab-pane>
+
+
 
     </a-tabs>
 
@@ -386,39 +591,52 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import { message, Modal, Empty } from 'ant-design-vue'
 import {
-  LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined,
+  LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined, DownOutlined,
 } from '@ant-design/icons-vue'
 import { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
-import { canAccess } from '@/utils/permissions'
+import { canAccess, normalizeRole } from '@/utils/permissions'
+import { PAGE_SIZE_OPTIONS, createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const auth = useAuthStore()
 const canApproveTimesheet = computed(() => canAccess(auth.user?.role, '/timesheet', 'A'))
 const canSelectTimesheetEmployee = canApproveTimesheet
+const canAccessTimesheetAdminTab = computed(() => ['system_admin', 'accounting_manager'].includes(normalizeRole(auth.user?.role)))
 const PROJECT_SOURCE_TYPES = ['실행', '영업', '공통']
 const LABOR_TYPES = ['판관', '원가']
+const MONTH_NUMBERS = Array.from({ length: 12 }, (_, index) => index + 1)
+const LABOR_ALLOCATION_CATEGORIES = ['급여', '상여', '퇴충']
 const TIMESHEET_COLUMN_WIDTH_KEY = 'lss_erp_timesheet_column_widths'
 const DEFAULT_COLUMN_WIDTHS = {
   project: 220,
   task: 180,
   labor: 90,
   type: 140,
+  adminProject: 192,
 }
 const MIN_COLUMN_WIDTHS = {
   project: 160,
   task: 120,
   labor: 86,
   type: 100,
+  adminProject: 140,
 }
 const MAX_COLUMN_WIDTHS = {
   project: 640,
   task: 520,
   labor: 180,
   type: 420,
+  adminProject: 520,
 }
+const TIMESHEET_GRID_COLUMN_KEYS = ['project', 'task', 'labor', 'type']
+const ADMIN_HOUR_COL_WIDTH = 76
+const ADMIN_META_COL_WIDTH = 84
+const ADMIN_TOTAL_COL_WIDTH = 132
+const ADMIN_MONTH_COL_WIDTH = 112
 const WORK_TYPE_GROUPS = [
   { title: '공통', children: ['연차', '교육', '행사', '기타'] },
   { title: '영업', children: ['설계', 'SHOP작업', '견적', '제안서', '미팅', '기타'] },
@@ -429,6 +647,8 @@ const WORK_TYPE_TREE = WORK_TYPE_GROUPS.map(group => ({
   title: group.title,
   value: group.title,
   selectable: false,
+  checkable: false,
+  disableCheckbox: true,
   children: group.children.map(child => ({
     title: child,
     value: `${group.title} > ${child}`,
@@ -483,6 +703,27 @@ function fmtDate(s, fmt = 'MM/DD') {
   if (fmt === 'MM/DD') return `${d.getMonth()+1}/${String(d.getDate()).padStart(2,'0')}`
   return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
 }
+
+function toNumber(value) {
+  const n = Number(String(value ?? '').replace(/,/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+function formatAmount(value) {
+  const amount = Math.round(toNumber(value))
+  return amount > 0 ? amount.toLocaleString() : '—'
+}
+
+function formatHours(value) {
+  const hours = toNumber(value)
+  return hours > 0 ? Number(hours.toFixed(1)).toLocaleString() : '—'
+}
+
+const amountFormatter = value => {
+  if (value === null || value === undefined || value === '') return ''
+  return `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+const amountParser = value => toNumber(value)
 
 // ══════════════════════════════════════════════════
 // 탭 1: 내 타임시트
@@ -596,8 +837,17 @@ function stopColumnResize() {
 
 const fixedWeekWidth = 70 + (58 * 7) + 64 + 44
 const fixedMonthBaseWidth = 70 + 64
-const variableColumnWidth = computed(() => Object.values(columnWidths.value).reduce((sum, value) => sum + Number(value || 0), 0))
+const variableColumnWidth = computed(() =>
+  TIMESHEET_GRID_COLUMN_KEYS.reduce((sum, key) => sum + Number(columnWidths.value[key] || DEFAULT_COLUMN_WIDTHS[key] || 0), 0),
+)
 const weekTableMinWidth = computed(() => fixedWeekWidth + variableColumnWidth.value)
+const adminProjectLaborTableMinWidth = computed(() =>
+  (columnWidths.value.adminProject || DEFAULT_COLUMN_WIDTHS.adminProject)
+  + (ADMIN_HOUR_COL_WIDTH * 4)
+  + (ADMIN_META_COL_WIDTH * 2)
+  + ADMIN_TOTAL_COL_WIDTH
+  + (ADMIN_MONTH_COL_WIDTH * 12),
+)
 
 const weekEnd = computed(() => addDays(weekStart.value, 6))
 const weekDays = computed(() =>
@@ -629,7 +879,7 @@ const monthDays = computed(() => {
     }
   })
 })
-const monthTableMinWidth = computed(() => fixedMonthBaseWidth + variableColumnWidth.value + (monthDays.value.length * 54))
+const monthTableMinWidth = computed(() => fixedMonthBaseWidth + columnWidths.value.project + (monthDays.value.length * 54))
 function fmtDate2(s) {
   const d = new Date(s)
   return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
@@ -645,19 +895,32 @@ const weekLabelDisplay = computed(() => {
 
 const isLocked = computed(() => false)
 
+const ROOT_WORK_TYPE_GROUPS = ['공통', '영업', '실행', '경영지원']
+
+function extractValueString(item) {
+  if (!item) return ''
+  if (typeof item === 'object') return item.value || item.label || ''
+  return String(item)
+}
+
 function normalizeSingleWorkType(value) {
-  const workType = String(value || '').trim()
-  if (!workType) return null
+  const workType = extractValueString(value).trim()
+  if (!workType || ROOT_WORK_TYPE_GROUPS.includes(workType)) return null
   if (workType.includes('>')) return workType
   return LEGACY_WORK_TYPE_MAP[workType] || `공통 > ${workType}`
 }
 
 function normalizeWorkType(value) {
-  const values = Array.isArray(value)
-    ? value
-    : String(value || '')
+  let rawValues = value
+  if (value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.checked)) {
+    rawValues = value.checked
+  }
+  const values = Array.isArray(rawValues)
+    ? rawValues.map(extractValueString)
+    : String(rawValues || '')
       .split(WORK_TYPE_SEPARATOR)
       .flatMap(item => item.split(/\s*,\s*/))
+
   const normalized = values
     .map(normalizeSingleWorkType)
     .filter(Boolean)
@@ -860,40 +1123,160 @@ function onProjectInputChange(idx, value) {
   if (!row.project_source) row.project_source = '공통'
 }
 
-// 시간 계산
-const rowTotal = (row) => DAY_KEYS.reduce((s, k) => s + (Number(row[k]) || 0), 0)
-const dayTotal  = (di)  => entries.value.reduce((s, r) => s + (Number(r[DAY_KEYS[di]]) || 0), 0)
-const dayTotalClass = (di) => {
-  const total = dayTotal(di)
-  if (total === 0) return 'num-zero'
-  return total === 8 ? 'num-active' : 'daily-total-alert'
+// 서브그리드 프로젝트 그룹 관리
+const projectGroups = ref([])
+
+function syncEntriesToProjectGroups() {
+  const map = new Map()
+  ;(entries.value || []).forEach(e => {
+    const key = `${e.project_source || '공통'}::${e.project_id || e.project_name || ''}`
+    if (!map.has(key)) {
+      map.set(key, {
+        project_source: e.project_source || '공통',
+        project_id: e.project_id || null,
+        project_name: e.project_name || '',
+        collapsed: false,
+        subTasks: [],
+      })
+    }
+    map.get(key).subTasks.push({
+      notes: e.notes || '',
+      labor_type: e.labor_type || selectedEmployeeLaborType.value,
+      work_type: normalizeWorkType(e.work_type),
+      mon_hours: Number(e.mon_hours) || 0,
+      tue_hours: Number(e.tue_hours) || 0,
+      wed_hours: Number(e.wed_hours) || 0,
+      thu_hours: Number(e.thu_hours) || 0,
+      fri_hours: Number(e.fri_hours) || 0,
+      sat_hours: Number(e.sat_hours) || 0,
+      sun_hours: Number(e.sun_hours) || 0,
+    })
+  })
+  projectGroups.value = Array.from(map.values())
+  if (projectGroups.value.length === 0) {
+    addProjectGroup()
+  }
 }
-const weekTotalHours = computed(() => entries.value.reduce((s, r) => s + rowTotal(r), 0))
+
+function toggleProjectGroupFold(group) {
+  if (!group) return
+  group.collapsed = !group.collapsed
+}
+
+function toggleAllProjectGroups(collapse = true) {
+  projectGroups.value.forEach(group => {
+    group.collapsed = collapse
+  })
+}
+
+function addProjectGroup() {
+  projectGroups.value.push({
+    project_source: '실행',
+    project_id: null,
+    project_name: '',
+    collapsed: false,
+    subTasks: [
+      {
+        notes: '',
+        labor_type: selectedEmployeeLaborType.value,
+        work_type: ['실행 > 현장관리'],
+        mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0,
+      },
+    ],
+  })
+}
+
+function addSubTask(gIdx) {
+  const group = projectGroups.value[gIdx]
+  if (!group) return
+  if (!group.subTasks) group.subTasks = []
+  const defaultWorkType = group.project_source === '실행' ? ['실행 > 현장관리'] : (group.project_source === '영업' ? ['영업 > 견적'] : ['공통 > 기타'])
+  group.subTasks.push({
+    notes: '',
+    labor_type: selectedEmployeeLaborType.value,
+    work_type: defaultWorkType,
+    mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0,
+  })
+}
+
+function removeSubTask(gIdx, tIdx) {
+  const group = projectGroups.value[gIdx]
+  if (!group) return
+  group.subTasks.splice(tIdx, 1)
+  if (group.subTasks.length === 0) {
+    projectGroups.value.splice(gIdx, 1)
+  }
+}
+
+function removeProjectGroup(gIdx) {
+  projectGroups.value.splice(gIdx, 1)
+}
+
+function onGroupSourceChange(group) {
+  if (!group) return
+  if (isCommonSource(group)) {
+    group.project_id = null
+    loadCommonProjectSuggestions(group.project_name)
+  }
+}
+
+function onProjectSelectInGroup(gIdx, value, option = null) {
+  const group = projectGroups.value[gIdx]
+  if (!group) return
+  applyProjectOption(group, value, option)
+}
+
+function onWorkTypeChangeInGroup(group, tIdx, value) {
+  const task = group?.subTasks?.[tIdx]
+  if (!task) return
+  const selectedCount = Array.isArray(value)
+    ? value.filter(Boolean).length
+    : String(value || '').split(WORK_TYPE_SEPARATOR).filter(Boolean).length
+  const normalized = normalizeWorkType(value)
+  if (selectedCount > WORK_TYPE_LIMIT) {
+    message.warning(`작업유형은 최대 ${WORK_TYPE_LIMIT}개까지 선택할 수 있습니다.`)
+  }
+  task.work_type = normalized
+}
+
+function taskTotal(task) {
+  return DAY_KEYS.reduce((sum, k) => sum + (Number(task[k]) || 0), 0)
+}
+
+function groupTotalHours(group) {
+  return (group.subTasks || []).reduce((sum, task) => sum + taskTotal(task), 0)
+}
+
+function groupDayHours(group, di) {
+  const key = DAY_KEYS[di]
+  return (group.subTasks || []).reduce((sum, task) => sum + (Number(task[key]) || 0), 0)
+}
+
+const weekTotalHours = computed(() => {
+  return projectGroups.value.reduce((sum, group) => sum + groupTotalHours(group), 0)
+})
+
+function dayTotal(di) {
+  const key = DAY_KEYS[di]
+  return projectGroups.value.reduce((sum, group) =>
+    sum + (group.subTasks || []).reduce((tSum, task) => tSum + (Number(task[key]) || 0), 0), 0)
+}
+
 const monthlyDayTotal = (day) => monthlyRows.value.reduce((s, r) => s + (Number(r.days[day]) || 0), 0)
 const monthlyTotalHours = computed(() => monthlyRows.value.reduce((s, r) => s + (Number(r.total) || 0), 0))
-function onHoursChange() {} // computed 자동 반응
 
 // KPI 카드
 const weekKpis = computed(() => {
   const total = weekTotalHours.value
-  const mon = entries.value.filter(r => rowTotal(r) > 0).length
-  const ot  = DAY_KEYS.reduce((s, _, di) => s + Math.max(0, dayTotal(di) - 8), 0)
+  const projCount = projectGroups.value.filter(g => groupTotalHours(g) > 0).length
+  const ot = DAY_KEYS.reduce((s, _, di) => s + Math.max(0, dayTotal(di) - 8), 0)
   return [
-    { key: 'total', label: '주간 총 시간',   value: total, color: '#1677ff', cls: 'kpi-blue' },
-    { key: 'proj',  label: '투입 프로젝트', value: mon,   color: '#52c41a', cls: 'kpi-green' },
-    { key: 'ot',    label: '초과 근무',      value: ot.toFixed(1), color: ot > 0 ? '#fa8c16' : '#bfbfbf', cls: 'kpi-orange' },
-    { key: 'avg',   label: '일평균 (평일)',  value: (total / 5).toFixed(1), color: '#595959', cls: '' },
+    { key: 'total', label: '주간 총 시간', value: total, unit: 'h', color: '#1677ff', cls: 'kpi-blue' },
+    { key: 'proj', label: '투입 프로젝트', value: projCount, unit: '건', color: '#52c41a', cls: 'kpi-green' },
+    { key: 'ot', label: '초과 근무', value: ot.toFixed(1), unit: 'h', color: ot > 0 ? '#fa8c16' : '#bfbfbf', cls: 'kpi-orange' },
+    { key: 'avg', label: '일평균 (평일)', value: (total / 5).toFixed(1), unit: 'h', color: '#595959', cls: '' },
   ]
 })
-
-function addRow() {
-  entries.value.push({
-    project_id: null, project_name: '', project_source: '공통', spg: '공통', labor_type: selectedEmployeeLaborType.value, work_type: ['공통 > 기타'],
-    mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0,
-    fri_hours: 0, sat_hours: 0, sun_hours: 0, notes: '',
-  })
-}
-function removeRow(idx) { entries.value.splice(idx, 1) }
 
 function rowHasAnyContent(row) {
   return Boolean(
@@ -997,6 +1380,7 @@ async function loadSelectedHistorySheet() {
       notes: entry.notes || '',
       sort_order: index,
     }))
+    syncEntriesToProjectGroups()
     historyModalOpen.value = false
     message.success('과거 타임시트 내용을 현재 주차로 불러왔습니다. 저장 버튼을 눌러 반영하세요.')
   } catch (e) {
@@ -1015,9 +1399,29 @@ function handleModeChange(value) {
 }
 
 function handleEmployeeChange() {
+  if (selectedEmpId.value) {
+    summaryEmpId.value = selectedEmpId.value
+  }
   loadWeek()
+  loadSummary()
   if (timesheetMode.value === 'month') loadMonth()
 }
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'team') {
+    if (selectedEmpId.value) summaryEmpId.value = selectedEmpId.value
+    loadSummary()
+  } else if (newTab === 'admin') {
+    loadAdminLabor()
+  }
+})
+
+watch(selectedEmpId, (newEmpId) => {
+  if (newEmpId) {
+    summaryEmpId.value = newEmpId
+    loadSummary()
+  }
+})
 
 function refreshCurrentMode() {
   loadSalesProjects()
@@ -1057,6 +1461,7 @@ async function loadWeek() {
       labor_type: selectedEmployeeLaborType.value,
       work_type: normalizeWorkType(e.work_type),
     }))
+    syncEntriesToProjectGroups()
   } finally { weekLoading.value = false }
 }
 
@@ -1079,18 +1484,12 @@ async function loadMonth() {
       ;(sheet.entries || []).forEach(entry => {
         const projectName = entry.project_name || '기타'
         const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
-        const laborType = entry.labor_type || '원가'
-        const workType = serializeWorkType(entry.work_type)
-        const taskNote = entry.notes || ''
-        const key = `${projectSource}::${entry.project_id || projectName}::${taskNote}::${laborType}::${workType}`
+        const key = `${projectSource}::${entry.project_id || projectName}`
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key,
             project_source: projectSource,
             project_name: projectName,
-            notes: taskNote,
-            labor_type: laborType,
-            work_type: displayWorkType(workType),
             days: {},
             total: 0,
           })
@@ -1119,10 +1518,36 @@ async function loadMonth() {
 async function handleSave() {
   const empId = selectedEmpId.value || myEmpId.value
   if (!empId) { message.warning('직원을 선택해주세요.'); return }
+
+  const flattened = []
+  projectGroups.value.forEach(group => {
+    ;(group.subTasks || []).forEach(task => {
+      if (rowHasAnyContent({ project_name: group.project_name, notes: task.notes, ...task })) {
+        flattened.push({
+          project_source: group.project_source,
+          project_id: group.project_id,
+          project_name: group.project_name,
+          notes: task.notes,
+          labor_type: task.labor_type || selectedEmployeeLaborType.value,
+          work_type: serializeWorkType(task.work_type),
+          mon_hours: Number(task.mon_hours) || 0,
+          tue_hours: Number(task.tue_hours) || 0,
+          wed_hours: Number(task.wed_hours) || 0,
+          thu_hours: Number(task.thu_hours) || 0,
+          fri_hours: Number(task.fri_hours) || 0,
+          sat_hours: Number(task.sat_hours) || 0,
+          sun_hours: Number(task.sun_hours) || 0,
+        })
+      }
+    })
+  })
+  entries.value = flattened
+
   saving.value = true
   try {
     const res = await timesheetApi.save({
-      employee_id: empId, week_start: weekStart.value,
+      employee_id: empId,
+      week_start: weekStart.value,
       entries: entries.value.map(row => ({
         ...row,
         labor_type: selectedEmployeeLaborType.value,
@@ -1133,8 +1558,13 @@ async function handleSave() {
     tsId.value = res.data.id
     tsStatus.value = res.data.status
     message.success('저장되었습니다.')
-  } catch (e) { message.error(e.response?.data?.detail || '저장 오류') }
-  finally { saving.value = false }
+    await loadSummary()
+    syncEntriesToProjectGroups()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '저장 오류')
+  } finally {
+    saving.value = false
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -1144,10 +1574,25 @@ const summaryMonthStart = ref(firstDayOfMonth(todayStr))
 const summaryEmpId = ref(null)
 const summaryRows = ref([])
 const summaryLoading = ref(false)
+const adminLaborLoading = ref(false)
+const adminLaborSaving = ref(false)
+const adminMonthStart = ref(firstDayOfMonth(todayStr))
+const allocationRows = ref(LABOR_ALLOCATION_CATEGORIES.map(category => ({
+  category,
+  total_amount: 0,
+  contract_amount: 0,
+  other_amount: 0,
+})))
+const adminProjectRows = ref([])
+const adminProjectPagination = ref({ current: 1, pageSize: 20 })
 
 const summaryMonthEnd = computed(() => lastDayOfMonth(summaryMonthStart.value))
 const summaryMonthLabel = computed(() => {
   const d = new Date(summaryMonthStart.value)
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`
+})
+const adminMonthLabel = computed(() => {
+  const d = new Date(adminMonthStart.value)
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`
 })
 
@@ -1159,6 +1604,33 @@ const summaryStats = computed(() => {
     { key: 'project', label: '투입 프로젝트', value: new Set(all.map(row => row.project_name)).size, unit: '건', color: '#52c41a', cls: 'kpi-green' },
     { key: 'row', label: '통계 행', value: all.length, unit: '건', color: '#595959', cls: '' },
   ]
+})
+
+const editableAllocationRows = computed(() => {
+  const rowsByCategory = new Map(allocationRows.value.map(row => [row.category, row]))
+  const rows = LABOR_ALLOCATION_CATEGORIES.map(category => {
+    const row = rowsByCategory.get(category)
+    return row || { category, total_amount: 0, contract_amount: 0, other_amount: 0 }
+  })
+  rows.push({
+    category: '합계',
+    total_amount: rows.reduce((sum, row) => sum + toNumber(row.total_amount), 0),
+    contract_amount: rows.reduce((sum, row) => sum + toNumber(row.contract_amount), 0),
+    other_amount: rows.reduce((sum, row) => sum + toNumber(row.other_amount), 0),
+  })
+  return rows
+})
+
+const adminYearMonth = computed(() => {
+  const d = new Date(adminMonthStart.value)
+  return { year: d.getFullYear(), month: d.getMonth() + 1 }
+})
+const pagedAdminProjectRows = computed(() => {
+  const pageSize = Number(adminProjectPagination.value.pageSize) || 20
+  const maxPage = Math.max(1, Math.ceil(adminProjectRows.value.length / pageSize))
+  const current = Math.min(maxPage, Math.max(1, Number(adminProjectPagination.value.current) || 1))
+  const start = (current - 1) * pageSize
+  return adminProjectRows.value.slice(start, start + pageSize)
 })
 
 const summaryCols = [
@@ -1186,6 +1658,35 @@ function nextSummaryMonth() {
 function goSummaryThisMonth() {
   summaryMonthStart.value = firstDayOfMonth(todayStr)
   loadSummary()
+}
+
+function prevAdminMonth() {
+  adminMonthStart.value = addMonths(adminMonthStart.value, -1)
+  loadAdminLabor()
+}
+
+function nextAdminMonth() {
+  adminMonthStart.value = addMonths(adminMonthStart.value, 1)
+  loadAdminLabor()
+}
+
+function goAdminThisMonth() {
+  adminMonthStart.value = firstDayOfMonth(todayStr)
+  loadAdminLabor()
+}
+
+function handleAdminProjectPaginationChange(page, pageSize) {
+  adminProjectPagination.value = {
+    current: page || 1,
+    pageSize: pageSize || adminProjectPagination.value.pageSize,
+  }
+}
+
+function handleAdminProjectPageSizeChange(_page, pageSize) {
+  adminProjectPagination.value = {
+    current: 1,
+    pageSize: pageSize || adminProjectPagination.value.pageSize,
+  }
 }
 
 async function loadSummary() {
@@ -1239,6 +1740,71 @@ async function loadSummary() {
   }
 }
 
+async function loadAdminLabor() {
+  if (!canAccessTimesheetAdminTab.value) return
+  adminLaborLoading.value = true
+  try {
+    const { year, month } = adminYearMonth.value
+    const res = await timesheetApi.getAdminLabor({ year, month })
+    const rows = res.data?.allocation_rows || []
+    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => {
+      const row = rows.find(item => item.category === category) || {}
+      return {
+        category,
+        total_amount: toNumber(row.total_amount),
+        contract_amount: toNumber(row.contract_amount),
+        other_amount: toNumber(row.other_amount),
+      }
+    })
+    adminProjectRows.value = res.data?.project_rows || []
+    adminProjectPagination.value = { ...adminProjectPagination.value, current: 1 }
+  } catch (e) {
+    adminProjectRows.value = []
+    message.error(e.response?.data?.detail || '타임시트 관리자 데이터를 불러오지 못했습니다.')
+  } finally {
+    adminLaborLoading.value = false
+  }
+}
+
+async function saveAdminLabor() {
+  if (!canAccessTimesheetAdminTab.value) return
+  adminLaborSaving.value = true
+  try {
+    const { year, month } = adminYearMonth.value
+    const res = await timesheetApi.saveAdminLabor({
+      year,
+      month,
+      rows: LABOR_ALLOCATION_CATEGORIES.map(category => {
+        const row = allocationRows.value.find(item => item.category === category) || {}
+        return {
+          category,
+          total_amount: toNumber(row.total_amount),
+          contract_amount: toNumber(row.contract_amount),
+          other_amount: toNumber(row.other_amount),
+        }
+      }),
+    })
+    const rows = res.data?.allocation_rows || []
+    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => {
+      const row = rows.find(item => item.category === category) || {}
+      return {
+        category,
+        total_amount: toNumber(row.total_amount),
+        contract_amount: toNumber(row.contract_amount),
+        other_amount: toNumber(row.other_amount),
+      }
+    })
+    adminProjectRows.value = res.data?.project_rows || []
+    message.success('인건비 배부 금액을 저장했습니다.')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '인건비 배부 금액 저장에 실패했습니다.')
+  } finally {
+    adminLaborSaving.value = false
+  }
+}
+
+
+
 async function loadBase() {
   const [emp, proj] = await Promise.all([
     timesheetApi.getEmployees(),
@@ -1254,7 +1820,7 @@ async function loadBase() {
 
 onMounted(async () => {
   await loadBase()
-  await Promise.all([loadWeek(), loadSummary()])
+  await Promise.all([loadWeek(), loadSummary(), loadAdminLabor()])
 })
 
 onBeforeUnmount(() => {
@@ -1361,6 +1927,9 @@ onBeforeUnmount(() => {
   padding: 7px 8px;
 }
 .history-preview-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   background: #fafafa;
   text-align: center;
 }
@@ -1379,13 +1948,107 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.5;
 }
-.ts-grid-wrap { overflow-x: auto; }
+.admin-labor-card {
+  margin-bottom: 12px;
+}
+.admin-section-title {
+  margin-bottom: 10px;
+  color: #1f1f1f;
+  font-size: 14px;
+  font-weight: 700;
+}
+.admin-table-wrap {
+  overflow: auto;
+}
+.admin-table-wrap.compact {
+  max-width: 720px;
+}
+.admin-labor-table,
+.admin-project-labor-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.admin-labor-table th,
+.admin-labor-table td,
+.admin-project-labor-table th,
+.admin-project-labor-table td {
+  border: 1px solid #f0f0f0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  text-align: center;
+}
+.admin-labor-table th,
+.admin-project-labor-table th {
+  background: #fafafa;
+  color: #1f1f1f;
+  font-weight: 700;
+}
+.admin-labor-table thead,
+.admin-project-labor-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: #fafafa;
+  box-shadow: inset 0 -1px 0 #f0f0f0;
+}
+.admin-labor-table {
+  min-width: 640px;
+}
+.admin-labor-table th:first-child,
+.admin-labor-table td:first-child {
+  width: 90px;
+  font-weight: 700;
+}
+.admin-labor-table .total-row td {
+  background: #f7fbff;
+  font-weight: 700;
+}
+.admin-project-labor-table {
+  min-width: 100%;
+}
+.admin-project-labor-table col.admin-hours-col { width: 76px; }
+.admin-project-labor-table col.admin-meta-col { width: 84px; }
+.admin-project-labor-table col.admin-total-amount-col { width: 132px; }
+.admin-project-labor-table col.admin-month-amount-col { width: 112px; }
+.admin-project-labor-table .admin-project-name {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-project-labor-table .amount-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.admin-project-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 12px;
+  color: #595959;
+  font-size: 13px;
+}
+.ts-grid-wrap { overflow: auto; }
 
 /* ── 타임시트 그리드 테이블 ── */
 .ts-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
 .ts-grid th, .ts-grid td { border: 1px solid #f0f0f0; padding: 5px 3px; }
+.ts-grid thead {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: #fafafa;
+  box-shadow: inset 0 -1px 0 #f0f0f0;
+}
 .ts-grid thead tr { background: #fafafa; }
-.ts-grid th { text-align: center; font-weight: 600; color: #595959; white-space: nowrap; }
+.ts-grid th {
+  text-align: center;
+  font-weight: 600;
+  color: #595959;
+  white-space: nowrap;
+}
 
 .col-source  { width: 70px; min-width: 70px; text-align: center; }
 .col-project { width: 220px; min-width: 160px; }
@@ -1424,8 +2087,30 @@ onBeforeUnmount(() => {
 .month-grid { width: max-content; min-width: 100%; }
 .text-left { text-align: left; }
 
-.weekend { background: #fafafa; }
+.weekend { background: #fff7f7 !important; color: #ff4d4f !important; }
 .today   { background: #e6f4ff; }
+
+.weekend .day-name,
+.weekend .day-date,
+th.weekend,
+td.weekend,
+.col-day.weekend,
+.col-month-day.weekend {
+  color: #ff4d4f !important;
+}
+
+.weekend .num-active,
+.weekend .num-zero {
+  color: #ff4d4f !important;
+}
+
+:deep(.col-day.weekend .hour-input .ant-input-number-input) {
+  color: #ff4d4f !important;
+}
+:deep(.col-day.weekend .hour-input.has-hours .ant-input-number-input) {
+  color: #ff4d4f !important;
+  font-weight: 700;
+}
 
 .day-header  { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .day-name    { font-size: 12px; font-weight: 700; }
@@ -1494,4 +2179,179 @@ onBeforeUnmount(() => {
 .table-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
+
+/* ── 서브그리드 타임시트테스트 전용 스타일 ── */
+.subgrid-card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+.project-header-row td {
+  background: #f0f7ff !important;
+  border-top: 2px solid #bae0ff !important;
+  border-bottom: 1px solid #d9d9d9 !important;
+  font-weight: 600;
+}
+.source-fold-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fold-toggle-btn {
+  padding: 0 2px !important;
+  color: #1677ff !important;
+  font-size: 11px;
+}
+.fold-toggle-btn .anticon {
+  transition: transform 0.2s ease;
+}
+.fold-toggle-btn .anticon.is-collapsed {
+  transform: rotate(-90deg);
+}
+.project-summary-cell {
+  padding: 4px 8px !important;
+  background: #f4f8fe !important;
+}
+.project-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.summary-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.summary-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fold-status-btn {
+  font-size: 11px;
+  color: #1677ff;
+  background: #ffffff;
+  border: 1px solid #91caff;
+  border-radius: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.fold-status-btn:hover {
+  background: #e6f4ff;
+  color: #0958d9;
+  border-color: #1677ff;
+}
+.subtask-count-badge {
+  font-size: 11px;
+  color: #595959;
+  background: #ffffff;
+  border: 1px solid #d9d9d9;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.subtask-item-row td {
+  background: #ffffff;
+  border-bottom: 1px dashed #f0f0f0;
+}
+.subtask-indent-cell {
+  padding-left: 12px !important;
+  vertical-align: middle;
+}
+.subtask-tree-prefix {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1677ff;
+}
+.subtask-name-cell {
+  text-align: center;
+}
+.subtask-label {
+  font-size: 11px;
+  color: #595959;
+  font-weight: 600;
+  background: #fafafa;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #f0f0f0;
+}
+.group-day-sum {
+  text-align: center;
+  font-weight: 600;
+}
+.group-total-val {
+  font-weight: 700;
+  color: #1677ff;
+  text-align: center;
+}
+.popover-hover-target {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.popover-hover-target:hover {
+  background: #1677ff !important;
+  color: #ffffff !important;
+  border-color: #1677ff !important;
+}
+
+.popover-title {
+  font-size: 13px;
+  color: #1f1f1f;
+}
+.popover-subtask-list {
+  max-width: 440px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.popover-subtask-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.popover-subtask-table th {
+  background: #fafafa;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+  color: #595959;
+  font-weight: 600;
+}
+.popover-subtask-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f5f5f5;
+  color: #1a2535;
+}
+.pop-idx {
+  font-weight: 600;
+  color: #1677ff;
+  white-space: nowrap;
+}
+.pop-notes {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-type {
+  font-size: 11px;
+  color: #8c8c8c;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-hours {
+  font-weight: 700;
+  color: #1677ff;
+  text-align: right;
+  white-space: nowrap;
+}
+.popover-empty {
+  padding: 12px;
+  color: #8c8c8c;
+  font-size: 12px;
+  text-align: center;
+}
 </style>

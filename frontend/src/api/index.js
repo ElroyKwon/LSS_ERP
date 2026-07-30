@@ -56,6 +56,12 @@ export const masterApi = {
   createNotice: (d) => api.post('/notices', d),
   updateNotice: (id, d) => api.put(`/notices/${id}`, d),
   deleteNotice: (id) => api.delete(`/notices/${id}`),
+  uploadNoticeAttachment: (id, formData) => api.post(`/notices/${id}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
+  }),
+  downloadNoticeAttachment: (id) => api.get(`/notice-attachments/${id}/download`, { responseType: 'blob' }),
+  deleteNoticeAttachment: (id) => api.delete(`/notice-attachments/${id}`),
   getUsers: () => api.get('/users'),
   createUser: (d) => api.post('/users', d),
   updateUser: (id, d) => api.put(`/users/${id}`, d),
@@ -205,6 +211,8 @@ export const opinionApi = {
 export const timesheetApi = {
   getEmployees: () => api.get('/timesheets/employees'),
   searchCommonProjects: (p) => api.get('/timesheets/common-projects', { params: p }),
+  getAdminLabor: (p) => api.get('/timesheets/admin-labor', { params: p }),
+  saveAdminLabor: (d) => api.post('/timesheets/admin-labor', d),
   getList:     (p) => api.get('/timesheets', { params: p }),
   getWeek:     (empId, weekStart) => api.get('/timesheets/week', { params: { employee_id: empId, week_start: weekStart } }),
   save:        (d) => api.post('/timesheets', d),
@@ -232,6 +240,7 @@ export const managementApi = {
   createPayable: (d) => api.post('/management/payables', d),
   updatePayable: (id, d) => api.put(`/management/payables/${id}`, d),
   getPLReport: (year, month) => api.get('/reports/profit-loss', { params: { year, month } }),
+  getProfitLossData: (year) => api.get('/management/analysis/profit-loss-data', { params: { year } }),
 }
 
 

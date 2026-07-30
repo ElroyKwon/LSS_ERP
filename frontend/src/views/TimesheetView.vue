@@ -1716,8 +1716,8 @@ onBeforeUnmount(() => {
   color: #1f1f1f;
   font-weight: 700;
 }
-.admin-labor-table thead,
-.admin-project-labor-table thead {
+.admin-labor-table thead th,
+.admin-project-labor-table thead th {
   position: sticky;
   top: 0;
   z-index: 8;
@@ -1766,7 +1766,7 @@ onBeforeUnmount(() => {
 /* ── 타임시트 그리드 테이블 ── */
 .ts-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
 .ts-grid th, .ts-grid td { border: 1px solid #f0f0f0; padding: 5px 3px; }
-.ts-grid thead {
+.ts-grid thead th {
   position: sticky;
   top: 0;
   z-index: 8;

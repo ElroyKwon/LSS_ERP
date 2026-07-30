@@ -25,8 +25,7 @@
       :scroll="{ x: scrollX }"
       :custom-row="customRow"
       @change="handleTableChange"
-    
-        :sticky="{ offsetHeader: 56 }">
+      :sticky="{ offsetHeader: 56 }">
       <template v-for="(_, name) in $slots" #[name]="slotData">
         <slot :name="name" v-bind="slotData" />
       </template>

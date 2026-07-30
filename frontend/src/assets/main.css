@@ -131,7 +131,19 @@ body {
 
 .ant-table-wrapper .ant-table-content,
 .ant-table-wrapper .ant-table-body {
-  overflow: auto !important;
+  overflow-x: auto !important;
+}
+
+.ant-table-wrapper .ant-table-content {
+  overflow-y: hidden !important;
+}
+
+.ant-table-wrapper .ant-table-body {
+  overflow-y: auto !important;
+}
+
+.ant-table-wrapper .ant-table-cell {
+  vertical-align: middle;
 }
 
 .ant-table-wrapper .ant-table-pagination.ant-pagination {

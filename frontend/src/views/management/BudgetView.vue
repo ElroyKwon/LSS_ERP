@@ -47,7 +47,7 @@
         :columns="columns"
         :data-source="tableRows"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         size="middle"
         row-key="key"
         :scroll="{ x: 1720 }"
@@ -96,7 +96,9 @@ import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { managementApi, masterApi } from '@/api'
 import { flattenDepartmentTree } from '@/utils/departments'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---예산월별요구사항---\n'
 const BUDGET_ITEMS = [
   { major: '접대비', item: '법인카드', category: '접대비-법인카드', legacyCategory: '법인카드', editable: true },

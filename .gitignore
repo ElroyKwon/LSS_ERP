@@ -4,6 +4,8 @@ backend/.env
 deploy/.env
 backend/credentials/*.json
 backend/google_calendar.env
+docs/private/
+docs/private/
 
 # Python
 __pycache__/

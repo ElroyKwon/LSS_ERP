@@ -1,0 +1,264 @@
+import os
+import re
+import traceback
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Tuple
+from fastapi import APIRouter, HTTPException, status, Query
+from pydantic import BaseModel
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(dotenv_path=BASE_DIR / "google_calendar.env")
+
+router = APIRouter(
+    prefix="/api/schedules",
+    tags=["Schedules"]
+)
+
+class ScheduleCreate(BaseModel):
+    content: str
+    date: Optional[str] = None
+    end_date: Optional[str] = None
+    type: str
+    category: Optional[str] = "company"
+    user_name: str
+    is_all_day: Optional[bool] = True
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+SCOPES = ['https://www.googleapis.com/auth/calendar']
+
+env_credentials_dir = os.getenv("GOOGLE_CUSTOM_CREDENTIALS_DIR")
+FILE_NAME_WORK = os.getenv("GOOGLE_CUSTOM_KEY_WORK_NAME")
+HARDCODED_COMPANY_ID = os.getenv("GOOGLE_CUSTOM_CALENDAR_COMPANY_ID")
+FILE_NAME_REFRESH = os.getenv("GOOGLE_CUSTOM_KEY_REFRESH_NAME")
+HARDCODED_REFRESH_CALENDAR_ID = os.getenv("GOOGLE_CUSTOM_CALENDAR_REFRESH_ID")
+
+def _resolve_credentials_dir(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    normalized = value.strip().replace("\\", os.sep).replace("/", os.sep)
+    path = Path(normalized)
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return str(path.resolve())
+
+
+CREDENTIALS_DIR = _resolve_credentials_dir(env_credentials_dir)
+
+_google_services_cache: Dict[str, Tuple[any, str]] = {}
+
+
+def get_calendar_config_and_service(category: str):
+    if category in _google_services_cache:
+        return _google_services_cache[category]
+
+    if not CREDENTIALS_DIR:
+        raise HTTPException(
+            status_code=500,
+            detail="?섍꼍 蹂??'GOOGLE_CUSTOM_CREDENTIALS_DIR'???뺤쓽?섏? ?딆븯?듬땲??"
+        )
+
+    if category == "refresh":
+        json_path = os.path.join(CREDENTIALS_DIR, FILE_NAME_REFRESH or "")
+        calendar_id = HARDCODED_REFRESH_CALENDAR_ID
+    else:
+        json_path = os.path.join(CREDENTIALS_DIR, FILE_NAME_WORK or "")
+        calendar_id = HARDCODED_COMPANY_ID
+
+    if not calendar_id:
+        raise HTTPException(
+            status_code=500,
+            detail=f"'{category}' 罹섎┛??ID ?섍꼍 蹂?섍? ?뺤쓽?섏? ?딆븯?듬땲??"
+        )
+        
+    if not json_path or not os.path.exists(json_path):
+        raise HTTPException(
+            status_code=500, 
+            detail=f"?몄쬆???꾩슂??援ш? JSON ???뚯씪??寃쎈줈???놁뒿?덈떎: {json_path}"
+        )
+        
+    creds = service_account.Credentials.from_service_account_file(json_path, scopes=SCOPES)
+    service = build('calendar', 'v3', credentials=creds)
+    
+    _google_services_cache[category] = (service, calendar_id)
+    return service, calendar_id
+
+
+@router.get("")
+def get_schedules(category: str = Query("company", description="company ?먮뒗 refresh")):
+    try:
+        service, target_calendar_id = get_calendar_config_and_service(category)
+        
+        events_result = service.events().list(
+            calendarId=target_calendar_id,
+            maxResults=250,
+            singleEvents=True,
+            orderBy='startTime',
+            timeZone='Asia/Seoul'
+        ).execute()
+        
+        google_events = events_result.get('items', [])
+        
+        formatted_schedules = []
+        for event in google_events:
+            start_info = event.get('start', {})
+            is_all_day = 'date' in start_info
+            
+            if is_all_day:
+                event_date = start_info.get('date')
+                start_date = event_date
+                start_time = None
+                end_time = None
+                
+                # Google Calendar all-day end date is exclusive, so subtract 1 day
+                end_date_str = event.get('end', {}).get('date', start_date)
+                try:
+                    dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+                    end_date = (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+                except Exception:
+                    end_date = start_date
+            else:
+                date_time_str = start_info.get('dateTime', '')
+                event_date = date_time_str[:10] if date_time_str else ''
+                start_date = event_date
+                start_time = date_time_str.replace('T', ' ')[:19] if date_time_str else None
+                
+                end_time_str = event.get('end', {}).get('dateTime', '')
+                end_time = end_time_str.replace('T', ' ')[:19] if end_time_str else None
+                end_date = end_time_str[:10] if end_time_str else event_date
+            
+            raw_summary = event.get('summary', '?쒕ぉ ?놁쓬')
+            content = raw_summary
+            user_name = ""  
+            
+            if raw_summary.startswith("[") and "]" in raw_summary:
+                try:
+                    match = re.match(r"^\[(.*?)\]\s*(.*)$", raw_summary)
+                    if match:
+                        user_name = match.group(1).strip()
+                        content = match.group(2).strip()
+                except Exception:
+                    pass
+            
+            desc = event.get('description', '')
+            schedule_type = "success" 
+            
+            if "?좏삎:" in desc:
+                try:
+                    raw_type = desc.split("?좏삎:")[1].split("(")[0].strip()
+                    if raw_type in ["?뺤긽", "?낅Т", "success"]:
+                        schedule_type = "success"
+                    elif raw_type in ["寃쎄퀬", "warning"]:
+                        schedule_type = "warning"
+                    elif raw_type in ["以묒슂", "error", "?쇨렐"]:
+                        schedule_type = "error"
+                    elif raw_type in ["吏꾪뻾以?, "processing"]:
+                        schedule_type = "processing"
+                    elif raw_type in ["湲고?", "default"]:
+                        schedule_type = "default"
+                    else:
+                        schedule_type = raw_type
+                except Exception:
+                    pass
+
+            formatted_schedules.append({
+                "id": event.get('id'),
+                "content": content,          
+                "user_name": user_name,      
+                "date": event_date,
+                "type": schedule_type,
+                "is_all_day": is_all_day,
+                "start_time": start_time,
+                "end_time": end_time,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            
+        return formatted_schedules
+
+    except HttpError as he:
+        print(f"\n=== GOOGLE CALENDAR API HTTP ERROR ({category}) ===")
+        print(f"Status Code: {he.resp.status}, Reason: {he.content}")
+        raise HTTPException(status_code=he.resp.status, detail="援ш? 罹섎┛??API ?곕룞 以??ㅻ쪟 諛쒖깮")
+    except Exception as e:
+        print(f"\n=== GOOGLE CALENDAR FETCH ERROR ({category}) ===")
+        traceback.print_exc()
+        print("==================================================\n")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"援ш? ({category}) ?쇱젙 遺덈윭?ㅺ린 ?ㅽ뙣 ?먯씤: {str(e)}"
+        )
+
+
+@router.post("")
+def create_schedule(payload: ScheduleCreate):
+    try:
+        service, target_calendar_id = get_calendar_config_and_service(payload.category)
+        
+        display_summary = f"[{payload.user_name}] {payload.content}"
+        
+        if payload.is_all_day:
+            start_date_str = payload.date
+            if not start_date_str:
+                raise HTTPException(status_code=400, detail="종일 일정은 시작일이 필요합니다.")
+            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_dt = datetime.strptime(payload.end_date or start_date_str, "%Y-%m-%d")
+            if end_dt < start_dt:
+                raise HTTPException(status_code=400, detail="종료일은 시작일보다 빠를 수 없습니다.")
+            end_date_str = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            event = {
+                'summary': display_summary,
+                'description': f"?좏삎: {payload.type} (?щ궡 Timesheet ?쒖뒪???곕룞 - ?깅줉?? {payload.user_name})",
+                'start': {
+                    'date': start_date_str,
+                    'timeZone': 'Asia/Seoul',
+                },
+                'end': {
+                    'date': end_date_str,
+                    'timeZone': 'Asia/Seoul',
+                },
+            }
+        else:
+            if not payload.start_time or not payload.end_time:
+                raise HTTPException(status_code=400, detail="?쒓컙 吏???쇱젙? start_time怨?end_time ?꾨뱶媛 ?꾩슂?⑸땲??")
+            start_dt = datetime.strptime(payload.start_time, "%Y-%m-%d %H:%M:%S")
+            end_dt = datetime.strptime(payload.end_time, "%Y-%m-%d %H:%M:%S")
+            
+            event = {
+                'summary': display_summary,
+                'description': f"?좏삎: {payload.type} (?щ궡 Timesheet ?쒖뒪???곕룞 - ?깅줉?? {payload.user_name})",
+                'start': {
+                    'dateTime': start_dt.isoformat(),
+                    'timeZone': 'Asia/Seoul',
+                },
+                'end': {
+                    'dateTime': end_dt.isoformat(),
+                    'timeZone': 'Asia/Seoul',
+                },
+            }
+        
+        google_result = service.events().insert(calendarId=target_calendar_id, body=event).execute()
+        
+        return {
+            "status": "success",
+            "id": google_result.get('id')
+        }
+        
+    except HttpError as he:
+        print(f"\n=== GOOGLE CALENDAR API HTTP ERROR ({payload.category}) ===")
+        print(f"Status Code: {he.resp.status}, Reason: {he.content}")
+        raise HTTPException(status_code=he.resp.status, detail="援ш? 罹섎┛???곌린 沅뚰븳???녾굅??API ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.")
+    except Exception as e:
+        print(f"\n=== GOOGLE CALENDAR INSERT ERROR ({payload.category}) ===")
+        traceback.print_exc()
+        print("==================================================\n")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"援ш? API ({payload.category}) ?꾩넚 ?ㅽ뙣 ?먯씤: {str(e)}"
+        )

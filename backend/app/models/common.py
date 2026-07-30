@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -96,6 +96,23 @@ class Notice(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     creator = relationship("User", foreign_keys=[created_by])
+    attachments = relationship("NoticeAttachment", back_populates="notice", cascade="all, delete-orphan")
+
+
+class NoticeAttachment(Base):
+    __tablename__ = "notice_attachments"
+    id = Column(Integer, primary_key=True, index=True)
+    notice_id = Column(Integer, ForeignKey("notices.id", ondelete="CASCADE"), nullable=False, index=True)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False)
+    content_type = Column(String(100))
+    file_size = Column(Integer, default=0)
+    file_path = Column(String(500), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    notice = relationship("Notice", back_populates="attachments")
+    creator = relationship("User", foreign_keys=[created_by])
 
 
 class OpinionPost(Base):
@@ -141,6 +158,53 @@ class OpinionNotificationSetting(Base):
 
     user = relationship("User", foreign_keys=[user_id])
 
+
+
+class Holiday(Base):
+    __tablename__ = "holidays"
+    __table_args__ = (
+        UniqueConstraint("year", "month", "day", name="uq_holidays_ymd"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(String(4), nullable=False, index=True)
+    month = Column(String(2), nullable=False, index=True)
+    day = Column(String(2), nullable=False, index=True)
+    content = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    @property
+    def date(self) -> str:
+        return f"{self.year}-{self.month}-{self.day}"
+
+
+class CalendarSchedule(Base):
+    __tablename__ = "calendar_schedules"
+    __table_args__ = (
+        UniqueConstraint("google_event_id", "category", name="uq_calendar_schedules_google_category"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    google_event_id = Column(String(255), nullable=False, index=True)
+    category = Column(String(20), nullable=False, index=True)  # company / refresh
+    content = Column(String(255), nullable=False)
+    type = Column(String(30), nullable=False)
+    user_name = Column(String(100), nullable=False)
+    is_all_day = Column(Boolean, default=True)
+    date = Column(Date)
+    end_date = Column(Date)
+    start_time = Column(DateTime)
+    end_time = Column(DateTime)
+    schedule_kind = Column(String(50))
+    timesheet_project_id = Column(Integer)
+    timesheet_project_name = Column(String(255))
+    timesheet_project_source = Column(String(20), default="공통")
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    creator = relationship("User", foreign_keys=[created_by])
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

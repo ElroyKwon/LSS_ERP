@@ -45,7 +45,7 @@
         :columns="tableColumns(tab)"
         :data-source="tableRows(tab)"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         :scroll="{ x: tableScrollXValue(tab), y: 620 }"
         row-key="row_key"
         size="small"
@@ -97,7 +97,7 @@
         :columns="summaryColumns"
         :data-source="businessDivisionSummaryRows"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         :scroll="{ x: summaryTableScrollX }"
         row-key="business_division"
         size="small"
@@ -121,7 +121,7 @@
         :columns="businessGroupSummaryColumns"
         :data-source="businessGroupSummaryRows"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         :scroll="{ x: businessGroupSummaryTableScrollX }"
         row-key="business_category"
         size="small"
@@ -147,7 +147,9 @@ import { message } from 'ant-design-vue'
 import { LeftOutlined, RightOutlined, SaveOutlined } from '@ant-design/icons-vue'
 import { executionApi, managementApi, masterApi } from '@/api'
 import { flattenDepartmentTree } from '@/utils/departments'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const now = new Date()
 const selectedMonth = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
 const loading = ref(false)

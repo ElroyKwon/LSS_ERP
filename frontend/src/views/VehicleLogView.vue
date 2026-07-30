@@ -56,7 +56,7 @@
           </template>
 
           <a-table :columns="logCols" :data-source="logs" :loading="logsLoading"
-                   :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+                   :pagination="clientPagination"
                    row-key="id" size="middle" :scroll="{ x: 1100 }"
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
@@ -108,7 +108,7 @@
             <a-card :bordered="false" class="dash-card" title="차량별 현황">
               <template #extra><span class="card-extra">{{ month }}월 기준</span></template>
               <a-table :columns="vehicleStatCols" :data-source="stats?.by_vehicle || []"
-                       :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" size="small" row-key="plate_no"
+                       :pagination="clientPagination" size="small" row-key="plate_no"
         :sticky="{ offsetHeader: 56 }">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'distance'">
@@ -140,7 +140,7 @@
           </template>
 
           <a-table :columns="vehicleCols" :data-source="vehicles" :loading="vehiclesLoading"
-                   :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }" row-key="id" size="middle" :scroll="{ x: 1000 }"
+                   :pagination="clientPagination" row-key="id" size="middle" :scroll="{ x: 1000 }"
         :sticky="{ offsetHeader: 56 }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'insurance_exp'">
@@ -426,7 +426,9 @@ import {
   DashboardOutlined, FireOutlined, EnvironmentOutlined,
 } from '@ant-design/icons-vue'
 import { vehicleApi, masterApi, executionApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const VEHICLE_TYPES = ['세단', 'SUV', '승합', '화물', '기타']

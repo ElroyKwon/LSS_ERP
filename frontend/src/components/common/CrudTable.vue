@@ -24,9 +24,8 @@
       size="middle"
       :scroll="{ x: scrollX }"
       :custom-row="customRow"
-      @change="$emit('tableChange', $event)"
-    
-        :sticky="{ offsetHeader: 56 }">
+      @change="handleTableChange"
+      :sticky="{ offsetHeader: 56 }">
       <template v-for="(_, name) in $slots" #[name]="slotData">
         <slot :name="name" v-bind="slotData" />
       </template>
@@ -50,7 +49,11 @@ const props = defineProps({
   pagination: { type: [Object, Boolean], default: () => ({ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }) },
   customRow: Function,
 })
-defineEmits(['create', 'tableChange'])
+const emit = defineEmits(['create', 'tableChange'])
+
+function handleTableChange(pagination, filters, sorter, extra) {
+  emit('tableChange', pagination, filters, sorter, extra)
+}
 
 const total = computed(() => props.data?.length || 0)
 </script>

@@ -56,7 +56,7 @@
         :columns="visibleColumns"
         :data-source="opinions"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         :scroll="{ x: 1120 }"
         :sticky="{ offsetHeader: 56 }"
         row-key="id"
@@ -260,7 +260,9 @@ import {
 } from '@ant-design/icons-vue'
 import { opinionApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const auth = useAuthStore()
 const opinions = ref([])
 const loading = ref(false)

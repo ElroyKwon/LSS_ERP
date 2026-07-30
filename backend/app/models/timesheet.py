@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Numeric, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Date, DateTime, Numeric, ForeignKey, Text, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -47,6 +47,46 @@ class TimesheetEntry(Base):
     sun_hours    = Column(Numeric(4, 2), default=0)
     sort_order   = Column(Integer, default=0)
     notes        = Column(Text)
+    schedule_event_id = Column(String(255), index=True, nullable=True)
+    schedule_category = Column(String(20), nullable=True)
 
     timesheet = relationship("Timesheet", back_populates="entries")
     project   = relationship("Project", foreign_keys=[project_id])
+
+
+class TimesheetLaborAllocation(Base):
+    """월별 인건비 배부 입력값"""
+    __tablename__ = "timesheet_labor_allocations"
+    __table_args__ = (UniqueConstraint("allocation_year", "allocation_month", "category"),)
+
+    id               = Column(Integer, primary_key=True, index=True)
+    allocation_year  = Column(Integer, nullable=False)
+    allocation_month = Column(Integer, nullable=False)
+    category         = Column(String(20), nullable=False)
+    total_amount     = Column(Numeric(18, 2), default=0)
+    contract_amount  = Column(Numeric(18, 2), default=0)
+    other_amount     = Column(Numeric(18, 2), default=0)
+    contract_ratio_amount = Column(Numeric(18, 2), default=0)
+    contract_actual_amount = Column(Numeric(18, 2), default=0)
+    contract_diff_amount = Column(Numeric(18, 2), default=0)
+    other_ratio_amount = Column(Numeric(18, 2), default=0)
+    other_actual_amount = Column(Numeric(18, 2), default=0)
+    other_diff_amount = Column(Numeric(18, 2), default=0)
+    created_by       = Column(Integer, ForeignKey("users.id"))
+    created_at       = Column(DateTime, default=func.now())
+    updated_at       = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class TimesheetMonthlyClose(Base):
+    """월별 타임시트 마감 상태."""
+    __tablename__ = "timesheet_monthly_closes"
+    __table_args__ = (UniqueConstraint("close_year", "close_month"),)
+
+    id          = Column(Integer, primary_key=True, index=True)
+    close_year  = Column(Integer, nullable=False)
+    close_month = Column(Integer, nullable=False)
+    is_closed   = Column(Boolean, default=True, nullable=False)
+    closed_by   = Column(Integer, ForeignKey("users.id"))
+    closed_at   = Column(DateTime)
+    created_at  = Column(DateTime, default=func.now())
+    updated_at  = Column(DateTime, default=func.now(), onupdate=func.now())

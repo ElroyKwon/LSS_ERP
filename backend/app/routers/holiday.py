@@ -1,52 +1,57 @@
-from fastapi import APIRouter, Query
-from app.config import settings
-import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.services.holiday_sync import list_holidays, sync_holidays_for_year
 
 router = APIRouter()
 
+
 @router.get("/api/holiday")
-async def get_holiday(year: str = Query(..., description="조회하고자 하는 연도 (YYYY)")):
-    service_key = settings.DATE_SERVIECE_KEY
-    
-    if not service_key:
-        print("경고: LSS ERP 시스템에 DATE_SERVIECE_KEY 환경 변수가 설정되어 있지 않습니다.")
-        return []
-        
-    url = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getHoliDeInfo"
-    
-    params = {
-        "solYear": year,
-        "numOfRows": "100",
-        "_type": "json",
-        "ServiceKey": service_key
-    }
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(url, params=params, timeout=5.0)
-            
-            if response.status_code != 200:
-                return []
-                
-            res_data = response.json()
-            body = res_data.get("response", {}).get("body", {})
-            items = body.get("items", {}).get("item", [])
-            
-            if not items:
-                return []
-                
-            if isinstance(items, dict):
-                items = [items]
-                
-            holiday_list = []
-            for item in items:
-                if item.get("isHoliday") == "Y":
-                    locdate = str(item.get("locdate"))
-                    formatted_date = f"{locdate[0:4]}-{locdate[4:6]}-{locdate[6:8]}"
-                    holiday_list.append(formatted_date)
-            
-            return holiday_list
-            
-        except Exception as e:
-            print(f"공공데이터 API 통신 중 예외 에러 발생: {e}")
-            return []
+async def get_holiday(year: str = Query(..., description="조회하고자 하는 연도 (YYYY)"), db: Session = Depends(get_db)):
+    try:
+        rows = list_holidays(db, year)
+        if not rows:
+            await sync_holidays_for_year(db, year)
+            rows = list_holidays(db, year)
+        return [row.date for row in rows]
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        print(f"공휴일 조회 실패: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="공휴일 데이터를 불러오지 못했습니다.",
+        )
+
+
+@router.post("/api/holiday/sync")
+async def sync_holiday(year: str = Query(..., description="동기화할 연도 (YYYY)"), db: Session = Depends(get_db)):
+    try:
+        changed = await sync_holidays_for_year(db, year)
+        rows = list_holidays(db, year)
+        return {
+            "year": year,
+            "changed": changed,
+            "total": len(rows),
+            "holidays": [
+                {
+                    "no": row.id,
+                    "year": row.year,
+                    "month": row.month,
+                    "day": row.day,
+                    "content": row.content,
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                }
+                for row in rows
+            ],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        print(f"공휴일 동기화 실패: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="공휴일 동기화 중 오류가 발생했습니다.",
+        )

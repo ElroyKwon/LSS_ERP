@@ -1,8 +1,8 @@
 <template>
   <div class="page-wrap">
-    <a-tabs v-model:activeKey="activeTab" class="project-tabs">
+    <a-tabs v-model:activeKey="activeTab" class="project-tabs" :destroy-inactive-tab-pane="true">
       <a-tab-pane key="orders" tab="프로젝트리스트(수주)">
-        <div class="tab-content">
+        <div v-if="activeTab === 'orders'" class="tab-content">
 
     <!-- ── 통계 카드 ── -->
     <a-row :gutter="16">
@@ -143,18 +143,28 @@
         :pagination="orderTablePagination"
         row-key="id"
         size="middle"
-        :scroll="{ x: 3000 }"
+        :scroll="{ x: orderTableScrollX }"
         :row-class-name="rowClass"
+        :custom-row="projectRowEvents"
         @change="handleOrderTableChange"
-        @row-click="(record) => handleRowClick(record)"
       
         :sticky="{ offsetHeader: 56 }">
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'project_name'">
+            <div class="project-name-header">
+              <span>PJT명</span>
+              <span class="project-name-resizer" @mousedown.stop.prevent="startProjectNameColumnResize" />
+            </div>
+          </template>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'project_name'">
-            <div class="name-cell">
-              <span :class="selectedId === record.id ? 'name-selected' : ''">{{ record.project_name }}</span>
-              <a-tag v-if="selectedId === record.id" color="blue" style="margin-left:6px;font-size:10px">선택됨</a-tag>
-            </div>
+            <a-tooltip :title="record.project_name">
+              <div class="name-cell">
+                <span :class="selectedId === record.id ? 'name-selected' : ''">{{ record.project_name }}</span>
+                <a-tag v-if="selectedId === record.id" color="blue" style="margin-left:6px;font-size:10px">선택됨</a-tag>
+              </div>
+            </a-tooltip>
           </template>
           <template v-if="column.key === 'contract_amount'">
             <span class="num-cell">{{ record.contract_amount > 0 ? Number(record.contract_amount).toLocaleString() : '—' }}</span>
@@ -175,7 +185,7 @@
             </a-tooltip>
           </template>
           <template v-if="column.key === 'action'">
-            <a-space size="small">
+            <a-space size="small" @click.stop>
               <a @click.stop="openDrawer(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
               <a-popconfirm :title="`'${record.project_name}' 을(를) 삭제하시겠습니까?`"
@@ -192,7 +202,7 @@
       </a-tab-pane>
 
       <a-tab-pane v-if="canAccessSalesPurchaseTabs" key="sales" tab="프로젝트리스트(매출)">
-        <a-card :bordered="false" class="table-card">
+        <a-card v-if="activeTab === 'sales'" :bordered="false" class="table-card">
           <template #title><span class="card-title">프로젝트리스트(매출)</span></template>
           <template #extra>
             <a-space>
@@ -218,8 +228,9 @@
             row-key="id"
             size="small"
             :scroll="{ x: salesPlanScrollX }"
+            table-layout="fixed"
             bordered
-            class="sales-plan-table"
+            class="project-plan-table"
             @change="handleSalesPlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
@@ -283,7 +294,7 @@
       </a-tab-pane>
 
       <a-tab-pane v-if="canAccessSalesPurchaseTabs" key="purchases" tab="프로젝트리스트(매입)">
-        <a-card :bordered="false" class="table-card">
+        <a-card v-if="activeTab === 'purchases'" :bordered="false" class="table-card">
           <template #title><span class="card-title">프로젝트리스트(매입)</span></template>
           <template #extra>
             <a-space>
@@ -308,8 +319,9 @@
             row-key="id"
             size="small"
             :scroll="{ x: purchasePlanScrollX }"
+            table-layout="fixed"
             bordered
-            class="sales-plan-table"
+            class="project-plan-table"
             @change="handlePurchasePlanTableChange"
           
         :sticky="{ offsetHeader: 56 }">
@@ -413,6 +425,7 @@
                 :options="clientSuggestions"
                 placeholder="발주처명 직접 입력 또는 검색"
                 allow-clear
+                :filter-option="false"
                 @select="onClientSelect"
                 @change="onClientChange"
               />
@@ -729,6 +742,33 @@
       </template>
     </a-modal>
 
+    <RecordDetailViewer
+      v-model:open="projectViewerOpen"
+      title="프로젝트 상세"
+      :record="selectedProject"
+      :heading="selectedProject?.project_name"
+      :subheading="selectedProject?.project_no"
+      :sections="projectViewerSections"
+      :notes="selectedProjectNotes"
+      width="860px"
+      @edit="editFromProjectViewer"
+    >
+      <template #badge="{ record }">
+        <a-tag :color="statusColor[record.status]">{{ record.status || '-' }}</a-tag>
+      </template>
+      <template #leftActions="{ record }">
+        <a-popconfirm
+          :title="`'${record.project_name}' 을(를) 삭제하시겠습니까?`"
+          ok-text="삭제"
+          ok-type="danger"
+          cancel-text="취소"
+          @confirm="deleteFromProjectViewer(record)"
+        >
+          <a-button danger>삭제</a-button>
+        </a-popconfirm>
+      </template>
+    </RecordDetailViewer>
+
     <a-modal
       :mask-closable="false"
       v-model:open="businessCategoryModalOpen"
@@ -761,7 +801,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ProjectOutlined, PlayCircleOutlined, CheckCircleOutlined, PauseCircleOutlined, PlusOutlined,
@@ -771,6 +811,7 @@ import { executionApi, masterApi, managementApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { normalizeRole } from '@/utils/permissions'
 import { flattenDepartmentTree } from '@/utils/departments'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 
 const REQ_MARKER = '\n---프로젝트리스트요구사항---\n'
 const CONTRACT_FORMS = ['원도급', '하도급', '공동도급', '위탁', '기타']
@@ -935,9 +976,14 @@ const editItem  = ref(null)
 const formRef   = ref()
 const excelInput = ref()
 const selectedId = ref(null)
+const projectViewerOpen = ref(false)
+const selectedProject = ref(null)
 const activeTab = ref('orders')
 const auth = useAuthStore()
 const projectEditorSnapshot = ref('')
+const projectNameColumnWidth = ref(220)
+const projectNameResizeState = ref(null)
+const orderTableScrollX = computed(() => 2780 + projectNameColumnWidth.value)
 const TABLE_PAGE_SIZE_OPTIONS = ['10', '20', '50', '100']
 const createTablePagination = () => reactive({
   current: 1,
@@ -966,10 +1012,95 @@ function handlePurchasePlanTableChange(pagination) {
   updateTablePagination(purchasePlanTablePagination, pagination)
 }
 
+function startProjectNameColumnResize(event) {
+  projectNameResizeState.value = {
+    startX: event.clientX,
+    startWidth: projectNameColumnWidth.value,
+  }
+  document.addEventListener('mousemove', handleProjectNameColumnResize)
+  document.addEventListener('mouseup', stopProjectNameColumnResize)
+}
+
+function handleProjectNameColumnResize(event) {
+  const state = projectNameResizeState.value
+  if (!state) return
+  const nextWidth = state.startWidth + event.clientX - state.startX
+  projectNameColumnWidth.value = Math.min(520, Math.max(160, nextWidth))
+}
+
+function stopProjectNameColumnResize() {
+  projectNameResizeState.value = null
+  document.removeEventListener('mousemove', handleProjectNameColumnResize)
+  document.removeEventListener('mouseup', stopProjectNameColumnResize)
+}
+
 const statusColor = { 미진행: 'orange', 진행중: 'blue', 완료: 'green' }
 const canAccessSalesPurchaseTabs = computed(() =>
   SALES_PURCHASE_TAB_ROLES.has(normalizeRole(auth.user?.role))
 )
+
+const selectedProjectNotes = computed(() => selectedProject.value?.notes || '')
+
+const projectViewerSections = computed(() => {
+  const record = selectedProject.value
+  if (!record) return []
+  return [
+    {
+      title: '기본 정보',
+      fields: [
+        { label: 'PJT NO.', value: record.project_no },
+        { label: '발주처', value: record.client_name },
+        { label: '사업부', value: record.business_division },
+        { label: '팀', value: record.team_name },
+        { label: '사업구분', value: record.business_category },
+        { label: 'SPG', value: record.spg },
+        { label: '공종', value: record.work_type },
+        { label: '매출 유형', value: record.revenue_type },
+      ],
+    },
+    {
+      title: '계약 및 착공',
+      fields: [
+        { label: '도급형태', value: record.contract_form },
+        { label: '국내/국외', value: record.contract_type },
+        { label: '계약 시작일', value: record.contract_start },
+        { label: '계약 종료일', value: record.contract_end },
+        { label: '착공 시작일', value: record.construct_start },
+        { label: '착공 종료일', value: record.construct_end },
+        { label: '계약금액', value: formatAmount(record.contract_amount) },
+        { label: '도급비율', value: `${toNumber(record.contract_rate).toFixed(2)}%` },
+      ],
+    },
+    {
+      title: '담당자',
+      fields: [
+        { label: '담당 PM', value: record.pm_name },
+        { label: 'PM 부서', value: record.pm_dept },
+        { label: '영업 담당자', value: record.sales_manager },
+        { label: '실행 담당자', value: record.execution_manager },
+        { label: '수금 담당자', value: record.collection_manager },
+        { label: '수금조건', value: record.collection_terms },
+        { label: '특수관계', value: record.special_relation },
+        { label: '보증기간', value: record.warranty_period },
+      ],
+    },
+    {
+      title: '금액 정보',
+      fields: [
+        { label: '계약 자재비', value: formatAmount(projectAmountValue(record, 'contract_material_cost')) },
+        { label: '계약 노무비', value: formatAmount(projectAmountValue(record, 'contract_labor_cost')) },
+        { label: '계약금액 합계', value: formatAmount(projectAmountValue(record, 'contract_detail_total')) },
+        { label: '재료비 합계', value: formatAmount(projectAmountValue(record, 'sales_material_cost_total')) },
+        { label: '노무비', value: formatAmount(projectAmountValue(record, 'sales_labor_cost')) },
+        { label: '경비', value: formatAmount(projectAmountValue(record, 'sales_expense_cost')) },
+        { label: '직접원가 소계', value: formatAmount(projectAmountValue(record, 'sales_direct_cost_subtotal')) },
+        { label: '간접비', value: formatAmount(projectAmountValue(record, 'sales_indirect_cost')) },
+        { label: '매출원가 합계', value: formatAmount(projectAmountValue(record, 'sales_cost_total')) },
+        { label: '세전이익', value: formatAmount(projectAmountValue(record, 'pre_tax_profit')) },
+      ],
+    },
+  ]
+})
 
 watch(canAccessSalesPurchaseTabs, (allowed) => {
   if (!allowed && ['sales', 'purchases'].includes(activeTab.value)) {
@@ -1000,6 +1131,15 @@ function resetFilters() {
 }
 
 // ── 클라이언트 필터링 ──
+function compareProjectNo(a = '', b = '') {
+  const left = String(a || '').trim()
+  const right = String(b || '').trim()
+  if (!left && !right) return 0
+  if (!left) return 1
+  if (!right) return -1
+  return left.localeCompare(right, 'ko-KR', { numeric: true, sensitivity: 'base' })
+}
+
 const filtered = computed(() => items.value.filter(d => {
   if (filters.search && !d.project_name?.toLowerCase().includes(filters.search.toLowerCase())
       && !d.project_no?.toLowerCase().includes(filters.search.toLowerCase())) return false
@@ -1015,7 +1155,7 @@ const filtered = computed(() => items.value.filter(d => {
   if (filters.contract_forms.length > 0 && !filters.contract_forms.includes(d.contract_form)) return false
   if (filters.contract_types.length > 0 && !filters.contract_types.includes(d.contract_type)) return false
   return true
-}))
+}).sort((a, b) => compareProjectNo(a.project_no, b.project_no)))
 
 // ── 통계 카드 ──
 function keepPaginationInRange(pagination, total) {
@@ -1243,11 +1383,9 @@ const purchasePlanColumns = [
 const purchasePlanScrollX = 12900
 
 // ── 테이블 컬럼 ──
-const columns = [
-  { title: 'No',        key: 'no',               width: 55,  align: 'center',
-    customRender: ({ index }) => index + 1 },
+const columns = computed(() => [
   { title: 'PJT NO.',   dataIndex: 'project_no',  width: 140, align: 'center' },
-  { title: 'PJT명',     key: 'project_name',      width: 220, align: 'center', ellipsis: true },
+  { title: 'PJT명',     key: 'project_name',      width: projectNameColumnWidth.value, align: 'center', ellipsis: true },
   { title: '발주처',    dataIndex: 'client_name',  width: 160, align: 'center', ellipsis: true },
   { title: '사업부',    dataIndex: 'business_division', width: 150, align: 'center' },
   { title: '팀',        dataIndex: 'team_name',    width: 140, align: 'center' },
@@ -1278,7 +1416,7 @@ const columns = [
   { title: '담당 PM',   dataIndex: 'pm_name',     width: 100, align: 'center' },
   { title: '진행상태',  key: 'status',            width: 110, align: 'center' },
   { title: '관리',      key: 'action',            width: 100, align: 'center', fixed: 'right' },
-]
+])
 
 const salesColumns = [
   { title: 'No',        key: 'no',               width: 55,  align: 'center',
@@ -1333,6 +1471,31 @@ function isOverdue(record) {
 
 function handleRowClick(record) {
   selectedId.value = selectedId.value === record.id ? null : record.id
+}
+
+function openProjectViewer(record) {
+  selectedId.value = record.id
+  selectedProject.value = record
+  projectViewerOpen.value = true
+}
+
+function editFromProjectViewer(record) {
+  projectViewerOpen.value = false
+  openDrawer(record)
+}
+
+async function deleteFromProjectViewer(record) {
+  await handleDelete(record.id)
+  projectViewerOpen.value = false
+  selectedProject.value = null
+}
+
+function projectRowEvents(record) {
+  return {
+    onClick: () => openProjectViewer(record),
+    onDblclick: () => openProjectViewer(record),
+    class: 'clickable-data-row',
+  }
 }
 
 function toNumber(value) {
@@ -2158,10 +2321,12 @@ function closeProjectEditor() {
 
 // 발주처 자동완성: 등록된 거래처 목록 제안 (직접 입력도 허용)
 const clientSuggestions = computed(() => {
-  const keyword = (form.client_name || '').toLowerCase()
+  const keyword = (form.client_name || '').trim().toLowerCase()
+  if (!keyword) return []
   return companies.value
-    .filter(c => !keyword || c.company_name.toLowerCase().includes(keyword))
-    .map(c => ({ value: c.company_name, id: c.id }))
+    .filter(c => String(c.company_name || '').toLowerCase().includes(keyword))
+    .slice(0, 30)
+    .map(c => ({ value: c.company_name, label: c.company_name, id: c.id }))
 })
 
 function onClientSelect(value, option) {
@@ -2320,6 +2485,7 @@ async function load() {
 }
 
 onMounted(load)
+onBeforeUnmount(stopProjectNameColumnResize)
 </script>
 
 <style scoped>
@@ -2327,6 +2493,35 @@ onMounted(load)
 .tab-content { display: flex; flex-direction: column; gap: 16px; }
 .project-tabs :deep(.ant-tabs-nav) { margin: 0 0 16px; }
 .project-tabs :deep(.ant-tabs-tab) { font-weight: 600; }
+.project-name-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 22px;
+}
+.project-name-resizer {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 12px;
+  height: calc(100% + 16px);
+  cursor: col-resize;
+  user-select: none;
+}
+.project-name-resizer::after {
+  content: "";
+  position: absolute;
+  top: 22%;
+  right: 5px;
+  width: 1px;
+  height: 56%;
+  background: #c8d6e5;
+}
+.project-name-resizer:hover::after {
+  background: #1677ff;
+}
 
 /* ── 통계 카드 ── */
 .stat-card   { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid #e0e0e0; }
@@ -2380,7 +2575,7 @@ onMounted(load)
 .detail-cost-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; table-layout: fixed; }
 .detail-cost-table th,
 .detail-cost-table td { border: 1px solid #d9d9d9; padding: 5px 7px; text-align: center; font-size: 12px; vertical-align: middle; }
-.detail-cost-table thead th { background: #203f70; color: #fff; font-weight: 700; }
+.detail-cost-table thead th { position: sticky; top: 0; z-index: 3; background: #203f70; color: #fff; font-weight: 700; }
 .detail-cost-table .group-cell { background: #f0f0f0; color: #111; font-weight: 700; }
 .detail-cost-table .item-cell { background: #fafafa; font-weight: 600; }
 .detail-cost-table .summary-row td { background: #f3f3f3; font-weight: 700; }
@@ -2397,4 +2592,22 @@ onMounted(load)
 
 :deep(.ant-table-thead > tr > th) { text-align: center !important; background: #fafafa; }
 :deep(.ant-card-head) { border-bottom: 1px solid #f0f0f0; min-height: 52px; }
+
+.project-plan-table :deep(.ant-table-tbody > tr > td) {
+  overflow: hidden;
+}
+.project-plan-table :deep(.ant-table-tbody > tr > td:has(.table-number-input)),
+.project-plan-table :deep(.ant-table-tbody > tr > td:has(.table-date-input)) {
+  padding-inline: 4px;
+}
+.project-plan-table :deep(.table-number-input),
+.project-plan-table :deep(.table-date-input) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+.project-plan-table :deep(.table-number-input .ant-input-number-input) {
+  padding-inline: 8px;
+}
 </style>

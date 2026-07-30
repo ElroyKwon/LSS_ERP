@@ -131,11 +131,11 @@
     </a-layout-sider>
 
     <!-- 메인 -->
-    <a-layout :style="{ marginLeft: collapsed ? '60px' : '220px', transition: 'all 0.2s', background: '#f0f2f5', minHeight: '100vh' }">
+    <a-layout class="app-main-layout" :style="mainLayoutStyle">
       <!-- 헤더 -->
       <a-layout-header class="app-header">
         <div class="header-left">
-          <button class="toggle-btn" @click="collapsed = !collapsed" :title="collapsed ? '메뉴 펼치기' : '메뉴 접기'">
+          <button class="toggle-btn" @click="toggleSidebar" :title="collapsed ? '메뉴 펼치기' : '메뉴 접기'">
             <MenuUnfoldOutlined v-if="collapsed" />
             <MenuFoldOutlined v-else />
           </button>
@@ -171,7 +171,7 @@
       </a-layout-header>
 
       <!-- 콘텐츠 -->
-      <a-layout-content style="margin: 20px; min-height: calc(100vh - 64px - 40px)">
+      <a-layout-content class="app-content">
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -192,6 +192,25 @@
         <div class="notice-popup-title">{{ notice.title }}</div>
         <div class="notice-popup-period">{{ notice.start_date }} ~ {{ notice.end_date }}</div>
         <div class="notice-popup-content">{{ notice.content }}</div>
+        <div v-if="notice.attachments?.length" class="notice-popup-attachments">
+          <div class="notice-popup-attachment-title">첨부파일</div>
+          <div
+            v-for="attachment in notice.attachments"
+            :key="attachment.id"
+            class="notice-popup-attachment"
+          >
+            <a-button
+              type="link"
+              class="notice-popup-attachment-link"
+              @click="openNoticeAttachment(attachment)"
+            >
+              {{ attachmentFileName(attachment) }}
+            </a-button>
+            <a-button type="link" size="small" @click="downloadNoticeAttachment(attachment)">
+              다운로드
+            </a-button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="notice-popup-footer">
@@ -199,16 +218,41 @@
       <a-button type="primary" @click="closeNoticePopup">확인</a-button>
     </div>
   </a-modal>
+
+  <a-modal
+    v-model:open="noticePdfPreviewOpen"
+    :title="noticePdfPreviewTitle"
+    :width="noticePdfPreviewWidth"
+    :body-style="{ padding: '12px' }"
+    :footer="null"
+    destroy-on-close
+    @cancel="closeNoticePdfPreview"
+  >
+    <div class="notice-pdf-preview-shell" :style="{ height: `${noticePdfPreviewHeight}px` }">
+      <iframe
+        v-if="noticePdfPreviewUrl"
+        class="notice-pdf-preview-frame"
+        :src="noticePdfPreviewUrl"
+        title="공지사항 PDF 미리보기"
+      />
+      <div
+        class="notice-pdf-preview-resizer"
+        title="크기 조절"
+        @pointerdown="startNoticePdfResize"
+      />
+    </div>
+  </a-modal>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   DatabaseOutlined, ShopOutlined, AppstoreOutlined,
   FundOutlined, ClockCircleOutlined, CarOutlined, SettingOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, MessageOutlined,PropertySafetyOutlined,ScheduleOutlined, RobotOutlined,
 } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 import { useAuthStore } from '@/store/auth'
 import { authApi, masterApi } from '@/api'
 import { canAccess, getRoleLabel } from '@/utils/permissions'
@@ -223,6 +267,33 @@ const pendingCount = ref(0)
 const visibleNotices = ref([])
 const noticePopupOpen = ref(false)
 const hideNoticesToday = ref(false)
+const noticePdfPreviewOpen = ref(false)
+const noticePdfPreviewUrl = ref('')
+const noticePdfPreviewTitle = ref('')
+const noticePdfPreviewWidth = ref(900)
+const noticePdfPreviewHeight = ref(620)
+
+const COMPACT_PC_BREAKPOINT = 1366
+let userSidebarToggled = false
+let stopNoticePdfResize = null
+
+const mainLayoutStyle = computed(() => ({
+  marginLeft: collapsed.value ? '60px' : '220px',
+  transition: 'all 0.2s',
+  background: '#f0f2f5',
+  minHeight: '100vh',
+  minWidth: 0,
+}))
+
+function applyResponsiveSidebar() {
+  if (typeof window === 'undefined' || userSidebarToggled) return
+  collapsed.value = window.innerWidth <= COMPACT_PC_BREAKPOINT
+}
+
+function toggleSidebar() {
+  userSidebarToggled = true
+  collapsed.value = !collapsed.value
+}
 
 const canRead = (path) => canAccess(auth.user?.role, path, 'R')
 const canReadAny = (paths) => paths.some(path => canRead(path))
@@ -267,9 +338,112 @@ function closeNoticePopup() {
   hideNoticesToday.value = false
 }
 
+function attachmentFileName(attachment) {
+  return attachment?.original_name || attachment?.filename || 'attachment'
+}
+
+function isPdfAttachment(attachment, blob) {
+  const contentType = String(blob?.type || attachment?.content_type || '').toLowerCase()
+  const fileName = attachmentFileName(attachment).toLowerCase()
+  return contentType.includes('pdf') || fileName.endsWith('.pdf')
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function revokeNoticePdfPreviewUrl() {
+  if (noticePdfPreviewUrl.value) {
+    URL.revokeObjectURL(noticePdfPreviewUrl.value)
+    noticePdfPreviewUrl.value = ''
+  }
+}
+
+function resetNoticePdfPreviewSize() {
+  noticePdfPreviewWidth.value = 900
+  noticePdfPreviewHeight.value = 620
+}
+
+function closeNoticePdfPreview() {
+  noticePdfPreviewOpen.value = false
+  revokeNoticePdfPreviewUrl()
+}
+
+function stopNoticePdfResizeTracking() {
+  if (stopNoticePdfResize) {
+    stopNoticePdfResize()
+    stopNoticePdfResize = null
+  }
+}
+
+function startNoticePdfResize(event) {
+  event.preventDefault()
+  const startX = event.clientX
+  const startY = event.clientY
+  const startWidth = noticePdfPreviewWidth.value
+  const startHeight = noticePdfPreviewHeight.value
+
+  const onMove = (moveEvent) => {
+    noticePdfPreviewWidth.value = Math.min(1400, Math.max(640, startWidth + moveEvent.clientX - startX))
+    noticePdfPreviewHeight.value = Math.min(900, Math.max(420, startHeight + moveEvent.clientY - startY))
+  }
+
+  const onUp = () => stopNoticePdfResizeTracking()
+
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp, { once: true })
+  stopNoticePdfResize = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+  }
+}
+
+async function openNoticeAttachment(attachment) {
+  try {
+    const res = await masterApi.downloadNoticeAttachment(attachment.id)
+    const blob = res.data
+    const fileName = attachmentFileName(attachment)
+    if (!isPdfAttachment(attachment, blob)) {
+      message.info('PDF 파일만 미리보기가 가능합니다. 다운로드 버튼을 사용하세요.')
+      return
+    }
+    closeNoticePdfPreview()
+    resetNoticePdfPreviewSize()
+    noticePdfPreviewUrl.value = URL.createObjectURL(blob)
+    noticePdfPreviewTitle.value = fileName
+    noticePdfPreviewOpen.value = true
+  } catch (error) {
+    message.error(error.response?.data?.detail || '첨부파일을 열지 못했습니다.')
+  }
+}
+
+async function downloadNoticeAttachment(attachment) {
+  try {
+    const res = await masterApi.downloadNoticeAttachment(attachment.id)
+    downloadBlob(res.data, attachmentFileName(attachment))
+  } catch (error) {
+    message.error(error.response?.data?.detail || '첨부파일을 다운로드하지 못했습니다.')
+  }
+}
+
 onMounted(() => {
+  applyResponsiveSidebar()
+  window.addEventListener('resize', applyResponsiveSidebar)
   loadPendingCount()
   loadActiveNotices()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', applyResponsiveSidebar)
+  closeNoticePdfPreview()
+  stopNoticePdfResizeTracking()
 })
 
 // 시스템 메뉴 이동 시 뱃지 갱신
@@ -349,6 +523,17 @@ function handleLogout() {
 </script>
 
 <style scoped>
+
+.app-main-layout {
+  min-width: 0;
+}
+
+.app-content {
+  margin: 20px;
+  min-height: calc(100vh - 64px - 40px);
+  min-width: 0;
+  overflow-x: hidden;
+}
 /* ── 사이드바 로고 ── */
 .sider-logo {
   height: 56px;
@@ -398,8 +583,9 @@ function handleLogout() {
   height: 56px;
   line-height: 56px;
 }
-.header-left { display: flex; align-items: center; gap: 8px; }
-.header-right { display: flex; align-items: center; }
+.header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.header-right { display: flex; align-items: center; flex: 0 0 auto; min-width: 0; }
+:deep(.ant-breadcrumb) { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* ── 사이드바 토글 버튼 ── */
 .toggle-btn {
@@ -465,6 +651,30 @@ function handleLogout() {
   line-height: 1.65;
   color: #2c3e50;
 }
+.notice-popup-attachments {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e8e8e8;
+}
+.notice-popup-attachment-title {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #595959;
+}
+.notice-popup-attachment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notice-popup-attachment-link {
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+}
 .notice-popup-footer {
   display: flex;
   align-items: center;
@@ -472,6 +682,40 @@ function handleLogout() {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid #f0f0f0;
+}
+.notice-pdf-preview-shell {
+  position: relative;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #f5f5f5;
+}
+.notice-pdf-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.notice-pdf-preview-resizer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, #8c8c8c 50%);
+  opacity: 0.7;
+}
+
+@media (max-width: 1440px) {
+  .app-content { margin: 16px; min-height: calc(100vh - 64px - 32px); }
+  .app-header { padding-right: 12px; }
+}
+
+@media (max-width: 1366px) {
+  .app-content { margin: 12px; min-height: calc(100vh - 64px - 24px); }
+  .user-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }

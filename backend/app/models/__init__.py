@@ -5,9 +5,12 @@ from .common import (
     UserRegistration,
     ApiToken,
     Notice,
+    NoticeAttachment,
     OpinionPost,
     OpinionAttachment,
     OpinionNotificationSetting,
+    Holiday,
+    CalendarSchedule,
 )
 from .master import Company, Site, CostCode, AccountCode, Material, UnitPrice, Employee, OverheadRate
 from .sales import Estimate, EstimateItem, EstimateAttachment, DesignRequest, SalesManagementWeeklyRow
@@ -18,12 +21,12 @@ from .purchase import (PurchaseRequest, PurchaseRequestItem, PurchaseOrder, Purc
 from .accounting import (JournalEntry, JournalLine, AccountsReceivable, AccountsPayable,
                           Payment, PaymentItem, PeriodClosing)
 from .management import DeptBudget, ManagementSalesBusinessPlanRow
-from .timesheet import Timesheet, TimesheetEntry
+from .timesheet import Timesheet, TimesheetEntry, TimesheetLaborAllocation
 from .vehicle import Vehicle, VehicleLog
 
 __all__ = [
-    "User", "Department", "AuditLog", "UserRegistration", "ApiToken", "Notice",
-    "OpinionPost", "OpinionAttachment", "OpinionNotificationSetting",
+    "User", "Department", "AuditLog", "UserRegistration", "ApiToken", "Notice", "NoticeAttachment",
+    "OpinionPost", "OpinionAttachment", "OpinionNotificationSetting", "Holiday", "CalendarSchedule",
     "Company", "Site", "CostCode", "AccountCode", "Material", "UnitPrice", "Employee", "OverheadRate",
     "Estimate", "EstimateItem", "EstimateAttachment", "DesignRequest", "SalesManagementWeeklyRow",
     "Project", "ProjectPlan", "ProjectSalesPlanRow", "ProjectPurchasePlanRow", "ProjectBusinessCategory", "ProjectPlanMeta", "ProjectPlanWeeklySnapshot", "PurchaseContract", "ReleaseRequest", "SalesBill", "APBill",
@@ -33,6 +36,6 @@ __all__ = [
     "JournalEntry", "JournalLine", "AccountsReceivable", "AccountsPayable",
     "Payment", "PaymentItem", "PeriodClosing",
     "DeptBudget", "ManagementSalesBusinessPlanRow",
-    "Timesheet", "TimesheetEntry",
+    "Timesheet", "TimesheetEntry", "TimesheetLaborAllocation",
     "Vehicle", "VehicleLog",
 ]

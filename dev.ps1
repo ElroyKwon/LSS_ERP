@@ -65,8 +65,14 @@ Write-OK "venv OK"
 
 # pip
 Write-Step "Checking packages..."
-& $PIP install -r (Join-Path $BACKEND "requirements.txt") -q --no-warn-script-location 2>$null
-if ($LASTEXITCODE -ne 0) { Write-Fail "pip install failed"; Read-Host "Enter"; exit 1 }
+$pipLog = Join-Path $BASE ".pip-install.log"
+& $PYTHON -m pip install -r (Join-Path $BACKEND "requirements.txt") -q --no-warn-script-location *> $pipLog
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "pip install failed"
+    if (Test-Path $pipLog) { Get-Content $pipLog -Tail 20 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray } }
+    Read-Host "Enter"; exit 1
+}
+Remove-Item $pipLog -Force -ErrorAction SilentlyContinue
 Write-OK "packages OK"
 
 # npm install
@@ -108,7 +114,7 @@ Write-Host ""
 # uvicorn
 try {
     Push-Location $BACKEND
-    & $UVICORN app.main:app --host 0.0.0.0 --port $PORT --reload
+    & $PYTHON -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --reload
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
     Write-Host ""

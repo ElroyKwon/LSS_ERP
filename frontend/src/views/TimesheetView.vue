@@ -82,6 +82,7 @@
                       <div class="day-header">
                         <span class="day-name">{{ d.label }}</span>
                         <span class="day-date">{{ d.short }}</span>
+                        <span v-if="d.holidayName" class="holiday-name">{{ d.holidayName }}</span>
                       </div>
                     </th>
                     <th class="col-total">합계</th>
@@ -282,10 +283,11 @@
                       <span class="col-resizer" @mousedown.prevent="startColumnResize('project', $event)" />
                     </th>
                     <th v-for="d in monthDays" :key="d.date"
-                        :class="['col-month-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
+                        :class="['col-month-day', d.isBlocked ? 'weekend blocked-day' : '', d.date === todayStr ? 'today' : '']">
                       <div class="day-header">
                         <span class="day-name">{{ d.day }}</span>
                         <span class="day-date">{{ d.label }}</span>
+                        <span v-if="d.holidayName" class="holiday-name">{{ d.holidayName }}</span>
                       </div>
                     </th>
                     <th class="col-total">합계</th>
@@ -296,7 +298,7 @@
                     <td class="col-source">{{ row.project_source || '공통' }}</td>
                     <td class="col-project text-left" :style="columnStyle('project')">{{ row.project_name || '기타' }}</td>
                     <td v-for="d in monthDays" :key="d.date"
-                        :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
+                        :class="['col-month-day', d.isBlocked ? 'weekend blocked-day' : '']">
                       <span :class="row.days[d.day] > 0 ? 'num-active' : 'num-zero'">
                         {{ row.days[d.day] > 0 ? row.days[d.day] : '—' }}
                       </span>
@@ -311,7 +313,7 @@
                   <tr class="total-row">
                     <td colspan="2" class="total-label">일  계</td>
                     <td v-for="d in monthDays" :key="d.date"
-                        :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
+                        :class="['col-month-day', d.isBlocked ? 'weekend blocked-day' : '']">
                       <span :class="monthlyDayTotal(d.day) > 0 ? 'num-active' : 'num-zero'">
                         {{ monthlyDayTotal(d.day) > 0 ? monthlyDayTotal(d.day) : '—' }}
                       </span>
@@ -519,9 +521,6 @@
           </a-card>
         </a-spin>
       </a-tab-pane>
-
-
-
     </a-tabs>
 
     <a-modal
@@ -596,7 +595,7 @@ import { message, Modal, Empty } from 'ant-design-vue'
 import {
   LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined, DownOutlined,
 } from '@ant-design/icons-vue'
-import { timesheetApi, executionApi, salesApi } from '@/api'
+import api, { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { canAccess, normalizeRole } from '@/utils/permissions'
 import { PAGE_SIZE_OPTIONS, createClientPagination } from '@/utils/pagination'
@@ -703,7 +702,6 @@ function fmtDate(s, fmt = 'MM/DD') {
   if (fmt === 'MM/DD') return `${d.getMonth()+1}/${String(d.getDate()).padStart(2,'0')}`
   return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
 }
-
 function toNumber(value) {
   const n = Number(String(value ?? '').replace(/,/g, ''))
   return Number.isFinite(n) ? n : 0
@@ -713,7 +711,6 @@ function formatAmount(value) {
   const amount = Math.round(toNumber(value))
   return amount > 0 ? amount.toLocaleString() : '—'
 }
-
 function formatHours(value) {
   const hours = toNumber(value)
   return hours > 0 ? Number(hours.toFixed(1)).toLocaleString() : '—'
@@ -736,6 +733,7 @@ const projects       = ref([])
 const salesProjects  = ref([])
 const commonProjectSuggestions = ref([])
 const commonProjectSearchTimer = ref(null)
+const holidayCache = ref({})
 const resizeState = ref(null)
 const columnWidths = ref(loadColumnWidths())
 const weekLoading    = ref(false)
@@ -853,7 +851,17 @@ const weekEnd = computed(() => addDays(weekStart.value, 6))
 const weekDays = computed(() =>
   DAY_KEYS.map((k, i) => {
     const date = addDays(weekStart.value, i)
-    return { date, label: DAY_LABELS[i], short: fmtDate(date), isWeekend: i >= 5, key: k }
+    const holidayName = holidayNameByDate(date)
+    return {
+      date,
+      label: DAY_LABELS[i],
+      short: fmtDate(date),
+      isWeekend: i >= 5,
+      isHoliday: Boolean(holidayName),
+      isBlocked: i >= 5 || Boolean(holidayName),
+      holidayName,
+      key: k,
+    }
   })
 )
 const weekLabel = computed(() =>
@@ -871,11 +879,15 @@ const monthDays = computed(() => {
   return Array.from({ length: last }, (_, i) => {
     const date = formatLocalDate(new Date(start.getFullYear(), start.getMonth(), i + 1))
     const dow = new Date(date).getDay()
+    const holidayName = holidayNameByDate(date)
     return {
       date,
       day: i + 1,
       label: DAY_LABELS[(dow + 6) % 7],
       isWeekend: dow === 0 || dow === 6,
+      isHoliday: Boolean(holidayName),
+      isBlocked: dow === 0 || dow === 6 || Boolean(holidayName),
+      holidayName,
     }
   })
 })
@@ -1277,7 +1289,6 @@ const weekKpis = computed(() => {
     { key: 'avg', label: '일평균 (평일)', value: (total / 5).toFixed(1), unit: 'h', color: '#595959', cls: '' },
   ]
 })
-
 function rowHasAnyContent(row) {
   return Boolean(
     String(row.project_name || '').trim()
@@ -1363,7 +1374,8 @@ async function loadSelectedHistorySheet() {
     const sourceEntries = historyPreviewEntries.value.length > 0
       ? historyPreviewEntries.value
       : ((await timesheetApi.getWeek(empId, selectedHistoryWeek.value)).data?.entries || [])
-    entries.value = sourceEntries.map((entry, index) => ({
+    await ensureHolidayRange(weekStart.value, weekEnd.value)
+    entries.value = sourceEntries.map((entry, index) => clearBlockedDayHours({
       project_id: entry.project_id || null,
       project_name: entry.project_name || '',
       project_source: entry.project_source || (entry.project_id ? '실행' : '공통'),
@@ -1448,13 +1460,14 @@ async function loadWeek() {
   const empId = selectedEmpId.value || myEmpId.value
   if (!empId) { weekLoading.value = false; return }
   try {
+    await ensureHolidayRange(weekStart.value, weekEnd.value)
     const res = await timesheetApi.getWeek(empId, weekStart.value)
     const d   = res.data
     tsId.value     = d.id
     tsStatus.value = d.status || '작성중'
     tsNotes.value  = d.notes  || ''
     rejectReason.value = d.reject_reason || ''
-    entries.value  = (d.entries || []).map(e => ({
+    entries.value  = (d.entries || []).map(e => clearBlockedDayHours({
       ...e,
       project_source: e.project_source || (e.project_id ? '실행' : '공통'),
       spg: e.spg || '공통',
@@ -1470,6 +1483,7 @@ async function loadMonth() {
   const empId = selectedEmpId.value || myEmpId.value
   if (!empId) { monthLoading.value = false; return }
   try {
+    await ensureHolidayRange(monthStart.value, monthEnd.value)
     const list = (await timesheetApi.getList({ employee_id: empId })).data || []
     const targetWeeks = list.filter(ts => {
       const start = ts.week_start
@@ -1498,6 +1512,7 @@ async function loadMonth() {
         DAY_KEYS.forEach((hourKey, index) => {
           const date = addDays(sheet.week_start, index)
           if (date < monthStart.value || date > monthEnd.value) return
+          if (isBlockedWorkDate(date)) return
           const hours = Number(entry[hourKey]) || 0
           if (!hours) return
           const day = dayOfMonth(date)
@@ -1545,6 +1560,7 @@ async function handleSave() {
 
   saving.value = true
   try {
+    clearAllBlockedDayHours()
     const res = await timesheetApi.save({
       employee_id: empId,
       week_start: weekStart.value,
@@ -1688,7 +1704,6 @@ function handleAdminProjectPageSizeChange(_page, pageSize) {
     pageSize: pageSize || adminProjectPagination.value.pageSize,
   }
 }
-
 async function loadSummary() {
   summaryLoading.value = true
   const empId = summaryEmpId.value || selectedEmpId.value || myEmpId.value
@@ -1802,9 +1817,6 @@ async function saveAdminLabor() {
     adminLaborSaving.value = false
   }
 }
-
-
-
 async function loadBase() {
   const [emp, proj] = await Promise.all([
     timesheetApi.getEmployees(),
@@ -2086,7 +2098,6 @@ onBeforeUnmount(() => {
 }
 .month-grid { width: max-content; min-width: 100%; }
 .text-left { text-align: left; }
-
 .weekend { background: #fff7f7 !important; color: #ff4d4f !important; }
 .today   { background: #e6f4ff; }
 
@@ -2115,9 +2126,11 @@ td.weekend,
 .day-header  { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .day-name    { font-size: 12px; font-weight: 700; }
 .day-date    { font-size: 10px; color: #8c8c8c; }
+.holiday-name { font-size: 10px; color: #f5222d; font-weight: 600; line-height: 1.1; }
 
 :deep(.hour-input) { width: 50px !important; }
 :deep(.hour-input.has-hours .ant-input-number-input) { color: #1677ff; font-weight: 600; }
+:deep(.blocked-day .ant-input-number-disabled) { background: #f5f5f5; color: #bfbfbf; }
 :deep(.ant-input-number-input) { text-align: center !important; padding: 0 2px; }
 
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher_close::before),

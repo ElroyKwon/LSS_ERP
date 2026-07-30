@@ -38,7 +38,7 @@
         :columns="columns"
         :data-source="displayItems"
         :loading="loading"
-        :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+        :pagination="clientPagination"
         row-key="id"
         size="middle"
         :scroll="{ x: 3300 }"
@@ -109,7 +109,9 @@ import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { managementApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const PURCHASE_TYPES = ['자재', '외주', '안전', '기타']
 const SUBCONTRACT_TYPES = ['하도급', '비하도급']
 const PAYMENT_TYPES = ['현금', '어음', '현금+어음', '기타']

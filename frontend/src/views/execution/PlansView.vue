@@ -119,7 +119,7 @@
           :columns="getPlanColumns(section.key)"
           :data-source="section.rows"
           :loading="planLoading"
-          :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+          :pagination="clientPagination"
           row-key="key"
           size="small"
           :scroll="{ x: tableScrollX }"
@@ -393,7 +393,9 @@ import {
   PercentageOutlined,
 } from '@ant-design/icons-vue'
 import { executionApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
 
+const clientPagination = createClientPagination()
 const now = new Date()
 const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 1 + i)
 const planFields = ['invoice_plan', 'revenue_plan', 'material_plan', 'subcontract_plan', 'labor_plan', 'expense_plan']

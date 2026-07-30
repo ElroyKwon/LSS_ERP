@@ -31,8 +31,9 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1000 }"
+               :custom-row="contractRowEvents"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'contract_amount'">{{ fmt(record.contract_amount) }}</template>
@@ -41,7 +42,7 @@
             <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
           </template>
           <template v-if="column.key === 'action'">
-            <a-space size="small">
+            <a-space size="small" @click.stop>
               <a @click="openDrawer(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
               <a @click="handlePdf(record)">PDF</a>
@@ -207,6 +208,49 @@
         </div>
       </template>
     </a-modal>
+
+    <RecordDetailViewer
+      v-model:open="viewerOpen"
+      title="구매/계약 상세"
+      kicker="PURCHASE CONTRACT"
+      :heading="selectedItem?.contract_name || selectedItem?.contract_no"
+      :subheading="selectedItem?.contract_no"
+      :record="selectedItem"
+      :sections="viewerSections"
+      :notes="selectedItem?.notes || ''"
+      @edit="editFromViewer"
+    >
+      <template #badge="{ record }">
+        <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
+      </template>
+      <template #extra="{ record }">
+        <section class="viewer-section-like">
+          <h3>발주 품목</h3>
+          <a-table
+            :columns="viewerOrderItemColumns"
+            :data-source="orderItemsOf(record)"
+            row-key="uid"
+            size="small"
+            :pagination="false"
+          >
+            <template #bodyCell="{ column, record: row, index }">
+              <template v-if="column.key === 'no'">{{ index + 1 }}</template>
+              <template v-else-if="column.key === 'quantity'">{{ Number(row.quantity || 0).toLocaleString() }}</template>
+              <template v-else-if="column.key === 'unit_price'">{{ fmt(row.unit_price) }}</template>
+              <template v-else-if="column.key === 'amount'">{{ fmt(lineAmount(row)) }}</template>
+            </template>
+          </a-table>
+        </section>
+      </template>
+      <template #leftActions="{ record }">
+        <a-space>
+          <a-button @click="handlePdf(record)">PDF 출력</a-button>
+          <a-popconfirm title="삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소" @confirm="handleDeleteFromViewer(record.id)">
+            <a-button danger>삭제</a-button>
+          </a-popconfirm>
+        </a-space>
+      </template>
+    </RecordDetailViewer>
   </div>
 </template>
 
@@ -216,7 +260,10 @@ import { message } from 'ant-design-vue'
 import { FileTextOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined, DollarOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
 import { printElementAsPdf } from '@/utils/pdfExport'
+import { createClientPagination } from '@/utils/pagination'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 
+const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---구매계약요구사항---\n'
 const CONTRACT_TYPES = ['자재', '외주', '안전', '기타']
 const STATUSES = ['입력', '구매팀확인', '승인', '완료', '해지']
@@ -225,6 +272,7 @@ const statusColor = { 입력: 'orange', 구매팀확인: 'blue', 승인: 'purple
 const items = ref([]), projects = ref([]), companies = ref([])
 const loading = ref(false), saving = ref(false), drawerOpen = ref(false)
 const editItem = ref(null), formRef = ref(), orderSheetRef = ref()
+const viewerOpen = ref(false), selectedItem = ref(null)
 const filterProject = ref(null), filterStatus = ref(null)
 
 const defaultNotice = [
@@ -330,12 +378,65 @@ const columns = [
   { title: '관리',    key: 'action',                width: 130, align: 'center', fixed: 'right' },
 ]
 
+const viewerOrderItemColumns = [
+  { title: 'No.', key: 'no', width: 60, align: 'center' },
+  { title: '품명', dataIndex: 'item_name', width: 180, ellipsis: true },
+  { title: '규격', dataIndex: 'spec', width: 220, ellipsis: true },
+  { title: '단위', dataIndex: 'unit', width: 70, align: 'center' },
+  { title: '수량', key: 'quantity', width: 90, align: 'right' },
+  { title: '단가', key: 'unit_price', width: 120, align: 'right' },
+  { title: '금액', key: 'amount', width: 130, align: 'right' },
+]
+
+const viewerSections = computed(() => [
+  {
+    title: '계약 정보',
+    fields: [
+      { label: '구매번호', value: selectedItem.value?.contract_no },
+      { label: '계약명', value: selectedItem.value?.contract_name },
+      { label: '프로젝트', value: selectedItem.value?.project_name },
+      { label: '거래처', value: selectedItem.value?.vendor_name },
+      { label: '구분', value: selectedItem.value?.contract_type },
+      { label: '하도급', value: selectedItem.value?.subcontract_flag },
+      { label: '계약금액', value: fmt(selectedItem.value?.contract_amount) },
+      { label: 'VAT포함', value: fmt(contractAmountVat(selectedItem.value)) },
+      { label: '상태', value: selectedItem.value?.status },
+    ],
+  },
+  {
+    title: '발주 조건',
+    fields: [
+      { label: '지불조건', value: selectedItem.value?.payment_terms },
+      { label: '납품장소', value: selectedItem.value?.delivery_place },
+      { label: '발주일자', value: selectedItem.value?.start_date },
+      { label: '종료일', value: selectedItem.value?.end_date },
+      { label: 'PJT No.', value: selectedItem.value?.pjt_no },
+      { label: '발주 담당자', value: selectedItem.value?.order_manager },
+      { label: '담당자 연락처', value: selectedItem.value?.order_manager_phone },
+    ],
+  },
+  {
+    title: '구매자 정보',
+    fields: [
+      { label: '사업자', value: selectedItem.value?.buyer_company },
+      { label: '대표자', value: selectedItem.value?.buyer_ceo },
+      { label: '주소', value: selectedItem.value?.buyer_address },
+      { label: '전화번호', value: selectedItem.value?.buyer_phone },
+      { label: '팩스번호', value: selectedItem.value?.buyer_fax },
+    ],
+  },
+])
+
 function splitNotes(notes) {
   const raw = notes || ''
   const idx = raw.indexOf(REQ_MARKER)
   if (idx < 0) return { memo: raw, req: {} }
   try { return { memo: raw.slice(0, idx), req: JSON.parse(raw.slice(idx + REQ_MARKER.length)) || {} } }
   catch { return { memo: raw, req: {} } }
+}
+
+function splitContractNotes(item) {
+  return splitNotes(item?.raw_notes ?? item?.notes)
 }
 
 function buildNotes() {
@@ -365,11 +466,21 @@ function withRequirementMeta(item) {
   const { memo, req } = splitNotes(item.notes)
   return {
     ...item,
+    raw_notes: item.notes,
     notes: memo,
     subcontract_flag: req.subcontract_flag || '미해당',
     payment_terms: req.payment_terms || '',
     delivery_place: req.delivery_place || '',
     pjt_no: req.pjt_no || '',
+    vat_type: req.vat_type || '',
+    buyer_company: req.buyer_company || '',
+    buyer_ceo: req.buyer_ceo || '',
+    buyer_address: req.buyer_address || '',
+    buyer_phone: req.buyer_phone || '',
+    buyer_fax: req.buyer_fax || '',
+    order_manager: req.order_manager || '',
+    order_manager_phone: req.order_manager_phone || '',
+    order_items: Array.isArray(req.order_items) ? req.order_items : [],
   }
 }
 
@@ -416,6 +527,17 @@ function removeOrderItem(index) {
   form.order_items.splice(index, 1)
 }
 
+function orderItemsOf(record) {
+  if (Array.isArray(record?.order_items) && record.order_items.length) {
+    return record.order_items.map(row => makeOrderItem(row))
+  }
+  const { req } = splitContractNotes(record)
+  if (Array.isArray(req.order_items) && req.order_items.length) {
+    return req.order_items.map(row => makeOrderItem(row))
+  }
+  return [makeOrderItem({ item_name: record?.contract_name || '', quantity: 1, unit_price: record?.contract_amount || 0 })]
+}
+
 async function load() {
   loading.value = true
   try {
@@ -433,7 +555,7 @@ async function load() {
 function openDrawer(item) {
   editItem.value = item
   if (item) {
-    const { memo, req } = splitNotes(item.notes)
+    const { memo, req } = splitContractNotes(item)
     const noticeParts = splitNoticeText(req.notice_text)
     Object.assign(form, {
       ...makeEmptyForm(),
@@ -463,6 +585,29 @@ function openDrawer(item) {
     Object.assign(form, makeEmptyForm())
   }
   drawerOpen.value = true
+}
+
+function openViewer(item) {
+  selectedItem.value = item
+  viewerOpen.value = true
+}
+
+function editFromViewer(item) {
+  viewerOpen.value = false
+  openDrawer(item)
+}
+
+async function handleDeleteFromViewer(id) {
+  await handleDelete(id)
+  viewerOpen.value = false
+}
+
+function contractRowEvents(record) {
+  return {
+    onClick: () => openViewer(record),
+    onDblclick: () => openViewer(record),
+    class: 'clickable-data-row',
+  }
 }
 
 async function handlePdf(item) {
@@ -543,6 +688,8 @@ onMounted(load)
 .table-card { border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.07); }
 .card-title { font-size:15px; font-weight:600; color:#1a2535; }
 .del-link { color:#e74c3c; } .del-link:hover { color:#c0392b; }
+.viewer-section-like { padding: 18px 0; border-bottom: 1px solid #e5e7eb; }
+.viewer-section-like h3 { margin: 0 0 12px; font-size: 14px; font-weight: 800; color: #1f4f8f; }
 .order-form {
   margin-top: 4px;
 }

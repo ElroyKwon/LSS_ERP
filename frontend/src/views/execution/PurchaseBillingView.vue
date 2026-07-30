@@ -31,8 +31,9 @@
       </template>
 
       <a-table :columns="columns" :data-source="items" :loading="loading"
-               :pagination="{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+               :pagination="clientPagination"
                row-key="id" size="middle" :scroll="{ x: 1240 }"
+               :custom-row="billingRowEvents"
         :sticky="{ offsetHeader: 56 }">
         <template #bodyCell="{ column, record }">
           <template v-if="['bill_amount','vat_amount','total_amount'].includes(column.key)">
@@ -42,8 +43,8 @@
             <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
           </template>
           <template v-if="column.key === 'action'">
-            <a-space size="small">
-              <a @click="openDrawer(record)">수정</a>
+            <a-space size="small" @click.stop>
+              <a @click.stop="openDrawer(record)">수정</a>
               <a-divider type="vertical" style="margin:0" />
               <a v-if="record.status !== '승인'" @click="handleApprove(record.id)">승인</a>
               <a-divider v-if="record.status !== '승인'" type="vertical" style="margin:0" />
@@ -172,6 +173,27 @@
         </div>
       </template>
     </a-modal>
+
+    <RecordDetailViewer
+      v-model:open="viewerOpen"
+      title="매입 청구 상세"
+      kicker="PURCHASE BILLING"
+      :heading="selectedItem?.project_name || selectedItem?.bill_no"
+      :subheading="selectedItem?.bill_no"
+      :record="selectedItem"
+      :sections="viewerSections"
+      :notes="selectedItem?.notes || ''"
+      @edit="editFromViewer"
+    >
+      <template #badge="{ record }">
+        <a-tag :color="statusColor[record.status]">{{ record.status }}</a-tag>
+      </template>
+      <template #leftActions="{ record }">
+        <a-popconfirm title="삭제하시겠습니까?" ok-text="삭제" ok-type="danger" cancel-text="취소" @confirm="handleDeleteFromViewer(record.id)">
+          <a-button danger>삭제</a-button>
+        </a-popconfirm>
+      </template>
+    </RecordDetailViewer>
   </div>
 </template>
 
@@ -180,7 +202,10 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { FileTextOutlined, ClockCircleOutlined, CheckCircleOutlined, DollarOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { executionApi, masterApi } from '@/api'
+import { createClientPagination } from '@/utils/pagination'
+import RecordDetailViewer from '@/components/common/RecordDetailViewer.vue'
 
+const clientPagination = createClientPagination()
 const REQ_MARKER = '\n---매입청구요구사항---\n'
 const STATUSES    = ['지급요청', '승인', '지급완료']
 const statusColor = { 지급요청:'orange', 승인:'blue', 지급완료:'green' }
@@ -188,6 +213,7 @@ const statusColor = { 지급요청:'orange', 승인:'blue', 지급완료:'green'
 const items = ref([]), projects = ref([]), companies = ref([]), purchaseContracts = ref([])
 const loading = ref(false), saving = ref(false), drawerOpen = ref(false)
 const editItem = ref(null), formRef = ref()
+const viewerOpen = ref(false), selectedItem = ref(null)
 const filterProject = ref(null), filterStatus = ref(null)
 
 const emptyForm = { bill_no:'', project_id:null, vendor_name:'', vendor_id:null,
@@ -236,6 +262,35 @@ const columns = [
   { title: '상태',    key: 'status',              width: 90,  align: 'center' },
   { title: '관리',    key: 'action',              width: 100, align: 'center', fixed: 'right' },
 ]
+
+const fmtMoney = v => Number(v || 0).toLocaleString()
+
+const viewerSections = computed(() => [
+  {
+    title: '기본 정보',
+    fields: [
+      { label: '청구번호', value: selectedItem.value?.bill_no },
+      { label: '프로젝트', value: selectedItem.value?.project_name },
+      { label: '원계약처', value: selectedItem.value?.original_client_name },
+      { label: '하도급사', value: selectedItem.value?.vendor_name },
+      { label: '상태', value: selectedItem.value?.status },
+    ],
+  },
+  {
+    title: '청구 금액',
+    fields: [
+      { label: '귀속월', value: selectedItem.value?.attribution_month },
+      { label: '청구일', value: selectedItem.value?.bill_date },
+      { label: '지급예정일', value: selectedItem.value?.due_date },
+      { label: '청구금액', value: fmtMoney(selectedItem.value?.bill_amount) },
+      { label: '부가세', value: fmtMoney(selectedItem.value?.vat_amount) },
+      { label: '합계', value: fmtMoney(selectedItem.value?.total_amount) },
+      { label: '관련 매출청구', value: selectedItem.value?.related_sales_bill },
+      { label: '기성 정보', value: selectedItem.value?.progress_info },
+      { label: '지급구분', value: selectedItem.value?.payment_method },
+    ],
+  },
+])
 
 function splitNotes(notes) {
   const raw = notes || ''
@@ -352,6 +407,29 @@ async function handleSave() {
 async function handleDelete(id) {
   try { await executionApi.deleteAPBill(id); message.success('삭제되었습니다.'); load() }
   catch (e) { message.error(e.response?.data?.detail || '삭제 오류') }
+}
+
+function openViewer(item) {
+  selectedItem.value = item
+  viewerOpen.value = true
+}
+
+function editFromViewer(item) {
+  viewerOpen.value = false
+  openDrawer(item)
+}
+
+async function handleDeleteFromViewer(id) {
+  await handleDelete(id)
+  viewerOpen.value = false
+}
+
+function billingRowEvents(record) {
+  return {
+    onClick: () => openViewer(record),
+    onDblclick: () => openViewer(record),
+    class: 'clickable-data-row',
+  }
 }
 
 async function handleApprove(id) {

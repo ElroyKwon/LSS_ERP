@@ -240,6 +240,7 @@ export const managementApi = {
   createPayable: (d) => api.post('/management/payables', d),
   updatePayable: (id, d) => api.put(`/management/payables/${id}`, d),
   getPLReport: (year, month) => api.get('/reports/profit-loss', { params: { year, month } }),
+  getProfitLossData: (year) => api.get('/management/analysis/profit-loss-data', { params: { year } }),
 }
 
 

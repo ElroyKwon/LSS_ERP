@@ -90,6 +90,7 @@ body {
 }
 
 .ant-table-wrapper .ant-table-sticky-holder {
+  top: 56px !important;
   z-index: 20;
   background: #fff;
   box-shadow: 0 1px 0 rgba(5, 5, 5, 0.06);
@@ -131,27 +132,7 @@ body {
 
 .ant-table-wrapper .ant-table-content,
 .ant-table-wrapper .ant-table-body {
-  overflow-x: auto !important;
-}
-
-.ant-table-wrapper .ant-table-content {
-  overflow-y: hidden !important;
-}
-
-.ant-table-wrapper .ant-table-body {
-  overflow-y: auto !important;
-}
-
-.ant-table-wrapper .ant-table-cell {
-  vertical-align: middle;
-}
-
-.ant-table-wrapper .ant-table-tbody > tr.clickable-data-row {
-  cursor: pointer;
-}
-
-.ant-table-wrapper .ant-table-tbody > tr.clickable-data-row:hover > td {
-  background: #f0f7ff !important;
+  overflow: auto !important;
 }
 
 .ant-table-wrapper .ant-table-pagination.ant-pagination {

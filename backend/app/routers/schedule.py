@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from ..utils.auth import get_current_user
 from ..utils.system_accounts import is_system_account_username
 from ..database import get_db
-from ..models.common import User, CalendarSchedule
+from ..models.common import User, CalendarSchedule, Holiday
 from ..models.master import Employee
 from ..models.timesheet import Timesheet, TimesheetEntry
 
@@ -157,6 +157,24 @@ def _iter_dates(start_day: date, end_day: date):
     while current <= end_day:
         yield current
         current += timedelta(days=1)
+
+
+def _holiday_dates_for_range(db: Session, start_day: date, end_day: date) -> set[date]:
+    years = {str(start_day.year), str(end_day.year)}
+    rows = db.query(Holiday).filter(Holiday.year.in_(years)).all()
+    holidays: set[date] = set()
+    for row in rows:
+        try:
+            holiday_date = date(int(row.year), int(row.month), int(row.day))
+        except (TypeError, ValueError):
+            continue
+        if start_day <= holiday_date <= end_day:
+            holidays.add(holiday_date)
+    return holidays
+
+
+def _is_timesheet_blocked_day(day: date, holidays: set[date]) -> bool:
+    return day.weekday() >= 5 or day in holidays
 
 
 def _current_employee(db: Session, current_user) -> Employee | None:
@@ -327,8 +345,17 @@ def _sync_schedule_to_timesheet(db: Session, payload: ScheduleCreate, event_id: 
                 raise HTTPException(status_code=400, detail="출장 일정은 기간이 필요합니다.")
             schedule_days = [(day, Decimal("8")) for day in _iter_dates(start_day, end_day)]
 
+    if schedule_days:
+        first_day = min(day for day, _ in schedule_days)
+        last_day = max(day for day, _ in schedule_days)
+        blocked_holidays = _holiday_dates_for_range(db, first_day, last_day)
+    else:
+        blocked_holidays = set()
+
     by_week: dict[date, dict[str, Decimal]] = {}
     for day, hours in schedule_days:
+        if _is_timesheet_blocked_day(day, blocked_holidays):
+            continue
         week_start, _ = _week_of(day)
         by_week.setdefault(week_start, {})[DAY_KEYS[day.weekday()]] = hours
 

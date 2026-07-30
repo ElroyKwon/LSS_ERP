@@ -350,6 +350,12 @@ def ensure_timesheet_admin_tables(engine):
                 total_amount NUMERIC(18, 2) DEFAULT 0,
                 contract_amount NUMERIC(18, 2) DEFAULT 0,
                 other_amount NUMERIC(18, 2) DEFAULT 0,
+                contract_ratio_amount NUMERIC(18, 2) DEFAULT 0,
+                contract_actual_amount NUMERIC(18, 2) DEFAULT 0,
+                contract_diff_amount NUMERIC(18, 2) DEFAULT 0,
+                other_ratio_amount NUMERIC(18, 2) DEFAULT 0,
+                other_actual_amount NUMERIC(18, 2) DEFAULT 0,
+                other_diff_amount NUMERIC(18, 2) DEFAULT 0,
                 created_by INTEGER REFERENCES users(id),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -357,6 +363,33 @@ def ensure_timesheet_admin_tables(engine):
                     UNIQUE (allocation_year, allocation_month, category)
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS timesheet_monthly_closes (
+                id SERIAL PRIMARY KEY,
+                close_year INTEGER NOT NULL,
+                close_month INTEGER NOT NULL,
+                is_closed BOOLEAN NOT NULL DEFAULT TRUE,
+                closed_by INTEGER REFERENCES users(id),
+                closed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_timesheet_monthly_closes_month
+                    UNIQUE (close_year, close_month)
+            )
+        """))
+    _ensure_columns(engine, "timesheet_labor_allocations", {
+        "contract_ratio_amount": "NUMERIC(18, 2) DEFAULT 0",
+        "contract_actual_amount": "NUMERIC(18, 2) DEFAULT 0",
+        "contract_diff_amount": "NUMERIC(18, 2) DEFAULT 0",
+        "other_ratio_amount": "NUMERIC(18, 2) DEFAULT 0",
+        "other_actual_amount": "NUMERIC(18, 2) DEFAULT 0",
+        "other_diff_amount": "NUMERIC(18, 2) DEFAULT 0",
+    })
+    _ensure_indexes(engine, {
+        "timesheet_monthly_closes": [
+            ("ix_timesheet_monthly_closes_id", "id"),
+        ],
+    })
 
 
 def ensure_notice_attachment_tables(engine):

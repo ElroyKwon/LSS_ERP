@@ -81,10 +81,11 @@
                       <span class="col-resizer" @mousedown.prevent="startColumnResize('type', $event)" />
                     </th>
                     <th v-for="(d, i) in weekDays" :key="d.date"
-                        :class="['col-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
+                        :class="['col-day', d.isBlocked ? 'weekend blocked-day' : '', d.date === todayStr ? 'today' : '']">
                       <div class="day-header">
                         <span class="day-name">{{ d.label }}</span>
                         <span class="day-date">{{ d.short }}</span>
+                        <span v-if="d.holidayName" class="holiday-name">{{ d.holidayName }}</span>
                       </div>
                     </th>
                     <th class="col-total">주계</th>
@@ -146,11 +147,12 @@
                     </td>
                     <!-- 요일별 시간 입력 -->
                     <td v-for="(d, di) in weekDays" :key="d.date"
-                        :class="['col-day', d.isWeekend ? 'weekend' : '']">
+                        :class="['col-day', d.isBlocked ? 'weekend blocked-day' : '']">
                       <a-input-number
                         v-model:value="row[DAY_KEYS[di]]"
                         :min="0" :max="24" :step="0.5"
-                        :disabled="isLocked"
+                        :disabled="isLocked || d.isBlocked"
+                        :placeholder="d.isBlocked ? '-' : undefined"
                         class="hour-input"
                         :class="row[DAY_KEYS[di]] > 0 ? 'has-hours' : ''"
                         controls-position="right"
@@ -184,7 +186,7 @@
                   <tr class="total-row">
                     <td colspan="5" class="total-label">일  계</td>
                     <td v-for="(d, di) in weekDays" :key="d.date"
-                        :class="['col-day', d.isWeekend ? 'weekend' : '']">
+                        :class="['col-day', d.isBlocked ? 'weekend blocked-day' : '']">
                       <span :class="dayTotalClass(di)">
                         {{ dayTotal(di) > 0 ? dayTotal(di) : '—' }}
                       </span>
@@ -204,10 +206,11 @@
                       <span class="col-resizer" @mousedown.prevent="startColumnResize('project', $event)" />
                     </th>
                     <th v-for="d in monthDays" :key="d.date"
-                        :class="['col-month-day', d.isWeekend ? 'weekend' : '', d.date === todayStr ? 'today' : '']">
+                        :class="['col-month-day', d.isBlocked ? 'weekend blocked-day' : '', d.date === todayStr ? 'today' : '']">
                       <div class="day-header">
                         <span class="day-name">{{ d.day }}</span>
                         <span class="day-date">{{ d.label }}</span>
+                        <span v-if="d.holidayName" class="holiday-name">{{ d.holidayName }}</span>
                       </div>
                     </th>
                     <th class="col-total">합계</th>
@@ -218,7 +221,7 @@
                     <td class="col-source">{{ row.project_source || '공통' }}</td>
                     <td class="col-project text-left" :style="columnStyle('project')">{{ row.project_name || '기타' }}</td>
                     <td v-for="d in monthDays" :key="d.date"
-                        :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
+                        :class="['col-month-day', d.isBlocked ? 'weekend blocked-day' : '']">
                       <span :class="row.days[d.day] > 0 ? 'num-active' : 'num-zero'">
                         {{ row.days[d.day] > 0 ? row.days[d.day] : '—' }}
                       </span>
@@ -233,7 +236,7 @@
                   <tr class="total-row">
                     <td colspan="2" class="total-label">일  계</td>
                     <td v-for="d in monthDays" :key="d.date"
-                        :class="['col-month-day', d.isWeekend ? 'weekend' : '']">
+                        :class="['col-month-day', d.isBlocked ? 'weekend blocked-day' : '']">
                       <span :class="monthlyDayTotal(d.day) > 0 ? 'num-active' : 'num-zero'">
                         {{ monthlyDayTotal(d.day) > 0 ? monthlyDayTotal(d.day) : '—' }}
                       </span>
@@ -318,15 +321,26 @@
 
         <a-spin :spinning="adminLaborLoading">
           <a-card :bordered="false" class="table-card admin-labor-card">
-            <div class="admin-section-title">인건비 배부</div>
+            <div class="admin-section-title">
+              <span>인건비 배부</span>
+              <a-tag v-if="adminLaborClosed" color="blue">월 마감</a-tag>
+            </div>
             <div class="admin-table-wrap compact">
               <table class="admin-labor-table">
                 <thead>
                   <tr>
-                    <th>구분</th>
-                    <th>누계 금액</th>
-                    <th>도급</th>
-                    <th>기타</th>
+                    <th rowspan="2">구분</th>
+                    <th rowspan="2">누계금액</th>
+                    <th colspan="3">도급</th>
+                    <th colspan="3">기타</th>
+                  </tr>
+                  <tr>
+                    <th>비율 배부금액</th>
+                    <th>실제 배부금액</th>
+                    <th>차이</th>
+                    <th>비율 배부금액</th>
+                    <th>실제 배부금액</th>
+                    <th>차이</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -343,27 +357,69 @@
                       />
                       <span v-else>{{ formatAmount(row.total_amount) }}</span>
                     </td>
-                    <td>
+                    <td class="amount-cell">
                       <a-input-number
-                        v-if="row.category !== '합계'"
-                        v-model:value="row.contract_amount"
+                        v-if="row.category !== '?⑷퀎'"
+                        v-model:value="row.contract_ratio_amount"
                         :min="0"
                         :formatter="amountFormatter"
                         :parser="amountParser"
-                        style="width:100%"
+                        class="amount-input"
                       />
-                      <span v-else>{{ formatAmount(row.contract_amount) }}</span>
+                      <span v-else>{{ formatAmount(row.contract_ratio_amount) }}</span>
                     </td>
-                    <td>
+                    <td class="amount-cell">
                       <a-input-number
-                        v-if="row.category !== '합계'"
-                        v-model:value="row.other_amount"
+                        v-if="row.category !== '?⑷퀎'"
+                        v-model:value="row.contract_actual_amount"
                         :min="0"
                         :formatter="amountFormatter"
                         :parser="amountParser"
-                        style="width:100%"
+                        class="amount-input"
                       />
-                      <span v-else>{{ formatAmount(row.other_amount) }}</span>
+                      <span v-else>{{ formatAmount(row.contract_actual_amount) }}</span>
+                    </td>
+                    <td class="amount-cell" :class="diffClass(row.contract_diff_amount)">
+                      <a-input-number
+                        v-if="row.category !== '?⑷퀎'"
+                        v-model:value="row.contract_diff_amount"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        class="amount-input"
+                      />
+                      <span v-else>{{ formatSignedAmount(row.contract_diff_amount) }}</span>
+                    </td>
+                    <td class="amount-cell">
+                      <a-input-number
+                        v-if="row.category !== '?⑷퀎'"
+                        v-model:value="row.other_ratio_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        class="amount-input"
+                      />
+                      <span v-else>{{ formatAmount(row.other_ratio_amount) }}</span>
+                    </td>
+                    <td class="amount-cell">
+                      <a-input-number
+                        v-if="row.category !== '?⑷퀎'"
+                        v-model:value="row.other_actual_amount"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        class="amount-input"
+                      />
+                      <span v-else>{{ formatAmount(row.other_actual_amount) }}</span>
+                    </td>
+                    <td class="amount-cell" :class="diffClass(row.other_diff_amount)">
+                      <a-input-number
+                        v-if="row.category !== '?⑷퀎'"
+                        v-model:value="row.other_diff_amount"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        class="amount-input"
+                      />
+                      <span v-else>{{ formatSignedAmount(row.other_diff_amount) }}</span>
                     </td>
                   </tr>
                 </tbody>
@@ -413,9 +469,15 @@
                     <td>{{ formatHours(row.cumulative_admin_hours) }}</td>
                     <td>{{ row.sales_type || '-' }}</td>
                     <td>{{ row.status || '-' }}</td>
-                    <td class="amount-cell">{{ formatAmount(row.labor_total_amount) }}</td>
+                    <td class="amount-cell">{{ formatAmount(adminProjectLaborTotal(row)) }}</td>
                     <td v-for="month in MONTH_NUMBERS" :key="month" class="amount-cell">
-                      {{ formatAmount(row.monthly_labor?.[month] || 0) }}
+                      <a-input-number
+                        v-model:value="row.monthly_labor[month]"
+                        :min="0"
+                        :formatter="amountFormatter"
+                        :parser="amountParser"
+                        class="month-labor-input"
+                      />
                     </td>
                   </tr>
                   <tr v-if="adminProjectRows.length === 0">
@@ -517,7 +579,7 @@ import { message, Modal, Empty } from 'ant-design-vue'
 import {
   LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined,
 } from '@ant-design/icons-vue'
-import { timesheetApi, executionApi, salesApi } from '@/api'
+import api, { timesheetApi, executionApi, salesApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { canAccess, normalizeRole } from '@/utils/permissions'
 import { PAGE_SIZE_OPTIONS, createClientPagination } from '@/utils/pagination'
@@ -623,6 +685,75 @@ function fmtDate(s, fmt = 'MM/DD') {
   return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
 }
 
+function normalizeHolidayPayload(rows = []) {
+  const result = {}
+  rows.forEach(row => {
+    if (!row) return
+    if (typeof row === 'string') {
+      result[row] = 'Holiday'
+      return
+    }
+    const dateValue = row.date || row.holiday_date || row.day_date
+    if (dateValue) {
+      result[String(dateValue).slice(0, 10)] = row.content || row.name || row.title || 'Holiday'
+      return
+    }
+    if (row.year && row.month && row.day) {
+      const y = String(row.year).padStart(4, '0')
+      const m = String(row.month).padStart(2, '0')
+      const d = String(row.day).padStart(2, '0')
+      result[`${y}-${m}-${d}`] = row.content || row.name || row.title || 'Holiday'
+    }
+  })
+  return result
+}
+
+function holidayNameByDate(dateStr) {
+  const year = String(dateStr || '').slice(0, 4)
+  return holidayCache.value[year]?.[dateStr] || ''
+}
+
+async function ensureHolidayYears(years) {
+  const targets = [...new Set(years.map(year => String(year)).filter(Boolean))]
+    .filter(year => !holidayCache.value[year])
+  if (!targets.length) return
+  await Promise.all(targets.map(async year => {
+    try {
+      const res = await api.get('/holiday', { params: { year } })
+      holidayCache.value = {
+        ...holidayCache.value,
+        [year]: normalizeHolidayPayload(res.data || []),
+      }
+    } catch (_) {
+      holidayCache.value = { ...holidayCache.value, [year]: {} }
+    }
+  }))
+}
+
+async function ensureHolidayRange(startDate, endDate = startDate) {
+  await ensureHolidayYears([
+    new Date(startDate).getFullYear(),
+    new Date(endDate).getFullYear(),
+  ])
+}
+
+function isBlockedWorkDate(dateStr) {
+  const dow = new Date(dateStr).getDay()
+  return dow === 0 || dow === 6 || Boolean(holidayNameByDate(dateStr))
+}
+
+function clearBlockedDayHours(row) {
+  DAY_KEYS.forEach((key, index) => {
+    const date = addDays(weekStart.value, index)
+    if (isBlockedWorkDate(date)) row[key] = 0
+  })
+  return row
+}
+
+function clearAllBlockedDayHours() {
+  entries.value.forEach(clearBlockedDayHours)
+}
+
 function toNumber(value) {
   const n = Number(String(value ?? '').replace(/,/g, ''))
   return Number.isFinite(n) ? n : 0
@@ -631,6 +762,19 @@ function toNumber(value) {
 function formatAmount(value) {
   const amount = Math.round(toNumber(value))
   return amount > 0 ? amount.toLocaleString() : '—'
+}
+
+function formatSignedAmount(value) {
+  const amount = Math.round(toNumber(value))
+  if (amount === 0) return '—'
+  return `${amount > 0 ? '+' : ''}${amount.toLocaleString()}`
+}
+
+function diffClass(value) {
+  const amount = toNumber(value)
+  if (amount > 0) return 'diff-positive'
+  if (amount < 0) return 'diff-negative'
+  return ''
 }
 
 function formatHours(value) {
@@ -655,6 +799,7 @@ const projects       = ref([])
 const salesProjects  = ref([])
 const commonProjectSuggestions = ref([])
 const commonProjectSearchTimer = ref(null)
+const holidayCache = ref({})
 const resizeState = ref(null)
 const columnWidths = ref(loadColumnWidths())
 const weekLoading    = ref(false)
@@ -772,7 +917,17 @@ const weekEnd = computed(() => addDays(weekStart.value, 6))
 const weekDays = computed(() =>
   DAY_KEYS.map((k, i) => {
     const date = addDays(weekStart.value, i)
-    return { date, label: DAY_LABELS[i], short: fmtDate(date), isWeekend: i >= 5, key: k }
+    const holidayName = holidayNameByDate(date)
+    return {
+      date,
+      label: DAY_LABELS[i],
+      short: fmtDate(date),
+      isWeekend: i >= 5,
+      isHoliday: Boolean(holidayName),
+      isBlocked: i >= 5 || Boolean(holidayName),
+      holidayName,
+      key: k,
+    }
   })
 )
 const weekLabel = computed(() =>
@@ -790,11 +945,15 @@ const monthDays = computed(() => {
   return Array.from({ length: last }, (_, i) => {
     const date = formatLocalDate(new Date(start.getFullYear(), start.getMonth(), i + 1))
     const dow = new Date(date).getDay()
+    const holidayName = holidayNameByDate(date)
     return {
       date,
       day: i + 1,
       label: DAY_LABELS[(dow + 6) % 7],
       isWeekend: dow === 0 || dow === 6,
+      isHoliday: Boolean(holidayName),
+      isBlocked: dow === 0 || dow === 6 || Boolean(holidayName),
+      holidayName,
     }
   })
 })
@@ -1056,11 +1215,11 @@ const weekKpis = computed(() => {
 })
 
 function addRow() {
-  entries.value.push({
+  entries.value.push(clearBlockedDayHours({
     project_id: null, project_name: '', project_source: '공통', spg: '공통', labor_type: selectedEmployeeLaborType.value, work_type: ['공통 > 기타'],
     mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0,
     fri_hours: 0, sat_hours: 0, sun_hours: 0, notes: '',
-  })
+  }))
 }
 function removeRow(idx) { entries.value.splice(idx, 1) }
 
@@ -1149,7 +1308,8 @@ async function loadSelectedHistorySheet() {
     const sourceEntries = historyPreviewEntries.value.length > 0
       ? historyPreviewEntries.value
       : ((await timesheetApi.getWeek(empId, selectedHistoryWeek.value)).data?.entries || [])
-    entries.value = sourceEntries.map((entry, index) => ({
+    await ensureHolidayRange(weekStart.value, weekEnd.value)
+    entries.value = sourceEntries.map((entry, index) => clearBlockedDayHours({
       project_id: entry.project_id || null,
       project_name: entry.project_name || '',
       project_source: entry.project_source || (entry.project_id ? '실행' : '공통'),
@@ -1213,13 +1373,14 @@ async function loadWeek() {
   const empId = selectedEmpId.value || myEmpId.value
   if (!empId) { weekLoading.value = false; return }
   try {
+    await ensureHolidayRange(weekStart.value, weekEnd.value)
     const res = await timesheetApi.getWeek(empId, weekStart.value)
     const d   = res.data
     tsId.value     = d.id
     tsStatus.value = d.status || '작성중'
     tsNotes.value  = d.notes  || ''
     rejectReason.value = d.reject_reason || ''
-    entries.value  = (d.entries || []).map(e => ({
+    entries.value  = (d.entries || []).map(e => clearBlockedDayHours({
       ...e,
       project_source: e.project_source || (e.project_id ? '실행' : '공통'),
       spg: e.spg || '공통',
@@ -1234,6 +1395,7 @@ async function loadMonth() {
   const empId = selectedEmpId.value || myEmpId.value
   if (!empId) { monthLoading.value = false; return }
   try {
+    await ensureHolidayRange(monthStart.value, monthEnd.value)
     const list = (await timesheetApi.getList({ employee_id: empId })).data || []
     const targetWeeks = list.filter(ts => {
       const start = ts.week_start
@@ -1262,6 +1424,7 @@ async function loadMonth() {
         DAY_KEYS.forEach((hourKey, index) => {
           const date = addDays(sheet.week_start, index)
           if (date < monthStart.value || date > monthEnd.value) return
+          if (isBlockedWorkDate(date)) return
           const hours = Number(entry[hourKey]) || 0
           if (!hours) return
           const day = dayOfMonth(date)
@@ -1284,6 +1447,7 @@ async function handleSave() {
   if (!empId) { message.warning('직원을 선택해주세요.'); return }
   saving.value = true
   try {
+    clearAllBlockedDayHours()
     const res = await timesheetApi.save({
       employee_id: empId, week_start: weekStart.value,
       entries: entries.value.map(row => ({
@@ -1309,12 +1473,19 @@ const summaryRows = ref([])
 const summaryLoading = ref(false)
 const adminLaborLoading = ref(false)
 const adminLaborSaving = ref(false)
+const adminLaborClosed = ref(false)
 const adminMonthStart = ref(firstDayOfMonth(todayStr))
 const allocationRows = ref(LABOR_ALLOCATION_CATEGORIES.map(category => ({
   category,
   total_amount: 0,
   contract_amount: 0,
   other_amount: 0,
+  contract_ratio_amount: 0,
+  contract_actual_amount: 0,
+  contract_diff_amount: 0,
+  other_ratio_amount: 0,
+  other_actual_amount: 0,
+  other_diff_amount: 0,
 })))
 const adminProjectRows = ref([])
 const adminProjectPagination = ref({ current: 1, pageSize: 20 })
@@ -1343,13 +1514,31 @@ const editableAllocationRows = computed(() => {
   const rowsByCategory = new Map(allocationRows.value.map(row => [row.category, row]))
   const rows = LABOR_ALLOCATION_CATEGORIES.map(category => {
     const row = rowsByCategory.get(category)
-    return row || { category, total_amount: 0, contract_amount: 0, other_amount: 0 }
+    return row || {
+      category,
+      total_amount: 0,
+      contract_amount: 0,
+      other_amount: 0,
+      contract_ratio_amount: 0,
+      contract_actual_amount: 0,
+      contract_diff_amount: 0,
+      other_ratio_amount: 0,
+      other_actual_amount: 0,
+      other_diff_amount: 0,
+    }
   })
+  const sumField = field => rows.reduce((sum, row) => sum + toNumber(row[field]), 0)
   rows.push({
     category: '합계',
-    total_amount: rows.reduce((sum, row) => sum + toNumber(row.total_amount), 0),
-    contract_amount: rows.reduce((sum, row) => sum + toNumber(row.contract_amount), 0),
-    other_amount: rows.reduce((sum, row) => sum + toNumber(row.other_amount), 0),
+    total_amount: sumField('total_amount'),
+    contract_amount: sumField('contract_amount'),
+    other_amount: sumField('other_amount'),
+    contract_ratio_amount: sumField('contract_ratio_amount'),
+    contract_actual_amount: sumField('contract_actual_amount'),
+    contract_diff_amount: sumField('contract_diff_amount'),
+    other_ratio_amount: sumField('other_ratio_amount'),
+    other_actual_amount: sumField('other_actual_amount'),
+    other_diff_amount: sumField('other_diff_amount'),
   })
   return rows
 })
@@ -1422,6 +1611,42 @@ function handleAdminProjectPageSizeChange(_page, pageSize) {
   }
 }
 
+function allocationRowFromApi(category, rows) {
+  const row = rows.find(item => item.category === category) || {}
+  return {
+    category,
+    total_amount: toNumber(row.total_amount),
+    contract_amount: toNumber(row.contract_amount),
+    other_amount: toNumber(row.other_amount),
+    contract_ratio_amount: toNumber(row.contract_ratio_amount),
+    contract_actual_amount: toNumber(row.contract_actual_amount),
+    contract_diff_amount: toNumber(row.contract_diff_amount),
+    other_ratio_amount: toNumber(row.other_ratio_amount),
+    other_actual_amount: toNumber(row.other_actual_amount),
+    other_diff_amount: toNumber(row.other_diff_amount),
+  }
+}
+
+function projectLaborRowFromApi(row) {
+  const monthly = {}
+  MONTH_NUMBERS.forEach(month => {
+    monthly[month] = toNumber(row?.monthly_labor?.[month] ?? row?.monthly_labor?.[String(month)])
+  })
+  return {
+    ...row,
+    monthly_labor: monthly,
+    labor_total_amount: toNumber(row?.labor_total_amount),
+  }
+}
+
+function adminProjectLaborTotal(row) {
+  const monthly = row?.monthly_labor || {}
+  const maxMonth = adminYearMonth.value.month || 12
+  return MONTH_NUMBERS
+    .filter(month => month <= maxMonth)
+    .reduce((sum, month) => sum + toNumber(monthly[month]), 0)
+}
+
 async function loadSummary() {
   summaryLoading.value = true
   const empId = summaryEmpId.value || selectedEmpId.value || myEmpId.value
@@ -1479,17 +1704,10 @@ async function loadAdminLabor() {
   try {
     const { year, month } = adminYearMonth.value
     const res = await timesheetApi.getAdminLabor({ year, month })
+    adminLaborClosed.value = Boolean(res.data?.is_closed)
     const rows = res.data?.allocation_rows || []
-    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => {
-      const row = rows.find(item => item.category === category) || {}
-      return {
-        category,
-        total_amount: toNumber(row.total_amount),
-        contract_amount: toNumber(row.contract_amount),
-        other_amount: toNumber(row.other_amount),
-      }
-    })
-    adminProjectRows.value = res.data?.project_rows || []
+    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => allocationRowFromApi(category, rows))
+    adminProjectRows.value = (res.data?.project_rows || []).map(projectLaborRowFromApi)
     adminProjectPagination.value = { ...adminProjectPagination.value, current: 1 }
   } catch (e) {
     adminProjectRows.value = []
@@ -1514,20 +1732,28 @@ async function saveAdminLabor() {
           total_amount: toNumber(row.total_amount),
           contract_amount: toNumber(row.contract_amount),
           other_amount: toNumber(row.other_amount),
+          contract_ratio_amount: toNumber(row.contract_ratio_amount),
+          contract_actual_amount: toNumber(row.contract_actual_amount),
+          contract_diff_amount: toNumber(row.contract_diff_amount),
+          other_ratio_amount: toNumber(row.other_ratio_amount),
+          other_actual_amount: toNumber(row.other_actual_amount),
+          other_diff_amount: toNumber(row.other_diff_amount),
         }
       }),
+      project_rows: adminProjectRows.value.map(row => ({
+        key: row.key,
+        project_id: row.project_id,
+        labor_total_amount: adminProjectLaborTotal(row),
+        monthly_labor: MONTH_NUMBERS.reduce((acc, month) => {
+          acc[String(month)] = toNumber(row.monthly_labor?.[month])
+          return acc
+        }, {}),
+      })),
     })
+    adminLaborClosed.value = Boolean(res.data?.is_closed)
     const rows = res.data?.allocation_rows || []
-    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => {
-      const row = rows.find(item => item.category === category) || {}
-      return {
-        category,
-        total_amount: toNumber(row.total_amount),
-        contract_amount: toNumber(row.contract_amount),
-        other_amount: toNumber(row.other_amount),
-      }
-    })
-    adminProjectRows.value = res.data?.project_rows || []
+    allocationRows.value = LABOR_ALLOCATION_CATEGORIES.map(category => allocationRowFromApi(category, rows))
+    adminProjectRows.value = (res.data?.project_rows || []).map(projectLaborRowFromApi)
     message.success('인건비 배부 금액을 저장했습니다.')
   } catch (e) {
     message.error(e.response?.data?.detail || '인건비 배부 금액 저장에 실패했습니다.')
@@ -1683,6 +1909,9 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 .admin-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
   color: #1f1f1f;
   font-size: 14px;
@@ -1692,7 +1921,7 @@ onBeforeUnmount(() => {
   overflow: auto;
 }
 .admin-table-wrap.compact {
-  max-width: 720px;
+  max-width: 1080px;
 }
 .admin-labor-table,
 .admin-project-labor-table {
@@ -1725,12 +1954,27 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 -1px 0 #f0f0f0;
 }
 .admin-labor-table {
-  min-width: 640px;
+  min-width: 1040px;
 }
 .admin-labor-table th:first-child,
 .admin-labor-table td:first-child {
   width: 90px;
   font-weight: 700;
+}
+.admin-labor-table .amount-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.admin-labor-table .amount-input,
+.admin-project-labor-table .month-labor-input {
+  width: 100%;
+  min-width: 92px;
+}
+.diff-positive {
+  color: #cf1322;
+}
+.diff-negative {
+  color: #1677ff;
 }
 .admin-labor-table .total-row td {
   background: #f7fbff;
@@ -1819,14 +2063,17 @@ onBeforeUnmount(() => {
 .text-left { text-align: left; }
 
 .weekend { background: #fafafa; }
+.blocked-day { background: #f7f8fa; }
 .today   { background: #e6f4ff; }
 
 .day-header  { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .day-name    { font-size: 12px; font-weight: 700; }
 .day-date    { font-size: 10px; color: #8c8c8c; }
+.holiday-name { font-size: 10px; color: #f5222d; font-weight: 600; line-height: 1.1; }
 
 :deep(.hour-input) { width: 50px !important; }
 :deep(.hour-input.has-hours .ant-input-number-input) { color: #1677ff; font-weight: 600; }
+:deep(.blocked-day .ant-input-number-disabled) { background: #f5f5f5; color: #bfbfbf; }
 :deep(.ant-input-number-input) { text-align: center !important; padding: 0 2px; }
 
 :global(.timesheet-work-type-dropdown .ant-select-tree-switcher_close::before),

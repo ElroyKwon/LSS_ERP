@@ -817,11 +817,18 @@ const timesheetModeOptions = [
 ]
 
 const empOptions = computed(() =>
-  employees.value.map(e => {
+  asArray(employees.value).map(e => {
     const department = (e.department_name || e.department || '').trim()
     return { value: e.id, label: department ? `${e.name} (${department})` : e.name }
   })
 )
+function asArray(value) {
+  if (Array.isArray(value)) return value
+  if (Array.isArray(value?.items)) return value.items
+  if (Array.isArray(value?.rows)) return value.rows
+  if (Array.isArray(value?.data)) return value.data
+  return []
+}
 function sameText(a, b) {
   const left = String(a || '').trim().toLowerCase()
   const right = String(b || '').trim().toLowerCase()
@@ -1121,7 +1128,7 @@ const projectSuggestions = computed(() => {
     work_type: '공통 > 연차',
   }
 
-  const executionOptions = projects.value.map(p => {
+  const executionOptions = asArray(projects.value).map(p => {
     const projectNo = (p.project_no || '').trim()
     const projectName = (p.project_name || '').trim()
     const label = [projectNo, projectName].filter(Boolean).join(' ')
@@ -1136,7 +1143,7 @@ const projectSuggestions = computed(() => {
     }
   })
 
-  const salesOptions = salesProjects.value
+  const salesOptions = asArray(salesProjects.value)
     .map(row => {
       const projectNo = (row.project_no || row.sales_no || '').trim()
       const projectName = (row.project_name || '').trim()
@@ -1314,7 +1321,8 @@ const projectGroups = ref([])
 
 function syncEntriesToProjectGroups() {
   const map = new Map()
-  ;(entries.value || []).forEach(e => {
+  asArray(entries.value).forEach(raw => {
+    const e = normalizeTimesheetEntry(raw)
     const key = `${e.project_source || '공통'}::${e.project_id || e.project_name || ''}`
     if (!map.has(key)) {
       map.set(key, {
@@ -1342,6 +1350,28 @@ function syncEntriesToProjectGroups() {
   if (projectGroups.value.length === 0) {
     addProjectGroup()
   }
+}
+
+function normalizeTimesheetEntry(raw = {}) {
+  const e = raw || {}
+  return normalizeExecutionProject(clearBlockedDayHours({
+    ...e,
+    project_id: e.project_id || null,
+    project_name: e.project_name || '',
+    project_source: e.project_source || (e.project_id ? '실행' : '공통'),
+    spg: e.spg || '공통',
+    labor_type: e.labor_type || selectedEmployeeLaborType.value,
+    work_type: normalizeWorkType(e.work_type),
+    mon_hours: Number(e.mon_hours) || 0,
+    tue_hours: Number(e.tue_hours) || 0,
+    wed_hours: Number(e.wed_hours) || 0,
+    thu_hours: Number(e.thu_hours) || 0,
+    fri_hours: Number(e.fri_hours) || 0,
+    sat_hours: Number(e.sat_hours) || 0,
+    sun_hours: Number(e.sun_hours) || 0,
+    notes: e.notes || '',
+    sort_order: Number(e.sort_order) || 0,
+  }))
 }
 
 function toggleProjectGroupFold(group) {
@@ -1494,7 +1524,7 @@ async function openHistoryModal() {
   selectedHistoryWeek.value = null
   historyPreviewEntries.value = []
   try {
-    const list = (await timesheetApi.getList({ employee_id: empId })).data || []
+    const list = asArray((await timesheetApi.getList({ employee_id: empId })).data)
     historySheets.value = list
       .filter(sheet => sheet.week_start && sheet.week_start !== weekStart.value)
       .sort((a, b) => String(b.week_start).localeCompare(String(a.week_start)))
@@ -1517,7 +1547,7 @@ async function selectHistorySheet(targetWeekStart) {
   historyPreviewLoading.value = true
   try {
     const sheet = (await timesheetApi.getWeek(empId, targetWeekStart)).data || {}
-    historyPreviewEntries.value = sheet.entries || []
+    historyPreviewEntries.value = asArray(sheet.entries)
   } catch (e) {
     historyPreviewEntries.value = []
     message.error(e.response?.data?.detail || '선택한 주차의 항목을 불러오지 못했습니다.')
@@ -1551,7 +1581,7 @@ async function loadSelectedHistorySheet() {
   try {
     const sourceEntries = historyPreviewEntries.value.length > 0
       ? historyPreviewEntries.value
-      : ((await timesheetApi.getWeek(empId, selectedHistoryWeek.value)).data?.entries || [])
+      : asArray((await timesheetApi.getWeek(empId, selectedHistoryWeek.value)).data?.entries)
     await ensureHolidayRange(weekStart.value, weekEnd.value)
     entries.value = sourceEntries.map((entry, index) => clearBlockedDayHours({
       project_id: entry.project_id || null,
@@ -1629,20 +1659,21 @@ watch(myEmpId, (newEmpId) => {
 })
 
 async function refreshCurrentMode() {
-  const tasks = [loadSalesProjects(), loadWeek()]
-  if (timesheetMode.value === 'month') tasks.push(loadMonth())
-  await Promise.all(tasks)
+  await loadSalesProjects()
+  await loadWeek()
+  if (timesheetMode.value === 'month') await loadMonth()
 }
 
 async function loadSalesProjects() {
   try {
     const current = await salesApi.getSalesManagementRows(weekStart.value)
-    if ((current.data || []).length) {
-      salesProjects.value = current.data || []
+    const currentRows = asArray(current.data)
+    if (currentRows.length) {
+      salesProjects.value = currentRows
       return
     }
     const latest = await salesApi.getLatestSalesManagementRowsBefore(weekStart.value)
-    salesProjects.value = latest.data?.rows || []
+    salesProjects.value = asArray(latest.data?.rows || latest.data)
   } catch (_) {
     salesProjects.value = []
   }
@@ -1675,15 +1706,10 @@ async function loadWeek() {
     tsStatus.value = d.status || '작성중'
     tsNotes.value  = d.notes  || ''
     rejectReason.value = d.reject_reason || ''
-    entries.value  = (d.entries || []).map(e => normalizeExecutionProject(clearBlockedDayHours({
-      ...e,
-      project_source: e.project_source || (e.project_id ? '실행' : '공통'),
-      spg: e.spg || '공통',
-      labor_type: selectedEmployeeLaborType.value,
-      work_type: normalizeWorkType(e.work_type),
-    })))
+    entries.value  = asArray(d.entries).map(normalizeTimesheetEntry)
     syncEntriesToProjectGroups()
   } catch (e) {
+    console.error('[timesheet] loadWeek failed', e)
     if (seq === weekLoadSeq.value && requestedWeekStart === weekStart.value) {
       tsId.value = null
       tsStatus.value = '작성중'
@@ -1692,7 +1718,7 @@ async function loadWeek() {
       entries.value = []
       syncEntriesToProjectGroups()
     }
-    message.error(e.response?.data?.detail || '타임시트 데이터를 불러오지 못했습니다.')
+    message.error(e.response?.data?.detail || e.message || '타임시트 데이터를 불러오지 못했습니다.')
   } finally {
     if (seq === weekLoadSeq.value) weekLoading.value = false
   }
@@ -1704,7 +1730,7 @@ async function loadMonth() {
   if (!empId) { monthLoading.value = false; return }
   try {
     await ensureHolidayRange(monthStart.value, monthEnd.value)
-    const list = (await timesheetApi.getList({ employee_id: empId })).data || []
+    const list = asArray((await timesheetApi.getList({ employee_id: empId })).data)
     const targetWeeks = list.filter(ts => {
       const start = ts.week_start
       const end = ts.week_end || addDays(start, 6)
@@ -1715,7 +1741,7 @@ async function loadMonth() {
 
     details.forEach(res => {
       const sheet = res.data
-      ;(sheet.entries || []).forEach(entry => {
+      asArray(sheet.entries).forEach(entry => {
         const projectName = entry.project_name || '기타'
         const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
         const key = `${projectSource}::${entry.project_id || projectName}`
@@ -1978,7 +2004,7 @@ async function loadSummary() {
     return
   }
   try {
-    const list = (await timesheetApi.getList({ employee_id: empId })).data || []
+    const list = asArray((await timesheetApi.getList({ employee_id: empId })).data)
     const targetWeeks = list.filter(ts => {
       const start = ts.week_start
       const end = ts.week_end || addDays(start, 6)
@@ -1989,7 +2015,7 @@ async function loadSummary() {
 
     details.forEach(res => {
       const sheet = res.data
-      ;(sheet.entries || []).forEach(entry => {
+      asArray(sheet.entries).forEach(entry => {
         const projectName = entry.project_name || '기타'
         const projectSource = entry.project_source || (entry.project_id ? '실행' : '공통')
         const laborType = entry.labor_type || '원가'
@@ -2097,8 +2123,8 @@ async function loadBase() {
     loadSalesProjects(),
     loadCommonProjectSuggestions(),
   ])
-  employees.value = emp.data
-  projects.value  = proj.data
+  employees.value = asArray(emp.data)
+  projects.value  = asArray(proj.data)
   if (!selectedEmpId.value) selectedEmpId.value = myEmpId.value || employees.value[0]?.id || null
   summaryEmpId.value = selectedEmpId.value || myEmpId.value || employees.value[0]?.id || null
   baseLoaded.value = true
@@ -2112,7 +2138,8 @@ onMounted(async () => {
     bootstrapping.value = false
   }
   await nextTick()
-  await Promise.all([refreshCurrentMode(), loadSummary(), loadAdminLabor()])
+  await refreshCurrentMode()
+  await Promise.all([loadSummary(), loadAdminLabor()])
 })
 
 onBeforeUnmount(() => {

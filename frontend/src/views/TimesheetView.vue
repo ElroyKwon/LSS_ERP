@@ -792,6 +792,7 @@ const holidayCache = ref({})
 const resizeState = ref(null)
 const columnWidths = ref(loadColumnWidths())
 const weekLoading    = ref(false)
+const weekLoadSeq    = ref(0)
 const saving         = ref(false)
 const tsId           = ref(null)
 const tsStatus       = ref('작성중')
@@ -1309,7 +1310,7 @@ function syncEntriesToProjectGroups() {
         project_source: e.project_source || '공통',
         project_id: e.project_id || null,
         project_name: e.project_name || '',
-        collapsed: false,
+        collapsed: true,
         subTasks: [],
       })
     }
@@ -1626,13 +1627,32 @@ async function loadSalesProjects() {
 }
 
 async function loadWeek() {
+  const seq = ++weekLoadSeq.value
+  const requestedWeekStart = weekStart.value
+  const requestedWeekEnd = weekEnd.value
   weekLoading.value = true
   const empId = selectedEmpId.value || myEmpId.value
-  if (!empId) { weekLoading.value = false; return }
+  if (!empId) {
+    if (seq === weekLoadSeq.value) weekLoading.value = false
+    return
+  }
   try {
-    await ensureHolidayRange(weekStart.value, weekEnd.value)
-    const res = await timesheetApi.getWeek(empId, weekStart.value)
-    const d   = res.data
+    await ensureHolidayRange(requestedWeekStart, requestedWeekEnd)
+    const res = await timesheetApi.getWeek(empId, requestedWeekStart)
+    let d = res.data
+    if (!((d.entries || []).length)) {
+      const list = (await timesheetApi.getList({ employee_id: empId })).data || []
+      const matched = list.find(ts => {
+        const start = ts.week_start
+        const end = ts.week_end || addDays(start, 6)
+        return start <= requestedWeekEnd && end >= requestedWeekStart && Number(ts.total_hours || 0) > 0
+      })
+      if (matched) {
+        const fallback = (await timesheetApi.getWeek(empId, matched.week_start)).data
+        if ((fallback.entries || []).length) d = fallback
+      }
+    }
+    if (seq !== weekLoadSeq.value || requestedWeekStart !== weekStart.value) return
     tsId.value     = d.id
     tsStatus.value = d.status || '작성중'
     tsNotes.value  = d.notes  || ''
@@ -1645,7 +1665,9 @@ async function loadWeek() {
       work_type: normalizeWorkType(e.work_type),
     })))
     syncEntriesToProjectGroups()
-  } finally { weekLoading.value = false }
+  } finally {
+    if (seq === weekLoadSeq.value) weekLoading.value = false
+  }
 }
 
 async function loadMonth() {

@@ -1002,6 +1002,12 @@ def get_week_timesheet(
         Timesheet.week_start  == monday,
     ).first()
     if not ts:
+        ts = db.query(Timesheet).filter(
+            Timesheet.employee_id == employee_id,
+            Timesheet.week_start <= sunday,
+            Timesheet.week_end >= monday,
+        ).order_by(Timesheet.week_start.desc()).first()
+    if not ts:
         return {"id": None, "employee_id": employee_id,
                 "week_start": str(monday), "week_end": str(sunday),
                 "status": "작성중", "total_hours": 0, "entries": []}

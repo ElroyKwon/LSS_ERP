@@ -1611,6 +1611,16 @@ watch(activeTab, (newTab) => {
 watch(selectedEmpId, (newEmpId) => {
   if (newEmpId) {
     summaryEmpId.value = newEmpId
+    refreshCurrentMode()
+    loadSummary()
+  }
+})
+
+watch(myEmpId, (newEmpId) => {
+  if (!selectedEmpId.value && newEmpId) {
+    selectedEmpId.value = newEmpId
+    summaryEmpId.value = newEmpId
+    refreshCurrentMode()
     loadSummary()
   }
 })

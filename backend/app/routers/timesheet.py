@@ -983,7 +983,12 @@ def list_timesheets(
         q = q.filter(Timesheet.employee_id == employee_id)
     if week_start:  q = q.filter(Timesheet.week_start  == week_start)
     if status:      q = q.filter(Timesheet.status       == status)
-    rows = q.order_by(Timesheet.week_start.desc()).all()
+    rows = q.order_by(
+        Timesheet.week_start.desc(),
+        Timesheet.total_hours.desc(),
+        Timesheet.updated_at.desc(),
+        Timesheet.id.desc(),
+    ).all()
     return [_ts_dict(r, include_entries=False) for r in rows]
 
 
@@ -1000,13 +1005,22 @@ def get_week_timesheet(
     ts = db.query(Timesheet).filter(
         Timesheet.employee_id == employee_id,
         Timesheet.week_start  == monday,
+    ).order_by(
+        Timesheet.total_hours.desc(),
+        Timesheet.updated_at.desc(),
+        Timesheet.id.desc(),
     ).first()
     if not ts:
         ts = db.query(Timesheet).filter(
             Timesheet.employee_id == employee_id,
             Timesheet.week_start <= sunday,
             Timesheet.week_end >= monday,
-        ).order_by(Timesheet.week_start.desc()).first()
+        ).order_by(
+            Timesheet.total_hours.desc(),
+            Timesheet.week_start.desc(),
+            Timesheet.updated_at.desc(),
+            Timesheet.id.desc(),
+        ).first()
     if not ts:
         return {"id": None, "employee_id": employee_id,
                 "week_start": str(monday), "week_end": str(sunday),
@@ -1025,6 +1039,9 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
     ts = db.query(Timesheet).filter(
         Timesheet.employee_id == data.employee_id,
         Timesheet.week_start  == monday,
+    ).order_by(
+        Timesheet.updated_at.desc(),
+        Timesheet.id.desc(),
     ).first()
 
     if ts:

@@ -793,6 +793,8 @@ const resizeState = ref(null)
 const columnWidths = ref(loadColumnWidths())
 const weekLoading    = ref(false)
 const weekLoadSeq    = ref(0)
+const baseLoaded     = ref(false)
+const bootstrapping  = ref(false)
 const saving         = ref(false)
 const tsId           = ref(null)
 const tsStatus       = ref('작성중')
@@ -1594,9 +1596,8 @@ function handleEmployeeChange() {
   if (selectedEmpId.value) {
     summaryEmpId.value = selectedEmpId.value
   }
-  loadWeek()
+  refreshCurrentMode()
   loadSummary()
-  if (timesheetMode.value === 'month') loadMonth()
 }
 
 watch(activeTab, (newTab) => {
@@ -1609,6 +1610,7 @@ watch(activeTab, (newTab) => {
 })
 
 watch(selectedEmpId, (newEmpId) => {
+  if (!baseLoaded.value || bootstrapping.value) return
   if (newEmpId) {
     summaryEmpId.value = newEmpId
     refreshCurrentMode()
@@ -1617,6 +1619,7 @@ watch(selectedEmpId, (newEmpId) => {
 })
 
 watch(myEmpId, (newEmpId) => {
+  if (!baseLoaded.value || bootstrapping.value) return
   if (!selectedEmpId.value && newEmpId) {
     selectedEmpId.value = newEmpId
     summaryEmpId.value = newEmpId
@@ -1625,10 +1628,10 @@ watch(myEmpId, (newEmpId) => {
   }
 })
 
-function refreshCurrentMode() {
-  loadSalesProjects()
-  loadWeek()
-  if (timesheetMode.value === 'month') loadMonth()
+async function refreshCurrentMode() {
+  const tasks = [loadSalesProjects(), loadWeek()]
+  if (timesheetMode.value === 'month') tasks.push(loadMonth())
+  await Promise.all(tasks)
 }
 
 async function loadSalesProjects() {
@@ -1661,11 +1664,17 @@ async function loadWeek() {
     let d = res.data
     if (!((d.entries || []).length)) {
       const list = (await timesheetApi.getList({ employee_id: empId })).data || []
-      const matched = list.find(ts => {
-        const start = ts.week_start
-        const end = ts.week_end || addDays(start, 6)
-        return start <= requestedWeekEnd && end >= requestedWeekStart && Number(ts.total_hours || 0) > 0
-      })
+      const matched = list
+        .filter(ts => {
+          const start = ts.week_start
+          const end = ts.week_end || addDays(start, 6)
+          return start <= requestedWeekEnd && end >= requestedWeekStart && Number(ts.total_hours || 0) > 0
+        })
+        .sort((a, b) => {
+          const totalDiff = Number(b.total_hours || 0) - Number(a.total_hours || 0)
+          if (totalDiff) return totalDiff
+          return String(b.updated_at || b.week_start || '').localeCompare(String(a.updated_at || a.week_start || ''))
+        })[0]
       if (matched) {
         const fallback = (await timesheetApi.getWeek(empId, matched.week_start)).data
         if ((fallback.entries || []).length) d = fallback
@@ -2079,6 +2088,9 @@ async function saveAdminLabor() {
   }
 }
 async function loadBase() {
+  if (!auth.user && auth.token) {
+    await auth.fetchMe().catch(() => {})
+  }
   const [emp, proj] = await Promise.all([
     timesheetApi.getEmployees(),
     executionApi.getProjects(),
@@ -2087,13 +2099,19 @@ async function loadBase() {
   ])
   employees.value = emp.data
   projects.value  = proj.data
-  if (!selectedEmpId.value) selectedEmpId.value = myEmpId.value || null
+  if (!selectedEmpId.value) selectedEmpId.value = myEmpId.value || employees.value[0]?.id || null
   summaryEmpId.value = selectedEmpId.value || myEmpId.value || employees.value[0]?.id || null
+  baseLoaded.value = true
 }
 
 onMounted(async () => {
-  await loadBase()
-  await Promise.all([loadWeek(), loadSummary(), loadAdminLabor()])
+  bootstrapping.value = true
+  try {
+    await loadBase()
+    await Promise.all([refreshCurrentMode(), loadSummary(), loadAdminLabor()])
+  } finally {
+    bootstrapping.value = false
+  }
 })
 
 onBeforeUnmount(() => {

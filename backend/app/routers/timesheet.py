@@ -78,6 +78,56 @@ def _ts_dict(ts: Timesheet, include_entries=True) -> dict:
     return d
 
 
+def _timesheet_activity_subquery(db: Session):
+    entry_hours = (
+        sqlfunc.coalesce(TimesheetEntry.mon_hours, 0)
+        + sqlfunc.coalesce(TimesheetEntry.tue_hours, 0)
+        + sqlfunc.coalesce(TimesheetEntry.wed_hours, 0)
+        + sqlfunc.coalesce(TimesheetEntry.thu_hours, 0)
+        + sqlfunc.coalesce(TimesheetEntry.fri_hours, 0)
+        + sqlfunc.coalesce(TimesheetEntry.sat_hours, 0)
+        + sqlfunc.coalesce(TimesheetEntry.sun_hours, 0)
+    )
+    return (
+        db.query(
+            TimesheetEntry.timesheet_id.label("timesheet_id"),
+            sqlfunc.count(TimesheetEntry.id).label("entry_count"),
+            sqlfunc.coalesce(sqlfunc.sum(entry_hours), 0).label("entry_hours"),
+        )
+        .group_by(TimesheetEntry.timesheet_id)
+        .subquery()
+    )
+
+
+def _order_timesheets_by_activity(q, activity, week_first: bool = False):
+    order = []
+    if week_first:
+        order.append(Timesheet.week_start.desc())
+    order.extend([
+        sqlfunc.coalesce(activity.c.entry_hours, 0).desc(),
+        Timesheet.total_hours.desc(),
+        sqlfunc.coalesce(activity.c.entry_count, 0).desc(),
+        Timesheet.week_start.desc(),
+        Timesheet.updated_at.desc(),
+        Timesheet.id.desc(),
+    ])
+    return q.order_by(None).outerjoin(activity, activity.c.timesheet_id == Timesheet.id).order_by(*order)
+
+
+def _active_timesheets_for_week(
+    db: Session,
+    monday: date,
+    sunday: date,
+    *,
+    week_first: bool = False,
+):
+    activity = _timesheet_activity_subquery(db)
+    return _order_timesheets_by_activity(db.query(Timesheet).filter(
+        Timesheet.week_start <= sunday,
+        Timesheet.week_end >= monday,
+    ), activity, week_first=week_first)
+
+
 def _employee_dict(emp: Employee, labor_type: str | None = None) -> dict:
     return {
         "id": emp.id,
@@ -983,12 +1033,8 @@ def list_timesheets(
         q = q.filter(Timesheet.employee_id == employee_id)
     if week_start:  q = q.filter(Timesheet.week_start  == week_start)
     if status:      q = q.filter(Timesheet.status       == status)
-    rows = q.order_by(
-        Timesheet.week_start.desc(),
-        Timesheet.total_hours.desc(),
-        Timesheet.updated_at.desc(),
-        Timesheet.id.desc(),
-    ).all()
+    activity = _timesheet_activity_subquery(db)
+    rows = _order_timesheets_by_activity(q, activity, week_first=True).all()
     return [_ts_dict(r, include_entries=False) for r in rows]
 
 
@@ -1002,25 +1048,9 @@ def get_week_timesheet(
 ):
     _require_employee_access(employee_id, db, _)
     monday, sunday = _week_of(week_start)
-    ts = db.query(Timesheet).filter(
+    ts = _active_timesheets_for_week(db, monday, sunday).filter(
         Timesheet.employee_id == employee_id,
-        Timesheet.week_start  == monday,
-    ).order_by(
-        Timesheet.total_hours.desc(),
-        Timesheet.updated_at.desc(),
-        Timesheet.id.desc(),
     ).first()
-    if not ts:
-        ts = db.query(Timesheet).filter(
-            Timesheet.employee_id == employee_id,
-            Timesheet.week_start <= sunday,
-            Timesheet.week_end >= monday,
-        ).order_by(
-            Timesheet.total_hours.desc(),
-            Timesheet.week_start.desc(),
-            Timesheet.updated_at.desc(),
-            Timesheet.id.desc(),
-        ).first()
     if not ts:
         return {"id": None, "employee_id": employee_id,
                 "week_start": str(monday), "week_end": str(sunday),
@@ -1036,13 +1066,11 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
     monday, sunday = _week_of(data.week_start)
     _assert_timesheet_month_open(db, monday, sunday, current)
     _validate_workday_hours(data, db, monday, sunday)
-    ts = db.query(Timesheet).filter(
+    activity = _timesheet_activity_subquery(db)
+    ts = _order_timesheets_by_activity(db.query(Timesheet).filter(
         Timesheet.employee_id == data.employee_id,
         Timesheet.week_start  == monday,
-    ).order_by(
-        Timesheet.updated_at.desc(),
-        Timesheet.id.desc(),
-    ).first()
+    ), activity).first()
 
     if ts:
         ts.notes = data.notes
@@ -1149,10 +1177,9 @@ def team_status(week_start: date, db: Session = Depends(get_db),
             return []
         employee_q = employee_q.filter(Employee.id.in_(allowed_ids))
     employees = employee_q.all()
-    submitted = {
-        ts.employee_id: ts
-        for ts in db.query(Timesheet).filter(Timesheet.week_start == monday).all()
-    }
+    submitted = {}
+    for ts in _active_timesheets_for_week(db, monday, sunday).all():
+        submitted.setdefault(ts.employee_id, ts)
     result = []
     for emp in employees:
         ts = submitted.get(emp.id)

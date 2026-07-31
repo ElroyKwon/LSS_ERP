@@ -110,6 +110,54 @@ def _normalize_entry_data(entry_data: dict) -> dict:
     return entry_data
 
 
+def _match_execution_project(db: Session, project_text: str | None) -> Project | None:
+    text = (project_text or "").strip()
+    if not text:
+        return None
+
+    candidates = [text]
+    if " " in text:
+        first, rest = text.split(" ", 1)
+        candidates.extend([first.strip(), rest.strip()])
+
+    for value in [item for item in candidates if item]:
+        project = (
+            db.query(Project)
+            .filter((Project.project_no == value) | (Project.project_name == value))
+            .order_by(Project.id.asc())
+            .first()
+        )
+        if project:
+            return project
+
+    if len(text) < 3:
+        return None
+
+    return (
+        db.query(Project)
+        .filter(Project.project_name.ilike(f"%{text}%"))
+        .order_by(Project.id.asc())
+        .first()
+    )
+
+
+def _resolve_entry_project(db: Session, entry_data: dict) -> dict:
+    if entry_data.get("project_id"):
+        entry_data["project_source"] = "실행"
+        return entry_data
+
+    project_name = (entry_data.get("project_name") or "").strip()
+    if project_name in {"연차", "반차", "반반차"}:
+        return entry_data
+
+    project = _match_execution_project(db, project_name)
+    if project:
+        entry_data["project_id"] = project.id
+        entry_data["project_name"] = project.project_name
+        entry_data["project_source"] = "실행"
+    return entry_data
+
+
 def _current_employee(db: Session, current) -> Employee | None:
     if current.employee_code:
         emp = db.query(Employee).filter(Employee.emp_code == current.employee_code).first()
@@ -991,6 +1039,7 @@ def save_timesheet(data: TimesheetCreate, db: Session = Depends(get_db),
     labor_type = _employee_labor_type(db, data.employee_id)
     for i, e in enumerate(data.entries):
         entry_data = _normalize_entry_data(e.model_dump())
+        entry_data = _resolve_entry_project(db, entry_data)
         entry_data["labor_type"] = labor_type
         entry_data["sort_order"] = i
         entry = TimesheetEntry(**entry_data, timesheet_id=ts.id)

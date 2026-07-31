@@ -632,7 +632,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import { message, Modal, Empty } from 'ant-design-vue'
 import {
   LeftOutlined, RightOutlined, PlusOutlined, DeleteOutlined, DownOutlined,
@@ -1655,7 +1655,15 @@ async function loadWeek() {
   weekLoading.value = true
   const empId = selectedEmpId.value || myEmpId.value
   if (!empId) {
-    if (seq === weekLoadSeq.value) weekLoading.value = false
+    if (seq === weekLoadSeq.value) {
+      tsId.value = null
+      tsStatus.value = '작성중'
+      tsNotes.value = ''
+      rejectReason.value = ''
+      entries.value = []
+      syncEntriesToProjectGroups()
+      weekLoading.value = false
+    }
     return
   }
   try {
@@ -1675,6 +1683,16 @@ async function loadWeek() {
       work_type: normalizeWorkType(e.work_type),
     })))
     syncEntriesToProjectGroups()
+  } catch (e) {
+    if (seq === weekLoadSeq.value && requestedWeekStart === weekStart.value) {
+      tsId.value = null
+      tsStatus.value = '작성중'
+      tsNotes.value = ''
+      rejectReason.value = ''
+      entries.value = []
+      syncEntriesToProjectGroups()
+    }
+    message.error(e.response?.data?.detail || '타임시트 데이터를 불러오지 못했습니다.')
   } finally {
     if (seq === weekLoadSeq.value) weekLoading.value = false
   }
@@ -2090,10 +2108,11 @@ onMounted(async () => {
   bootstrapping.value = true
   try {
     await loadBase()
-    await Promise.all([refreshCurrentMode(), loadSummary(), loadAdminLabor()])
   } finally {
     bootstrapping.value = false
   }
+  await nextTick()
+  await Promise.all([refreshCurrentMode(), loadSummary(), loadAdminLabor()])
 })
 
 onBeforeUnmount(() => {

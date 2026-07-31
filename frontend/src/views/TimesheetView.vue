@@ -1661,25 +1661,7 @@ async function loadWeek() {
   try {
     await ensureHolidayRange(requestedWeekStart, requestedWeekEnd)
     const res = await timesheetApi.getWeek(empId, requestedWeekStart)
-    let d = res.data
-    if (!((d.entries || []).length)) {
-      const list = (await timesheetApi.getList({ employee_id: empId })).data || []
-      const matched = list
-        .filter(ts => {
-          const start = ts.week_start
-          const end = ts.week_end || addDays(start, 6)
-          return start <= requestedWeekEnd && end >= requestedWeekStart && Number(ts.total_hours || 0) > 0
-        })
-        .sort((a, b) => {
-          const totalDiff = Number(b.total_hours || 0) - Number(a.total_hours || 0)
-          if (totalDiff) return totalDiff
-          return String(b.updated_at || b.week_start || '').localeCompare(String(a.updated_at || a.week_start || ''))
-        })[0]
-      if (matched) {
-        const fallback = (await timesheetApi.getWeek(empId, matched.week_start)).data
-        if ((fallback.entries || []).length) d = fallback
-      }
-    }
+    const d = res.data || {}
     if (seq !== weekLoadSeq.value || requestedWeekStart !== weekStart.value) return
     tsId.value     = d.id
     tsStatus.value = d.status || '작성중'

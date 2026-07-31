@@ -78,6 +78,8 @@
                 <a-input
                   v-model:value="newCompanySchedule.content"
                   @update:value="handleCompanyProjectInput"
+                  @compositionstart="isComposingCompanyProject = true"
+                  @compositionend="handleCompanyProjectCompositionEnd"
                   @focus="openCompanyProjectDropdown"
                   @blur="closeCompanyProjectDropdown"
                 />
@@ -234,6 +236,10 @@ function getScheduleErrorMessage(error, fallback) {
   return detail ? `${fallback} (${detail})` : fallback
 }
 
+function safeText(value) {
+  return String(value ?? '').trim()
+}
+
 // ══════════════════════════════════════════════════
 // 탭 1: 전사 월간 일정 데이터 및 로직
 // ══════════════════════════════════════════════════
@@ -245,6 +251,7 @@ const companyProjects      = ref([])
 const companySalesProjects = ref([])
 const companyCommonProjectSuggestions = ref([])
 const companyProjectDropdownOpen = ref(false)
+const isComposingCompanyProject = ref(false)
 let companyCommonSearchTimer = null
 let companyProjectSelectionTimer = null
 
@@ -276,8 +283,8 @@ function labelCompanyProjectOption(option) {
 
 const companyProjectOptions = computed(() => {
   const executionOptions = companyProjects.value.map(project => {
-    const projectNo = (project.project_no || '').trim()
-    const projectName = (project.project_name || '').trim()
+    const projectNo = safeText(project.project_no)
+    const projectName = safeText(project.project_name)
     const value = [projectNo, projectName].filter(Boolean).join(' ') || projectName || projectNo
     return {
       value,
@@ -290,8 +297,8 @@ const companyProjectOptions = computed(() => {
   }).filter(option => option.value)
 
   const salesOptions = companySalesProjects.value.map(row => {
-    const projectNo = (row.project_no || row.sales_no || '').trim()
-    const projectName = (row.project_name || '').trim()
+    const projectNo = safeText(row.project_no || row.sales_no)
+    const projectName = safeText(row.project_name)
     const value = [projectNo, projectName].filter(Boolean).join(' ') || projectName || projectNo
     if (!value) return null
     return {
@@ -305,7 +312,7 @@ const companyProjectOptions = computed(() => {
   }).filter(Boolean)
 
   const commonOptions = companyCommonProjectSuggestions.value.map(item => {
-    const value = item.project_name || item.value || item.label || ''
+    const value = safeText(item.project_name || item.value || item.label)
     return {
       value,
       label: labelCompanyProjectOption({ source: '공통', value }),
@@ -320,7 +327,7 @@ const companyProjectOptions = computed(() => {
 })
 
 const visibleCompanyProjectOptions = computed(() => {
-  const keyword = String(newCompanySchedule.value.content || '').trim().toLowerCase()
+  const keyword = safeText(newCompanySchedule.value.content).toLowerCase()
   if (!keyword) return []
   return companyProjectOptions.value
     .filter(option => filterCompanyProjectOption(keyword, option))
@@ -328,19 +335,19 @@ const visibleCompanyProjectOptions = computed(() => {
 })
 
 function filterCompanyProjectOption(input, option) {
-  const keyword = String(input || '').trim().toLowerCase()
+  const keyword = safeText(input).toLowerCase()
   if (!keyword) return true
   return String(option.searchText || option.value || option.label || '').toLowerCase().includes(keyword)
 }
 
 function findCompanyProjectOption(value, option = null) {
-  const selectedValue = String(value || '').trim()
-  const optionValue = String(option?.value || '').trim()
+  const selectedValue = safeText(value)
+  const optionValue = safeText(option?.value)
   return companyProjectOptions.value.find(item =>
     item === option
-    || item.value === selectedValue
-    || item.value === optionValue
-    || item.project_name === selectedValue
+    || safeText(item.value) === selectedValue
+    || safeText(item.value) === optionValue
+    || safeText(item.project_name) === selectedValue
   ) || option || null
 }
 
@@ -369,7 +376,7 @@ function applyCompanyProjectOption(selected, fallbackValue = '') {
 }
 
 function openCompanyProjectDropdown() {
-  companyProjectDropdownOpen.value = Boolean(String(newCompanySchedule.value.content || '').trim())
+  companyProjectDropdownOpen.value = Boolean(safeText(newCompanySchedule.value.content))
 }
 
 function closeCompanyProjectDropdown() {
@@ -396,13 +403,24 @@ function handleCompanyProjectInput(value) {
     clearTimeout(companyProjectSelectionTimer)
     companyProjectSelectionTimer = null
   }
-  companyProjectDropdownOpen.value = Boolean(String(value || '').trim())
-  changeCompanyProjectInput(value)
-  searchCompanyCommonProjects(value)
+  const typed = safeText(value)
+  companyProjectDropdownOpen.value = Boolean(typed)
+  if (isComposingCompanyProject.value) return
+  changeCompanyProjectInput(typed)
+  searchCompanyCommonProjects(typed)
+}
+
+function handleCompanyProjectCompositionEnd(event) {
+  isComposingCompanyProject.value = false
+  const typed = safeText(event?.target?.value ?? newCompanySchedule.value.content)
+  newCompanySchedule.value.content = typed
+  companyProjectDropdownOpen.value = Boolean(typed)
+  changeCompanyProjectInput(typed)
+  searchCompanyCommonProjects(typed)
 }
 
 function changeCompanyProjectInput(value) {
-  const typed = String(value || '').trim()
+  const typed = safeText(value)
   const selected = findCompanyProjectOption(typed)
   if (selected) {
     applyCompanyProjectOption(selected, typed)

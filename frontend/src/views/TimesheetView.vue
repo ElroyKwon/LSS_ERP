@@ -818,7 +818,7 @@ const timesheetModeOptions = [
 
 const empOptions = computed(() =>
   asArray(employees.value).map(e => {
-    const department = (e.department_name || e.department || '').trim()
+    const department = safeText(e.department_name || e.department)
     return { value: e.id, label: department ? `${e.name} (${department})` : e.name }
   })
 )
@@ -829,9 +829,12 @@ function asArray(value) {
   if (Array.isArray(value?.data)) return value.data
   return []
 }
+function safeText(value) {
+  return String(value ?? '').trim()
+}
 function sameText(a, b) {
-  const left = String(a || '').trim().toLowerCase()
-  const right = String(b || '').trim().toLowerCase()
+  const left = safeText(a).toLowerCase()
+  const right = safeText(b).toLowerCase()
   return Boolean(left && right && left === right)
 }
 
@@ -1129,8 +1132,8 @@ const projectSuggestions = computed(() => {
   }
 
   const executionOptions = asArray(projects.value).map(p => {
-    const projectNo = (p.project_no || '').trim()
-    const projectName = (p.project_name || '').trim()
+    const projectNo = safeText(p.project_no)
+    const projectName = safeText(p.project_name)
     const label = [projectNo, projectName].filter(Boolean).join(' ')
     return {
       value: label || projectName || projectNo,
@@ -1145,8 +1148,8 @@ const projectSuggestions = computed(() => {
 
   const salesOptions = asArray(salesProjects.value)
     .map(row => {
-      const projectNo = (row.project_no || row.sales_no || '').trim()
-      const projectName = (row.project_name || '').trim()
+      const projectNo = safeText(row.project_no || row.sales_no)
+      const projectName = safeText(row.project_name)
       const label = [projectNo, projectName].filter(Boolean).join(' ')
       if (!projectName && !projectNo) return null
       return {
@@ -1230,39 +1233,39 @@ function onProjectSourceChange(row) {
 }
 
 function filterProjectOption(input, option) {
-  const keyword = (input || '').trim().toLowerCase()
+  const keyword = safeText(input).toLowerCase()
   if (!keyword) return true
   return (option.searchText || '').includes(keyword)
 }
 
 function findProjectOption(row, value, option = null) {
   const candidates = projectOptionsForRow(row)
-  const selectedValue = String(value || '').trim()
-  const optionValue = String(option?.value || '').trim()
-  const optionName = String(option?.project_name || '').trim()
+  const selectedValue = safeText(value)
+  const optionValue = safeText(option?.value)
+  const optionName = safeText(option?.project_name)
   return candidates.find(item =>
     item === option
-    || item.value === selectedValue
-    || item.label === selectedValue
-    || item.project_name === selectedValue
-    || item.value === optionValue
-    || item.project_name === optionName
+    || safeText(item.value) === selectedValue
+    || safeText(item.label) === selectedValue
+    || safeText(item.project_name) === selectedValue
+    || safeText(item.value) === optionValue
+    || safeText(item.project_name) === optionName
   ) || option || null
 }
 
 function findExecutionProjectByText(value) {
-  const text = String(value || '').trim()
+  const text = safeText(value)
   if (!text || text.length < 2) return null
   const parts = text.includes(' ') ? text.split(/\s+/, 2) : []
   const candidates = projectSuggestions.value.filter(option => option.source === '실행')
   return candidates.find(option =>
-    option.value === text
-    || option.label === text
-    || option.project_no === text
-    || option.project_name === text
-    || (parts.length > 0 && option.project_no === parts[0])
-    || (parts.length > 1 && option.project_name === parts.slice(1).join(' '))
-  ) || candidates.find(option => option.project_name && option.project_name.includes(text)) || null
+    safeText(option.value) === text
+    || safeText(option.label) === text
+    || safeText(option.project_no) === text
+    || safeText(option.project_name) === text
+    || (parts.length > 0 && safeText(option.project_no) === parts[0])
+    || (parts.length > 1 && safeText(option.project_name) === parts.slice(1).join(' '))
+  ) || candidates.find(option => safeText(option.project_name).includes(text)) || null
 }
 
 function normalizeExecutionProject(row) {
@@ -1289,7 +1292,7 @@ function onProjectSelect(idx, value, option) {
 function onProjectInputChange(idx, value) {
   const row = entries.value[idx]
   if (!row) return
-  const typed = String(value || '').trim()
+  const typed = safeText(value)
   if (!typed) {
     row.project_id = null
     row.project_source = '공통'

@@ -715,15 +715,15 @@ const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
 const statusColor = { 작성중: 'default', 제출: 'orange', 승인: 'green', 반려: 'red', 미작성: 'default' }
 
 // ── 날짜 유틸 ──
-const todayStr = new Date().toISOString().slice(0, 10)
+const todayStr = formatLocalDate(new Date())
 function mondayOf(d) {
   const dt = new Date(d)
   dt.setDate(dt.getDate() - dt.getDay() + (dt.getDay() === 0 ? -6 : 1))
-  return dt.toISOString().slice(0, 10)
+  return formatLocalDate(dt)
 }
 function addDays(s, n) {
   const d = new Date(s); d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  return formatLocalDate(d)
 }
 function formatLocalDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -820,10 +820,19 @@ const empOptions = computed(() =>
     return { value: e.id, label: department ? `${e.name} (${department})` : e.name }
   })
 )
-const myEmpId = computed(() => {
-  const me = employees.value.find(e => e.name === auth.user?.name)
-  return me?.id || null
-})
+function sameText(a, b) {
+  const left = String(a || '').trim().toLowerCase()
+  const right = String(b || '').trim().toLowerCase()
+  return Boolean(left && right && left === right)
+}
+
+const myEmployee = computed(() => employees.value.find(e =>
+  sameText(e.name, auth.user?.name)
+  || sameText(e.username, auth.user?.username)
+  || sameText(e.email, auth.user?.email)
+  || sameText(e.employee_code, auth.user?.employee_code)
+) || null)
+const myEmpId = computed(() => myEmployee.value?.id || null)
 const selectedEmployeeLaborType = computed(() => {
   const empId = selectedEmpId.value || myEmpId.value
   const employee = employees.value.find(e => e.id === empId)
@@ -2068,7 +2077,7 @@ async function loadBase() {
   ])
   employees.value = emp.data
   projects.value  = proj.data
-  if (!canApproveTimesheet.value) selectedEmpId.value = myEmpId.value
+  if (!selectedEmpId.value) selectedEmpId.value = myEmpId.value || null
   summaryEmpId.value = selectedEmpId.value || myEmpId.value || employees.value[0]?.id || null
 }
 

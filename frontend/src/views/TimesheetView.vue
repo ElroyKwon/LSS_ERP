@@ -122,8 +122,16 @@
                           :disabled="isLocked"
                           style="width:100%"
                           @select="(v, opt) => onProjectSelectInGroup(gIdx, v, opt)"
+                          @change="(v) => onProjectInputChangeInGroup(gIdx, v)"
+                          @blur="() => normalizeProjectInputInGroup(gIdx)"
                           @search="(v) => onProjectSearch(group, v)"
-                        />
+                        >
+                          <template #option="{ value, label }">
+                            <div class="timesheet-project-option" @mousedown.prevent.stop="selectProjectOptionInGroup(gIdx, value)">
+                              {{ label || value }}
+                            </div>
+                          </template>
+                        </a-auto-complete>
                       </td>
                       <!-- 3~5. 프로젝트 통합 컨트롤 바 -->
                       <td colspan="3" class="project-summary-cell">
@@ -788,6 +796,7 @@ const projects       = ref([])
 const salesProjects  = ref([])
 const commonProjectSuggestions = ref([])
 const commonProjectSearchTimer = ref(null)
+let projectGroupSelectionTimer = null
 const holidayCache = ref({})
 const resizeState = ref(null)
 const columnWidths = ref(loadColumnWidths())
@@ -1440,9 +1449,63 @@ function onGroupSourceChange(group) {
 }
 
 function onProjectSelectInGroup(gIdx, value, option = null) {
+  selectProjectOptionInGroup(gIdx, value, option)
+}
+
+function selectProjectOptionInGroup(gIdx, value, option = null) {
   const group = projectGroups.value[gIdx]
   if (!group) return
-  applyProjectOption(group, value, option)
+  if (commonProjectSearchTimer.value) {
+    clearTimeout(commonProjectSearchTimer.value)
+    commonProjectSearchTimer.value = null
+  }
+  const selected = findProjectOption(group, value, option)
+  applyProjectOption(group, value, selected)
+  if (projectGroupSelectionTimer) clearTimeout(projectGroupSelectionTimer)
+  projectGroupSelectionTimer = setTimeout(() => {
+    const currentGroup = projectGroups.value[gIdx]
+    if (currentGroup) applyProjectOption(currentGroup, value, selected)
+    projectGroupSelectionTimer = null
+  }, 120)
+}
+
+function onProjectInputChangeInGroup(gIdx, value) {
+  const group = projectGroups.value[gIdx]
+  if (!group) return
+  const typed = safeText(value)
+  group.project_name = typed
+  if (!typed) {
+    group.project_id = null
+    group.project_source = '공통'
+    return
+  }
+  const matched = projectOptionsForRow(group).find(option =>
+    safeText(option.value) === typed
+    || safeText(option.label) === typed
+    || safeText(option.project_name) === typed
+  )
+  if (matched) {
+    applyProjectOption(group, typed, matched)
+    return
+  }
+  group.project_id = null
+  if (!group.project_source) group.project_source = '공통'
+}
+
+function normalizeProjectInputInGroup(gIdx) {
+  setTimeout(() => {
+    if (projectGroupSelectionTimer) return
+    const group = projectGroups.value[gIdx]
+    if (!group) return
+    const typed = safeText(group.project_name)
+    if (!typed) return
+    const matched = projectOptionsForRow(group).find(option =>
+      safeText(option.value) === typed
+      || safeText(option.label) === typed
+      || safeText(option.project_name) === typed
+    )
+    if (matched) applyProjectOption(group, typed, matched)
+  }, 80)
 }
 
 function onWorkTypeChangeInGroup(group, tIdx, value) {

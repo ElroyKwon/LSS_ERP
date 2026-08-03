@@ -1407,7 +1407,7 @@ function addProjectGroup() {
       {
         notes: '',
         labor_type: selectedEmployeeLaborType.value,
-        work_type: ['실행 > 현장관리'],
+        work_type: ['공통 > 기타'],
         mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0,
       },
     ],
@@ -1418,11 +1418,10 @@ function addSubTask(gIdx) {
   const group = projectGroups.value[gIdx]
   if (!group) return
   if (!group.subTasks) group.subTasks = []
-  const defaultWorkType = group.project_source === '실행' ? ['실행 > 현장관리'] : (group.project_source === '영업' ? ['영업 > 견적'] : ['공통 > 기타'])
   group.subTasks.push({
     notes: '',
     labor_type: selectedEmployeeLaborType.value,
-    work_type: defaultWorkType,
+    work_type: ['공통 > 기타'],
     mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0,
   })
 }

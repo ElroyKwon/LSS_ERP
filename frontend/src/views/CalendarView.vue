@@ -228,6 +228,7 @@ import { useAuthStore } from '@/store/auth'
 const auth = useAuthStore()
 const activeTab = ref('company-calendar')
 const currentUserName = computed(() => (auth.user?.name || '').trim())
+const currentUserRole = computed(() => safeText(auth.user?.role))
 const CALENDAR_VISIBLE_EVENT_LIMIT = 2
 const COMPANY_PROJECT_SOURCES = new Set(['실행', '영업', '공통'])
 
@@ -687,7 +688,10 @@ function getSchedulesForDate(list, currentDate) {
 }
 
 function canManageSchedule(item) {
-  return Boolean(item?.user_name && currentUserName.value && item.user_name === currentUserName.value)
+  const role = currentUserRole.value
+  const isAdmin = role === 'system_admin' || role === 'admin' || role.endsWith('_manager')
+  const isOwner = Boolean(safeText(item?.user_name) && currentUserName.value && safeText(item.user_name) === currentUserName.value)
+  return isAdmin || isOwner
 }
 
 function openCompanyDetailModal(currentDate) {

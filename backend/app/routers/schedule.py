@@ -15,6 +15,7 @@ from googleapiclient.errors import HttpError
 from pathlib import Path
 from dotenv import load_dotenv
 from ..utils.auth import get_current_user
+from ..utils.permissions import normalize_role
 from ..utils.system_accounts import is_system_account_username
 from ..database import get_db
 from ..models.common import User, CalendarSchedule, Holiday
@@ -65,6 +66,8 @@ def _resolve_credentials_dir(value: Optional[str]) -> Optional[str]:
 CREDENTIALS_DIR = _resolve_credentials_dir(env_credentials_dir)
 
 _google_services_cache: Dict[str, Tuple[any, str]] = {}
+_google_sync_cache: Dict[str, datetime] = {}
+GOOGLE_SYNC_INTERVAL_SECONDS = 300
 
 
 def get_calendar_config_and_service(category: str):
@@ -118,6 +121,25 @@ def require_event_owner(event: dict, current_user) -> None:
     if not owner or owner != current_name:
         raise HTTPException(status_code=403, detail='본인이 등록한 일정만 수정 또는 삭제할 수 있습니다.')
 
+def _is_current_owner_name(owner_name: Optional[str], current_user) -> bool:
+    owner = (owner_name or "").strip()
+    current_name = (getattr(current_user, "name", "") or "").strip()
+    return bool(owner and current_name and owner == current_name)
+
+
+def _can_manage_any_schedule(current_user) -> bool:
+    role = normalize_role(getattr(current_user, "role", None))
+    return role == "system_admin" or role == "admin" or role.endswith("_manager")
+
+
+def require_schedule_owner(event: Optional[dict], row: Optional[CalendarSchedule], current_user) -> None:
+    if _can_manage_any_schedule(current_user):
+        return
+    google_owner = extract_event_owner(event or {})
+    db_owner = getattr(row, "user_name", None)
+    if _is_current_owner_name(google_owner, current_user) or _is_current_owner_name(db_owner, current_user):
+        return
+    raise HTTPException(status_code=403, detail="본인이 등록한 일정만 수정 또는 삭제할 수 있습니다.")
 
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -575,8 +597,11 @@ def _google_event_to_schedule_row(db: Session, event: dict, category: str) -> Ca
 
 def _sync_google_events_to_db(db: Session, category: str) -> None:
     service, target_calendar_id = get_calendar_config_and_service(category)
+    today = date.today()
     events_result = service.events().list(
         calendarId=target_calendar_id,
+        timeMin=f"{today.year}-01-01T00:00:00+09:00",
+        timeMax=f"{today.year + 1}-12-31T23:59:59+09:00",
         maxResults=250,
         singleEvents=True,
         orderBy='startTime',
@@ -589,24 +614,33 @@ def _sync_google_events_to_db(db: Session, category: str) -> None:
     db.commit()
 
 
+def _maybe_sync_google_events_to_db(db: Session, category: str) -> None:
+    existing_count = db.query(CalendarSchedule).filter(
+        CalendarSchedule.category == category,
+    ).count()
+    last_synced_at = _google_sync_cache.get(category)
+    elapsed = (datetime.now() - last_synced_at).total_seconds() if last_synced_at else None
+    if existing_count > 0 and elapsed is not None and elapsed < GOOGLE_SYNC_INTERVAL_SECONDS:
+        return
+
+    try:
+        _sync_google_events_to_db(db, category)
+        _google_sync_cache[category] = datetime.now()
+    except HttpError as he:
+        db.rollback()
+        print(f"\n=== GOOGLE CALENDAR SYNC HTTP ERROR ({category}) ===")
+        print(f"Status Code: {he.resp.status}, Reason: {he.content}")
+    except Exception:
+        db.rollback()
+        print(f"\n=== GOOGLE CALENDAR SYNC ERROR ({category}) ===")
+        traceback.print_exc()
+        print("==================================================\n")
+
+
 @router.get("")
 def get_schedules(category: str = Query("company", description="company 또는 refresh"), db: Session = Depends(get_db)):
     try:
-        existing_count = db.query(CalendarSchedule).filter(
-            CalendarSchedule.category == category,
-        ).count()
-        if existing_count == 0:
-            try:
-                _sync_google_events_to_db(db, category)
-            except HttpError as he:
-                db.rollback()
-                print(f"\n=== GOOGLE CALENDAR INITIAL SYNC HTTP ERROR ({category}) ===")
-                print(f"Status Code: {he.resp.status}, Reason: {he.content}")
-            except Exception:
-                db.rollback()
-                print(f"\n=== GOOGLE CALENDAR INITIAL SYNC ERROR ({category}) ===")
-                traceback.print_exc()
-                print("==================================================\n")
+        _maybe_sync_google_events_to_db(db, category)
 
         rows = db.query(CalendarSchedule).filter(
             CalendarSchedule.category == category,
@@ -693,7 +727,11 @@ def update_schedule(event_id: str, payload: ScheduleCreate, current_user=Depends
     try:
         service, target_calendar_id = get_calendar_config_and_service(payload.category)
         existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
-        require_event_owner(existing, current_user)
+        row = db.query(CalendarSchedule).filter(
+            CalendarSchedule.google_event_id == event_id,
+            CalendarSchedule.category == payload.category,
+        ).first()
+        require_schedule_owner(existing, row, current_user)
         user_name = (getattr(current_user, 'name', None) or payload.user_name or '미확인').strip()
         if not _current_employee(db, current_user):
             raise HTTPException(status_code=400, detail="로그인 사용자의 사원 정보를 찾을 수 없어 타임시트에 자동 반영할 수 없습니다.")
@@ -739,12 +777,12 @@ def delete_schedule(event_id: str, category: str = Query("company"), current_use
     try:
         service, target_calendar_id = get_calendar_config_and_service(category)
         existing = service.events().get(calendarId=target_calendar_id, eventId=event_id).execute()
-        require_event_owner(existing, current_user)
-        _remove_schedule_from_timesheet(db, event_id, category)
         row = db.query(CalendarSchedule).filter(
             CalendarSchedule.google_event_id == event_id,
             CalendarSchedule.category == category,
         ).first()
+        require_schedule_owner(existing, row, current_user)
+        _remove_schedule_from_timesheet(db, event_id, category)
         if row:
             db.delete(row)
         service.events().delete(calendarId=target_calendar_id, eventId=event_id).execute()

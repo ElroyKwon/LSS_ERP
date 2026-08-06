@@ -351,9 +351,18 @@ const pipelineOption = computed(() => ({
 const profitFlowOption = computed(() => ({
   tooltip: { trigger: 'axis', ...moneyTooltip },
   legend: { top: 0 },
-  grid: { top: 48, left: 56, right: 24, bottom: 36 },
+  grid: { top: 48, left: 64, right: 24, bottom: 36 },
   xAxis: { type: 'category', data: axisMonths.value },
-  yAxis: { type: 'value', axisLabel: { formatter: (value) => formatAmount(value) } },
+  yAxis: {
+    type: 'value',
+    name: '단위 : 백만',
+    nameLocation: 'end',
+    nameGap: 14,
+    axisLabel: {
+      formatter: (value) => formatMillionAxis(value),
+      margin: 10,
+    },
+  },
   series: [
     { name: '매출', type: 'bar', data: monthly.value.map((row) => row.actual_revenue), itemStyle: { color: '#52c41a' } },
     { name: '매입', type: 'bar', data: monthly.value.map((row) => row.actual_purchase), itemStyle: { color: '#fa8c16' } },
